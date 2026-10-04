@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WHOOP 5.0 Official UI Replica (Official Logos Embedded)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+    body { background-color: #0B0E12; color: #FFFFFF; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 12px; }
+    .mobile-frame { width: 100%; max-width: 412px; height: 870px; background-color: #101518; border-radius: 40px; border: 3px solid #262C36; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 60px rgba(0,0,0,0.95); position: relative; }
+    
+    /* Header exact match with Official Logo */
+    .header { padding: 14px 18px 8px 18px; background-color: #101518; display: flex; flex-direction: column; gap: 12px; }
+    .top-bar { display: flex; justify-content: space-between; align-items: center; }
+    .avatar-streak { display: flex; align-items: center; gap: 8px; }
+    .avatar { width: 32px; height: 32px; border-radius: 50%; background: #16EC06; color: #000; font-weight: 900; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+    .streak { display: flex; align-items: center; gap: 3px; font-weight: 900; font-size: 13px; color: #FFF; }
+    .date-pill { background: #1E262C; padding: 4px 14px; border-radius: 20px; border: 1px solid #262C36; font-size: 11px; font-weight: 900; color: #FFF; letter-spacing: 1.2px; display: flex; align-items: center; gap: 8px; }
+    .batt-box { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 900; color: #FFF; }
+    .batt-icon-img { height: 18px; }
+    
+    .logo-row { text-align: center; padding: 2px 0; }
+    .official-logo-img { height: 20px; object-fit: contain; }
+
+    /* 3 Rings Side By Side */
+    .rings-hero-row { display: flex; justify-content: space-around; padding: 10px 8px; align-items: center; }
+    .ring-card { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; }
+    .ring-svg-box { position: relative; width: 100px; height: 100px; display: flex; justify-content: center; align-items: center; }
+    .ring-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .ring-bg { fill: none; stroke-width: 9; opacity: 0.18; }
+    .ring-fg { fill: none; stroke-width: 9; stroke-linecap: round; }
+    .ring-stat { position: absolute; font-size: 22px; font-weight: 900; color: #FFF; letter-spacing: -0.5px; }
+    .ring-lbl { font-size: 11px; font-weight: 900; color: #FFF; letter-spacing: 1px; }
+
+    .scroll-content { flex: 1; overflow-y: auto; padding: 10px 16px 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+    .scroll-content::-webkit-scrollbar { width: 0; }
+
+    /* Official Cards */
+    .card { background: linear-gradient(135deg, #1E262C, #101518); border-radius: 16px; border: 1px solid #262C36; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .card-head { display: flex; justify-content: space-between; align-items: center; }
+    .card-title { font-size: 12px; font-weight: 900; color: #FFF; letter-spacing: 1px; text-transform: uppercase; }
+    .card-sub { font-size: 13px; color: #9EAAB8; line-height: 1.4; }
+
+    .dismiss-hint { font-size: 10px; color: #5F6E80; text-align: right; font-style: italic; margin-top: 4px; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .sq-card { background: #1E262C; border-radius: 16px; border: 1px solid #262C36; padding: 14px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: transform 0.2s; }
+    .sq-card:active { transform: scale(0.98); }
+    .sq-title { font-size: 10px; font-weight: 900; color: #FFF; letter-spacing: 0.8px; text-transform: uppercase; }
+    .badge { padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: 900; width: max-content; }
+
+    .banner-prospects { background: linear-gradient(90deg, #38434B, #1E262C); border-radius: 14px; padding: 14px 16px; border: 1px solid #262C36; display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 700; color: #FFF; }
+
+    .pill-item { background: rgba(123, 161, 187, 0.2); border: 1px solid rgba(123, 161, 187, 0.4); padding: 10px 12px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+
+    .alarm-btn { background: #263238; border: 1px solid #262C36; color: #FFF; padding: 12px; border-radius: 12px; font-size: 11px; font-weight: 900; letter-spacing: 1.2px; text-align: center; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 4px; }
+    .puck-icon-img { height: 16px; }
+
+    .dash-row { background: #1E262C; border-radius: 14px; border: 1px solid #262C36; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; }
+    .dash-lbl { font-size: 11px; font-weight: 900; color: #FFF; letter-spacing: 0.8px; }
+    .dash-val { font-size: 18px; font-weight: 900; color: #FFF; text-align: right; }
+    .dash-base { font-size: 11px; color: #5F6E80; }
+
+    /* Floating Navigation Bar exact match */
+    .nav-bar-wrapper { position: absolute; bottom: 10px; left: 16px; right: 16px; }
+    .nav-bar { background: #1E262C; border: 1.5px solid #262C36; border-radius: 34px; height: 64px; padding: 0 10px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 8px 24px rgba(0,0,0,0.6); }
+    .nav-item { font-size: 10px; font-weight: 700; color: #9EAAB8; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; flex: 1; }
+    .nav-item.active { color: #0093E7; }
+    .coach-btn { width: 50px; height: 50px; border-radius: 50%; background: #141920; border: 2px solid #0093E7; color: #0093E7; font-weight: 900; font-size: 16px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 14px rgba(0,147,231,0.5); cursor: pointer; }
+    .coach-icon-img { height: 22px; }
+  </style>
+</head>
+<body>
+  <div class="mobile-frame">
+    <!-- Header with OFFICIAL LOGO WORDMARK EMBEDDED -->
+    <div class="header">
+      <div class="top-bar">
+        <div class="avatar-streak">
+          <div class="avatar">GM</div>
+          <div class="streak">🔥 175</div>
+        </div>
+        <div class="date-pill"><span>&lt;</span> <span>OGGI</span> <span>&gt;</span></div>
+        <div class="batt-box">
+          <span>62%</span>
+          <img class="batt-icon-img" src="data:image/png;base64,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" alt="Puck Battery">
+        </div>
+      </div>
+      <!-- Official WHOOP Logo Image -->
+      <div class="logo-row">
+        <img class="official-logo-img" src="data:image/png;base64,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" alt="WHOOP Logo">
+      </div>
+    </div>
+
+    <!-- 3 SEPARATE RINGS SIDE BY SIDE -->
+    <div class="rings-hero-row">
+      <!-- Ring 1: SONNO 81% -->
+      <div class="ring-card" onclick="alert('Dettaglio Sonno: 81% (8h 24m) - Efficienza 94%')">
+        <div class="ring-svg-box">
+          <svg class="ring-svg" viewBox="0 0 100 100">
+            <circle class="ring-bg" cx="50" cy="50" r="42" stroke="#7BA1BB"></circle>
+            <circle class="ring-fg" cx="50" cy="50" r="42" stroke="#7BA1BB" stroke-dasharray="264" stroke-dashoffset="50"></circle>
+          </svg>
+          <div class="ring-stat">81%</div>
+        </div>
+        <div class="ring-lbl">SONNO &gt;</div>
+      </div>
+
+      <!-- Ring 2: RECUPERO 82% -->
+      <div class="ring-card" onclick="alert('Dettaglio Recupero: 82% (Zona Verde) - VFC 76ms | FCR 51bpm')">
+        <div class="ring-svg-box">
+          <svg class="ring-svg" viewBox="0 0 100 100">
+            <circle class="ring-bg" cx="50" cy="50" r="42" stroke="#16EC06"></circle>
+            <circle class="ring-fg" cx="50" cy="50" r="42" stroke="#16EC06" stroke-dasharray="264" stroke-dashoffset="47"></circle>
+          </svg>
+          <div class="ring-stat">82%</div>
+        </div>
+        <div class="ring-lbl">RECUPERO &gt;</div>
+      </div>
+
+      <!-- Ring 3: SFORZO 0,2 -->
+      <div class="ring-card" onclick="alert('Dettaglio Sforzo: 0,2 / 21.0 - Target consigliato: 15.0 - 17.5')">
+        <div class="ring-svg-box">
+          <svg class="ring-svg" viewBox="0 0 100 100">
+            <circle class="ring-bg" cx="50" cy="50" r="42" stroke="#0093E7"></circle>
+            <circle class="ring-fg" cx="50" cy="50" r="42" stroke="#0093E7" stroke-dasharray="264" stroke-dashoffset="250"></circle>
+          </svg>
+          <div class="ring-stat">0,2</div>
+        </div>
+        <div class="ring-lbl">SFORZO &gt;</div>
+      </div>
+    </div>
+
+    <!-- Scrollable Content -->
+    <div class="scroll-content">
+      <!-- VFC Elevata Card (Swipable / Dismissible Notification) -->
+      <div class="card" id="notifCard">
+        <div class="card-head">
+          <span style="font-size:16px; font-weight:700; color:#FFF;" id="notifTitle">VFC elevata</span>
+          <span style="background:#263238; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700;" id="notifBadge">✓ 1</span>
+        </div>
+        <div class="card-sub" id="notifBody">La tua VFC è 6% più elevata del solito, il che indica un recupero massimo. Una VFC elevata indica che il tuo corpo è in equilibrio e il recupero completo.</div>
+        <div class="dismiss-hint" onclick="dismissNotif()">Clicca o fai swipe per rimuovere ➔</div>
+      </div>
+
+      <!-- 2 Square Cards con Navigazione Diretta -->
+      <div class="grid-2">
+        <div class="sq-card" onclick="alert('Apertura Dashboard Salute (HealthScreen): FCR 51bpm, VFC 76ms, SpO2 98.2%, Temp +0.1°C')">
+          <div class="sq-title">MONITORAGGIO DELLA SALUTE &gt;</div>
+          <div class="badge" style="background:rgba(22,236,6,0.15); color:#16EC06; border:1px solid rgba(22,236,6,0.4);">✓ NELLA NORMA</div>
+          <div style="font-size:10px; color:#5F6E80;">5/5 Parametri</div>
+        </div>
+        <div class="sq-card" onclick="alert('Apertura Dashboard Stress 24h & Protocollo Respirazione Guidata (Cyclic Sighing)')">
+          <div class="sq-title">MONITORAGGIO DELLO STRESS &gt;</div>
+          <div class="badge" style="background:rgba(0,147,231,0.15); color:#0093E7; border:1px solid rgba(0,147,231,0.4);">BASSO 0,8</div>
+          <div style="font-size:10px; color:#5F6E80;">Ultimo agg: 12:32</div>
+        </div>
+      </div>
+
+      <!-- La mia giornata -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+        <span style="font-size:20px; font-weight:700; color:#FFF;">La mia giornata</span>
+        <span style="font-size:24px; color:#FFF; cursor:pointer;" onclick="alert('Nuova attività registrata')">+</span>
+      </div>
+
+      <div class="banner-prospects">
+        <span>🔅 Le tue prospettive giornaliere</span>
+        <span>&gt;</span>
+      </div>
+
+      <!-- Attività di oggi -->
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">ATTIVITÀ DI OGGI</span>
+          <span>↗</span>
+        </div>
+        <div class="pill-item" onclick="alert('Visualizza il Dettaglio della Seduta di Sonno (8:24)')">
+          <div><span style="font-size:16px; font-weight:900;">🌙 8:24</span> <span style="font-size:11px; font-weight:700; margin-left:8px;">SONNO</span></div>
+          <div style="font-size:11px; color:#9EAAB8;">0:52 - 10:32</div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:4px;">
+          <button style="flex:1; background:transparent; border:1px solid #262C36; color:#FFF; padding:10px; border-radius:10px; font-size:10px; font-weight:700; cursor:pointer;" onclick="alert('Modalità Aggiungi Attività aperta')">+ AGGIUNGI ATTIVITÀ</button>
+          <button style="flex:1; background:transparent; border:1px solid #262C36; color:#FFF; padding:10px; border-radius:10px; font-size:10px; font-weight:700; cursor:pointer;" onclick="alert('Live Activity GPS Tracker avviato!')">⏱ INIZIA ATTIVITÀ</button>
+        </div>
+      </div>
+
+      <!-- SONNO DI STANOTTE Card Completa con Sveglia Smart e Logo Puck -->
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">SONNO DI STANOTTE</span>
+          <span>&gt;</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin: 6px 0;">
+          <div>
+            <div style="font-size:24px; font-weight:900; color:#FFF;">🌇 22:28</div>
+            <div style="font-size:9px; font-weight:900; color:#9EAAB8; letter-spacing:0.5px;">ORA CONSIGLIATA<br>PER ANDARE A LETTO</div>
+          </div>
+          <div style="font-size:11px; color:#262C36; font-weight:bold;">-----</div>
+          <div style="text-align:right;">
+            <div style="font-size:24px; font-weight:900; color:#FFF;">🌅 08:45</div>
+            <div style="font-size:9px; font-weight:900; color:#FFB74D; letter-spacing:0.5px;" id="alarmStatus">SVEGLIA<br>DISATTIVATA</div>
+          </div>
+        </div>
+        <div class="alarm-btn" onclick="toggleAlarm()">
+          <img class="puck-icon-img" src="data:image/png;base64,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" alt="WHOOP Puck">
+          <span>IMPOSTA SVEGLIA</span>
+        </div>
+      </div>
+
+      <!-- La mia dashboard -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+        <span style="font-size:18px; font-weight:700; color:#FFF;">La mia dashboard</span>
+        <span style="font-size:11px; font-weight:900; color:#FFF; letter-spacing:1px;">PERSONALIZZA 🖊️</span>
+      </div>
+
+      <div class="dash-row">
+        <div class="dash-lbl">VARIABILITÀ DELLA FREQUENZA CARDIACA</div>
+        <div><div class="dash-val">76 <span style="color:#16EC06;">▲</span></div><div class="dash-base">72</div></div>
+      </div>
+      <div class="dash-row">
+        <div class="dash-lbl">FREQUENZA CARDIACA A RIPOSO</div>
+        <div><div class="dash-val">51 <span style="color:#16EC06;">▼</span></div><div class="dash-base">53</div></div>
+      </div>
+      <div class="dash-row">
+        <div class="dash-lbl">PASSI</div>
+        <div><div class="dash-val">366 <span style="color:#9EAAB8;">▼</span></div><div class="dash-base">15.222</div></div>
+      </div>
+      <div class="dash-row">
+        <div class="dash-lbl">RECUPERO</div>
+        <div><div class="dash-val">82% <span style="color:#16EC06;">▲</span></div><div class="dash-base">63%</div></div>
+      </div>
+      
+      <div style="height:60px;"></div>
+    </div>
+
+    <!-- Floating Nav Bar with Official Circle Icon Button -->
+    <div class="nav-bar-wrapper">
+      <div class="nav-bar">
+        <div class="nav-item active"><span>🏠</span><span>Home</span></div>
+        <div class="nav-item" onclick="alert('Apertura Monitor Salute')"><span>🖤</span><span>Salute</span></div>
+        <div class="nav-item" onclick="alert('Apertura Community & Teams')"><span>👥</span><span>Community</span></div>
+        <div class="nav-item" onclick="alert('Apertura Menu Altro')"><span>≡</span><span>Altro</span></div>
+        <div class="coach-btn" onclick="alert('WHOOP Coach AI pronto!')">
+          <img class="coach-icon-img" src="data:image/png;base64,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" alt="WHOOP Coach">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const notifs = [
+      { 'title': 'VFC elevata', 'badge': '✓ 1', 'body': 'La tua VFC è 6% più elevata del solito, il che indica un recupero massimo. Una VFC elevata indica che il tuo corpo è in equilibrio e il recupero completo.' },
+      { 'title': 'Prontezza Recupero 82%', 'badge': '✓ 2', 'body': 'Il tuo sistema nervoso autonomo è in condizioni ottimali. Il target di Sforzo consigliato per oggi è tra 15.0 e 17.5.' },
+      { 'title': 'Fabbisogno Sonno Ottimizzato', 'badge': '✓ 3', 'body': 'In base all'attività recente hai 30 minuti di sonno arretrato. Ti consigliamo di coricarti entro le 22:28.' }
+    ];
+    let notifIdx = 0;
+
+    function dismissNotif() {
+      notifIdx++;
+      if (notifIdx < notifs.length) {
+        document.getElementById('notifTitle').innerText = notifs[notifIdx].title;
+        document.getElementById('notifBadge').innerText = notifs[notifIdx].badge;
+        document.getElementById('notifBody').innerText = notifs[notifIdx].body;
+      } else {
+        document.getElementById('notifCard').style.display = 'none';
+      }
+    }
+
+    let alarmOn = false;
+    function toggleAlarm() {
+      alarmOn = !alarmOn;
+      const el = document.getElementById('alarmStatus');
+      if (alarmOn) {
+        el.innerHTML = 'SVEGLIA<br>ATTIVATA (08:45)';
+        el.style.color = '#16EC06';
+        alert('Sveglia Smart Aptica Attivata per le 08:45 (In the Green >=67%)');
+      } else {
+        el.innerHTML = 'SVEGLIA<br>DISATTIVATA';
+        el.style.color = '#FFB74D';
+        alert('Sveglia Smart Aptica Disattivata');
+      }
+    }
+  </script>
+</body>
+</html>

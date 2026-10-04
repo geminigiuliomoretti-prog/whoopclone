@@ -1,0 +1,41 @@
+name: whoop_clone
+description: "A Flutter MVVM application for Whoop 5.0 clone with local SQLite database, BLE integration, Biometric Engine, and 6 Roadmap screens."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  provider: ^6.1.1
+  intl: ^0.19.0
+  cupertino_icons: ^1.0.6
+  flutter_blue_plus: ^1.31.0
+  permission_handler: ^11.3.0
+  geolocator: ^11.0.0
+  shared_preferences: ^2.2.2
+  pdf: ^3.10.0
+  printing: ^5.11.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  sqflite_common_ffi: ^2.3.0
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/logos/whoop_logo_white.png"
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/logos/
+    - assets/images/
