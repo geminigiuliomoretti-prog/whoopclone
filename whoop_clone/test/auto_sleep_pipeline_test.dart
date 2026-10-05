@@ -21,9 +21,9 @@ void main() {
       final engine = OvernightSleepEngine(dbHelper: dbHelper);
 
       // Simula 9 ore di telemetria a epoche di 30 secondi (1080 epoche = 9h)
-      // Base time: ieri sera ore 22:30 fino a stamattina ore 07:30
+      // Base time: ieri sera ore 22:30 fino a stamattina ore 07:30 (SLP-02: risveglio il 2026-08-14)
       final baseStartTime = DateTime(2026, 8, 13, 22, 30);
-      final dateIso = baseStartTime.toIso8601String().substring(0, 10);
+      final dateIso = '2026-08-14';
 
       final autoSleepDetector = AutoSleepDetector(
         restHr: 52.0,

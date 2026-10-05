@@ -516,7 +516,7 @@ class AutoSleepDetector {
         userBaseline30d: baseline,
         windowStart: safeStart,
         windowEnd: safeEnd,
-        targetDateIso: safeStart.toIso8601String().substring(0, 10),
+        targetDateIso: safeEnd.toLocal().toIso8601String().substring(0, 10),
       );
 
       state = AutoSleepState.sleepTerminated;
@@ -876,6 +876,7 @@ class OvernightSleepEngine {
     // 9. Persistenza Transazionale Atomica su SQLite (Cicli Fisiologici e Sonno)
     final String dateIso = targetDateIso ??
         (windowEnd ?? (epochs30s.isNotEmpty ? epochs30s.last.timestamp : DateTime.now()))
+            .toLocal()
             .toIso8601String()
             .substring(0, 10);
 
