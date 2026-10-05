@@ -8,7 +8,7 @@ import '../../core/utils/clock.dart';
 /// Gestisce le tabelle fondamentali + telemetria e segmenti sonno
 class DatabaseHelper {
   static const String _dbName = 'whoop_clone.db';
-  static const int _dbVersion = 18;
+  static const int _dbVersion = 19;
 
   // Nomi Tabelle
   static const String tableUtenteProfilo = 'utente_profilo';
@@ -24,6 +24,7 @@ class DatabaseHelper {
   static const String tableAttivitaTracce = 'attivita_tracce';
   static const String tableTelemetriaGrezza = 'telemetria_grezza';
   static const String tableSleepStageSegments = 'sleep_stage_segments';
+  static const String tableTelemetryEpoch30s = 'telemetry_epoch_30s';
 
   static DatabaseHelper? _instance;
   static Database? _database;
@@ -323,6 +324,23 @@ class DatabaseHelper {
       );
     ''');
 
+    // 14. telemetry_epoch_30s (Fase 3: DAT-05)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $tableTelemetryEpoch30s (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        start_utc_ms INTEGER NOT NULL,
+        end_utc_ms INTEGER NOT NULL,
+        hr_mean REAL,
+        hr_min INTEGER,
+        hr_max INTEGER,
+        enmo_mean REAL,
+        sample_count INTEGER NOT NULL,
+        valid_rr_count INTEGER NOT NULL DEFAULT 0,
+        rmssd REAL,
+        coverage_pct REAL NOT NULL DEFAULT 100.0
+      );
+    ''');
+
     // Indici per velocizzare filtri temporali e prevenire Full Table Scan
     await db.execute('CREATE INDEX IF NOT EXISTS idx_stress_data_iso ON $tableMisurazioniStress (data_iso);');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_stress_timestamp ON $tableMisurazioniStress (timestamp);');
@@ -337,6 +355,7 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_allenamenti_data_iso ON $tableAllenamenti (data_iso);');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_sleep_stage_segments_sonno ON $tableSleepStageSegments (sonno_id);');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_sleep_stage_segments_time ON $tableSleepStageSegments (start_utc_ms, end_utc_ms);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_telemetry_epoch_time ON $tableTelemetryEpoch30s (start_utc_ms, end_utc_ms);');
   }
 
   Future<void> _safeExecuteAlter(Database db, String sql) async {
@@ -511,6 +530,24 @@ class DatabaseHelper {
     if (oldVersion < 18) {
       await _safeExecuteAlter(db, 'ALTER TABLE $tableMisurazioniStress ADD COLUMN timestamp_utc_ms INTEGER;');
       await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_stress_utc ON $tableMisurazioniStress (timestamp_utc_ms);');
+    }
+    if (oldVersion < 19) {
+      await _safeExecuteAlter(db, '''
+        CREATE TABLE IF NOT EXISTS $tableTelemetryEpoch30s (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          start_utc_ms INTEGER NOT NULL,
+          end_utc_ms INTEGER NOT NULL,
+          hr_mean REAL,
+          hr_min INTEGER,
+          hr_max INTEGER,
+          enmo_mean REAL,
+          sample_count INTEGER NOT NULL,
+          valid_rr_count INTEGER NOT NULL DEFAULT 0,
+          rmssd REAL,
+          coverage_pct REAL NOT NULL DEFAULT 100.0
+        );
+      ''');
+      await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_telemetry_epoch_time ON $tableTelemetryEpoch30s (start_utc_ms, end_utc_ms);');
     }
   }
 
@@ -1187,12 +1224,57 @@ class DatabaseHelper {
   }
 
   // ─────────────────────────────────────────────────────────────
+  // 11c. Epoche Telemetriche 30s CRUD (Fase 3: DAT-05)
+  // ─────────────────────────────────────────────────────────────
+
+  Future<int> insertTelemetryEpoch({
+    required int startUtcMs,
+    required int endUtcMs,
+    double? hrMean,
+    int? hrMin,
+    int? hrMax,
+    double? enmoMean,
+    required int sampleCount,
+    int validRrCount = 0,
+    double? rmssd,
+    double coveragePct = 100.0,
+  }) async {
+    final db = await database;
+    return await db.insert(tableTelemetryEpoch30s, {
+      'start_utc_ms': startUtcMs,
+      'end_utc_ms': endUtcMs,
+      'hr_mean': hrMean,
+      'hr_min': hrMin,
+      'hr_max': hrMax,
+      'enmo_mean': enmoMean,
+      'sample_count': sampleCount,
+      'valid_rr_count': validRrCount,
+      'rmssd': rmssd,
+      'coverage_pct': coveragePct,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getTelemetryEpochs({
+    required int startUtcMs,
+    required int endUtcMs,
+  }) async {
+    final db = await database;
+    return await db.query(
+      tableTelemetryEpoch30s,
+      where: 'start_utc_ms >= ? AND end_utc_ms <= ?',
+      whereArgs: [startUtcMs, endUtcMs],
+      orderBy: 'start_utc_ms ASC',
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // Utilità
   // ─────────────────────────────────────────────────────────────
 
   Future<void> clearAllTables() async {
     final db = await database;
     try {
+      await db.execute('DELETE FROM $tableTelemetryEpoch30s');
       await db.execute('DELETE FROM $tableSleepStageSegments');
       await db.execute('DELETE FROM $tablePreferenzeDashboard');
       await db.execute('DELETE FROM $tableAbitudiniCustom');
