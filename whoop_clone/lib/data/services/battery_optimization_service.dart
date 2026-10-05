@@ -12,8 +12,6 @@ class BatteryOptimizationService {
   bool get _isPlatformChannelAvailable {
     if (kIsWeb) return false;
     try {
-      final binding = WidgetsBinding.instance;
-      if (binding == null) return false;
       return defaultTargetPlatform == TargetPlatform.android;
     } catch (_) {
       return false;

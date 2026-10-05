@@ -113,13 +113,33 @@ class RecoveryEngine {
     double? sleepPerformancePct,
     double? nightlyStress,
     double? skinTempDeltaC,
+    double? sleepDurationMinutes,
+    int? validRrEpochsCount,
+    bool strictGating = false,
   }) {
     if (currentRmssdMs == null || currentRmssdMs <= 0 || currentFcrBpm == null || currentFcrBpm <= 0) {
       return null;
     }
 
+    // STG-06: Gating del Recovery Score
+    if (strictGating) {
+      if (sleepDurationMinutes != null && sleepDurationMinutes < 120.0) {
+        return null;
+      }
+      if (validRrEpochsCount != null && validRrEpochsCount < 30) {
+        return null;
+      }
+      if (historicalLnRmssd.length < 4) {
+        return null;
+      }
+    }
+
     final currentLnRmssd = calculateLnRmssd(currentRmssdMs);
     final baseline = calculateBaseline(historicalLnRmssd, historicalRhr);
+
+    if (strictGating && baseline.isCalibrating) {
+      return null;
+    }
 
     // 1. zHRV & zRHR (lower RHR is better, so meanRhr - currentFcrBpm)
     final zHrv = calculateZScore(value: currentLnRmssd, mean: baseline.meanLnRmssd, stdDev: baseline.stdDevLnRmssd);

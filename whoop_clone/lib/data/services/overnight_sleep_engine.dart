@@ -861,15 +861,19 @@ class OvernightSleepEngine {
         ? ((totalSleepMin / sleepNeedMin) * 100.0).clamp(0.0, 100.0)
         : null;
 
+    final int validRrEpochs = epochs30s.where((e) => e.quality == EpochQuality.valid && e.rmssd > 0).length;
+
     final double? recoveryScore = (finalNightHrvRmssd != null && finalNightRhr != null)
         ? _calculateRecoveryScore(
             hrvRmssd: finalNightHrvRmssd,
             rhrBpm: finalNightRhr,
             sleepPerformancePct: sleepPerformancePct,
-            skinTempDelta: deltaSkinTemp ?? 0.0,
+            skinTempDelta: deltaSkinTemp,
             spo2Pct: spo2Pct,
             userBaseline: userBaseline30d,
             nightlyStress: sleepStressMean,
+            sleepDurationMin: totalSleepMin,
+            validRrEpochs: validRrEpochs,
           )
         : null;
 
@@ -1172,6 +1176,34 @@ class OvernightSleepEngine {
           // Preserva micro-risveglio autentico ad alta accelerazione
         } else {
           smoothedStages[i] = prev;
+        }
+      }
+    }
+
+    // STG-04: Enforce minimum bout duration for SWS e REM (>= 4 epoche = 2 minuti) in stream continui
+    if (totalEpochs >= 10) {
+      int idx = 0;
+      while (idx < totalEpochs) {
+        final st = smoothedStages[idx];
+        if (st == SleepStage.deepSws || st == SleepStage.rem) {
+          int run = 0;
+          while (idx + run < totalEpochs && smoothedStages[idx + run] == st) {
+            run++;
+          }
+          if (run < 4) {
+            // Applica il revert a LIGHT solo se il bout breve è circondato da sonno contiguo (flickering)
+            // e non da buchi MISSING di campionamento rado
+            final bool surroundedBySleep = (idx > 0 && smoothedStages[idx - 1] == SleepStage.light) ||
+                (idx + run < totalEpochs && smoothedStages[idx + run] == SleepStage.light);
+            if (surroundedBySleep) {
+              for (int r = 0; r < run; r++) {
+                smoothedStages[idx + r] = SleepStage.light;
+              }
+            }
+          }
+          idx += run;
+        } else {
+          idx++;
         }
       }
     }
@@ -1576,18 +1608,29 @@ class OvernightSleepEngine {
     return double.parse(median.toStringAsFixed(1));
   }
 
-  /// Algoritmo di Calcolo Recovery Score (0 - 100%)
+  /// Algoritmo di Calcolo Recovery Score (0 - 100%) - STG-06 Gating & Zero-Mock
   double? _calculateRecoveryScore({
     required double? hrvRmssd,
     required double? rhrBpm,
     required double? sleepPerformancePct,
-    required double skinTempDelta,
+    double? skinTempDelta,
     double? spo2Pct,
     required Map<String, dynamic> userBaseline,
     double? nightlyStress,
+    double? sleepDurationMin,
+    int? validRrEpochs,
   }) {
     if (hrvRmssd == null || rhrBpm == null) {
       return null;
+    }
+
+    // STG-06: Gating del Recovery Score
+    final bool strictGating = userBaseline['strict_gating'] == true;
+    if (strictGating) {
+      if (sleepDurationMin != null && sleepDurationMin < 120.0) return null;
+      if (validRrEpochs != null && validRrEpochs < 30) return null;
+      final int baselineDays = (userBaseline['baseline_days'] as num?)?.toInt() ?? 0;
+      if (baselineDays < 4) return null;
     }
 
     final double hrvMean = (userBaseline['rmssd_mean'] ?? 65.0).toDouble();
@@ -1598,13 +1641,14 @@ class OvernightSleepEngine {
     final zHrv = (hrvRmssd - hrvMean) / (hrvStd > 0 ? hrvStd : 1.0);
     final zRhr = (rhrMean - rhrBpm) / (rhrStd > 0 ? rhrStd : 1.0);
 
-    final sleepPerf = sleepPerformancePct ?? 80.0;
+    // Fattore prestazione sonno (nessun default fittizio a 80%)
+    final double sleepPerfFactor = sleepPerformancePct != null ? ((sleepPerformancePct - 80.0) * 0.25) : 0.0;
 
     // Contributo autonomico base (50% HRV, 35% RHR, 15% Sonno)
-    double baseRecovery = 50.0 + (zHrv * 18.0) + (zRhr * 12.0) + ((sleepPerf - 80.0) * 0.25);
+    double baseRecovery = 50.0 + (zHrv * 18.0) + (zRhr * 12.0) + sleepPerfFactor;
 
-    // Penalità per Temperatura Cutanea alterata
-    if (skinTempDelta.abs() > 0.8) {
+    // Penalità per Temperatura Cutanea alterata (solo se fornita ed anomala)
+    if (skinTempDelta != null && skinTempDelta.abs() > 0.8) {
       baseRecovery -= (skinTempDelta.abs() * 4.0);
     }
 

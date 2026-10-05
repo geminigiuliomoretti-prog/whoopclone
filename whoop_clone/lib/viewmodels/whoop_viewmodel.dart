@@ -25,6 +25,7 @@ import '../data/services/noop_workout_detector.dart';
 import '../data/services/noop_system_services.dart';
 import '../data/services/haptic_alarm_service.dart';
 import '../data/services/overnight_sleep_engine.dart';
+import '../data/services/posterior_sleep_detector.dart';
 import '../data/services/raw_capture_service.dart';
 import '../data/services/battery_optimization_service.dart';
 
@@ -46,6 +47,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   late final HapticAlarmService _hapticAlarmService;
   late final BackgroundSyncDaemon _backgroundDaemon;
   late final OvernightSleepEngine _overnightSleepEngine;
+  late final PosteriorSleepDetector _posteriorSleepDetector;
 
   final RRCircularBuffer _rrBuffer = RRCircularBuffer(capacity: 500);
 
@@ -130,6 +132,10 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     _hapticAlarmService = HapticAlarmService(bleManager: _bleManager);
     _backgroundDaemon = BackgroundSyncDaemon(bleManager: _bleManager, repository: _repository);
     _overnightSleepEngine = OvernightSleepEngine();
+    _posteriorSleepDetector = PosteriorSleepDetector(
+      dbHelper: DatabaseHelper(),
+      sleepEngine: _overnightSleepEngine,
+    );
     _autoSleepDetector = AutoSleepDetector(
       restHr: _userProfile.hrRestBaseline.toDouble(),
       hrvBaseline: _userProfile.hrvBaselineMean,
@@ -190,6 +196,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   AutoWorkoutDetector get autoWorkoutDetector => _autoWorkoutDetector;
   AutoSleepDetector get autoSleepDetector => _autoSleepDetector;
   OvernightSleepEngine get overnightSleepEngine => _overnightSleepEngine;
+  PosteriorSleepDetector get posteriorSleepDetector => _posteriorSleepDetector;
   BatteryEstimator get batteryEstimator => _batteryEstimator;
   HapticAlarmScheduler get hapticAlarmScheduler => _hapticAlarmScheduler;
   HapticAlarmService get hapticAlarmService => _hapticAlarmService;
@@ -740,32 +747,20 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     final hasRecovery = existingCicli.isNotEmpty && existingCicli.first.punteggioRecuperoPct != null;
 
     if (!hasRecovery) {
-      // 1. Prova prima a recuperare i dati reali registrati su SQLite nelle ultime 14 ore
+      debugPrint('WhoopViewModel: Esecuzione PosteriorSleepDetector per rilevamento automatico del sonno notturno ($todayIso)...');
       final now = DateTime.now();
-      final lastNightStart = now.subtract(const Duration(hours: 14));
-      var records = await DatabaseHelper().getTelemetriaInTimeRange(lastNightStart, now);
+      final windowStart = now.subtract(const Duration(hours: 26));
 
-      // 2. Se su SQLite non ci sono dati, controlla il buffer in RAM del daemon di background
-      if (records.isEmpty) {
-        records = _backgroundDaemon.getNocturnalTelemetryRecords();
-      }
+      // Flush rapido della coda telemetrica su SQLite prima dell'analisi
+      _backgroundDaemon.flushTelemetry();
 
-      if (records.isEmpty) {
-        // Nessun record di telemetria notturna reale registrato: lascia lo stato vuoto
-        return;
-      }
-      debugPrint('WhoopViewModel: Esecuzione sincro notturno automatico per la data $todayIso (${records.length} campioni)...');
-      final result = await _overnightSleepEngine.processNightlyTelemetry(
-        rawTelemetryRecords: records,
-        userBaseline30d: {
-          'rhr_mean': _userProfile.rhrBaselineMean,
-          'rmssd_mean': _userProfile.hrvBaselineMean,
-          'rmssd_std': _userProfile.hrvBaselineStd,
-          'baseline_temp_celsius': _userProfile.baselineSampleCount >= 4 ? 36.5 : null,
-        },
+      final savedCount = await _posteriorSleepDetector.runPosteriorDetectionAndPersist(
+        windowStart: windowStart,
+        windowEnd: now,
       );
-      if (result['has_data'] == true) {
-        // Ricarica la lista cicli e sonno da SQLite
+
+      if (savedCount > 0) {
+        debugPrint('WhoopViewModel: PosteriorSleepDetector ha rilevato e salvato $savedCount sessioni di sonno!');
         final cicli = await _repository.getCicliFisiologici();
         _cicliList = cicli;
         final dateCicli = cicli.where((c) => c.dataIso == todayIso).toList();

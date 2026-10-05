@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import '../../core/logging/structured_logger.dart';
 import '../models/telemetry_sample.dart';
