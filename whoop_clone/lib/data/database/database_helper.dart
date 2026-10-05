@@ -1020,6 +1020,17 @@ class DatabaseHelper {
     });
   }
 
+  /// Inserimento a blocchi in batch in un'unica transazione SQLite (Fase 4: DAT-04)
+  Future<void> insertTelemetriaBatch(List<Map<String, dynamic>> points) async {
+    if (points.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (final pt in points) {
+      batch.insert(tableTelemetriaGrezza, pt);
+    }
+    await batch.commit(noResult: true);
+  }
+
   Future<List<Map<String, dynamic>>> getTelemetriaInTimeRange(DateTime start, DateTime end) async {
     final db = await database;
     final startMs = start.toUtc().millisecondsSinceEpoch;

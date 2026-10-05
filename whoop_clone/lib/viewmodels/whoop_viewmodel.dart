@@ -26,6 +26,7 @@ import '../data/services/noop_system_services.dart';
 import '../data/services/haptic_alarm_service.dart';
 import '../data/services/overnight_sleep_engine.dart';
 import '../data/services/raw_capture_service.dart';
+import '../data/services/battery_optimization_service.dart';
 
 /// ViewModel Reattivo WHOOP 5.0 (Single Source of Truth)
 /// Gestisce lo stato dell'applicazione leggendo esclusivamente dal DB SQLite.
@@ -163,7 +164,8 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       _bleManager.ensureConnected();
       triggerOvernightSyncIfNeeded();
     } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      debugPrint('WhoopViewModel: App andata in background. Sessione BLE mantenuta attiva.');
+      debugPrint('WhoopViewModel: App andata in background. Eseguo flush rapido telemetria su SQLite...');
+      _backgroundDaemon.flushTelemetry();
     }
   }
 
@@ -519,6 +521,32 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       _bleState = state;
       _bleStatusMessage = _bleManager.statusMessage;
       _isFallbackMode = _bleManager.fallbackModeActive;
+
+      // Aggiornamento dinamico notifica Foreground Service (Fase 4: BGD-01)
+      final String statusText;
+      switch (state) {
+        case BleState.connected:
+          statusText = 'Connesso • Monitoraggio attivo in background';
+          break;
+        case BleState.connecting:
+        case BleState.reconnecting:
+          statusText = 'In riconnessione con lo strap WHOOP...';
+          break;
+        case BleState.scanning:
+          statusText = 'Ricerca strap WHOOP nelle vicinanze...';
+          break;
+        case BleState.disconnected:
+        case BleState.error:
+          statusText = 'Disconnesso dallo strap WHOOP';
+          break;
+        default:
+          statusText = 'Servizio attivo in background';
+      }
+      BatteryOptimizationService.instance.updateServiceNotification(
+        title: 'WHOOP 5.0 Continuous Service',
+        text: statusText,
+      );
+
       if (state == BleState.connected) {
         triggerOvernightSyncIfNeeded();
       }

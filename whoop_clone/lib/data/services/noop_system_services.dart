@@ -91,6 +91,12 @@ class BackgroundSyncDaemon {
   StreamSubscription? _hrSub;
   StreamSubscription? _packet96Sub;
 
+  // Coda rapida in memoria e flush periodico su SQLite (Fase 4: DAT-04)
+  final List<Map<String, dynamic>> _flushQueue = [];
+  Timer? _flushTimer;
+  static const int maxQueueSize = 50;
+  static const Duration flushInterval = Duration(seconds: 10);
+
   // Buffer per i dati di movimento/accelerazione estratti dal pacchetto 96 byte
   double _lastMotionVar = 0.0;
   double? _lastRespPower;
@@ -103,6 +109,12 @@ class BackgroundSyncDaemon {
   void startDaemon() {
     if (_isRunning) return;
     _isRunning = true;
+
+    // Flush periodico ogni 10 secondi per prevenire perdita dati in background
+    _flushTimer?.cancel();
+    _flushTimer = Timer.periodic(flushInterval, (_) {
+      flushTelemetry();
+    });
 
     // Sottoscrizione al flusso pacchetti 96 byte per estrarre ENMO, temperatura, SpO2, respirazione
     _packet96Sub?.cancel();
@@ -121,7 +133,7 @@ class BackgroundSyncDaemon {
           _lastSpo2Pct = double.parse((110.0 - (25.0 * rRatio)).clamp(85.0, 100.0).toStringAsFixed(1));
         }
 
-        // Salva i pacchetti 96-byte (streaming live e pacchetti Store-and-Forward flash) su SQLite
+        // Accoda i pacchetti 96-byte per il flush su SQLite in transazione
         try {
           final hrVal = packet.heartRateBpm > 0 ? packet.heartRateBpm : (_nocturnalBpmSamples.isNotEmpty ? _nocturnalBpmSamples.last : 0);
           if (hrVal > 0) {
@@ -133,23 +145,29 @@ class BackgroundSyncDaemon {
                 _nocturnalHrvSamples.removeAt(0);
               }
             }
-            await DatabaseHelper().insertTelemetriaPoint(
-              bpm: hrVal,
-              rrMs: rmssdVal, // rr_ms memorizza l'rMSSD in ms (HRV fisiologica)
-              accelEnmo: _lastMotionVar,
-              motionVar: _lastMotionVar,
-              skinTempCelsius: _lastSkinTempC,
-              skinTempRaw: rawTemp,
-              spo2Pct: _lastSpo2Pct,
-              spo2RatioR: rRatio,
-              respRate: _lastRespRate,
-              respPower: _lastRespPower,
-              timestamp: packet.timestamp,
-              timestampUtcMs: packet.timestamp.toUtc().millisecondsSinceEpoch,
-            );
+            _flushQueue.add({
+              'bpm': hrVal,
+              'rmssd_ms': rmssdVal,
+              'rr_ms': rmssdVal,
+              'accel_enmo': _lastMotionVar,
+              'motion_var': _lastMotionVar,
+              'skin_temp_celsius': _lastSkinTempC,
+              'skin_temp_raw': rawTemp,
+              'spo2_pct': _lastSpo2Pct,
+              'spo2_ratio_r': rRatio,
+              'resp_rate': _lastRespRate,
+              'resp_power': _lastRespPower,
+              'timestamp': packet.timestamp.toUtc().toIso8601String(),
+              'timestamp_utc_ms': packet.timestamp.toUtc().millisecondsSinceEpoch,
+              'source': 'REAL_STREAM',
+              'quality': 'VALID',
+            });
+            if (_flushQueue.length >= maxQueueSize) {
+              await flushTelemetry();
+            }
           }
         } catch (e) {
-          debugPrint('[BackgroundSyncDaemon] Error saving packet telemetry: $e');
+          debugPrint('[BackgroundSyncDaemon] Error queuing packet telemetry: $e');
         }
       }
     });
@@ -202,21 +220,25 @@ class BackgroundSyncDaemon {
 
         if (!hasRecent96Packet) {
           try {
-            // Chiariamo il significato di rr_ms: memorizza il vero rMSSD in ms (non l'intervallo RR grezzo da 900 ms)
-            await DatabaseHelper().insertTelemetriaPoint(
-              bpm: hrPacket.bpm,
-              rrMs: calculatedRmssd,
-              accelEnmo: _lastMotionVar,
-              motionVar: _lastMotionVar,
-              skinTempCelsius: _lastSkinTempC,
-              spo2Pct: _lastSpo2Pct,
-              respRate: _lastRespRate,
-              respPower: _lastRespPower,
-              timestamp: hrPacket.timestamp,
-              timestampUtcMs: hrPacket.timestamp.toUtc().millisecondsSinceEpoch,
-            );
+            _flushQueue.add({
+              'bpm': hrPacket.bpm,
+              'rr_ms': calculatedRmssd,
+              'accel_enmo': _lastMotionVar,
+              'motion_var': _lastMotionVar,
+              'skin_temp_celsius': _lastSkinTempC,
+              'spo2_pct': _lastSpo2Pct,
+              'resp_rate': _lastRespRate,
+              'resp_power': _lastRespPower,
+              'timestamp': hrPacket.timestamp.toUtc().toIso8601String(),
+              'timestamp_utc_ms': hrPacket.timestamp.toUtc().millisecondsSinceEpoch,
+              'source': 'HR_SERVICE_2A37',
+              'quality': 'VALID',
+            });
+            if (_flushQueue.length >= maxQueueSize) {
+              await flushTelemetry();
+            }
           } catch (e) {
-            debugPrint('[BackgroundSyncDaemon] Error saving HR telemetry: $e');
+            debugPrint('[BackgroundSyncDaemon] Error queuing HR telemetry: $e');
           }
         }
       }
@@ -310,10 +332,26 @@ class BackgroundSyncDaemon {
     return bytes[offset] | (bytes[offset + 1] << 8);
   }
 
-  void stopDaemon() {
+  /// Svuota immediatamente la coda in memoria su SQLite in batch (Fase 4: DAT-04)
+  Future<int> flushTelemetry() async {
+    if (_flushQueue.isEmpty) return 0;
+    final List<Map<String, dynamic>> batch = List.from(_flushQueue);
+    _flushQueue.clear();
+    try {
+      await DatabaseHelper().insertTelemetriaBatch(batch);
+      return batch.length;
+    } catch (e) {
+      debugPrint('[BackgroundSyncDaemon] Errore inserimento batch telemetria: $e');
+      return 0;
+    }
+  }
+
+  Future<void> stopDaemon() async {
     _isRunning = false;
     _syncTimer?.cancel();
+    _flushTimer?.cancel();
     _hrSub?.cancel();
     _packet96Sub?.cancel();
+    await flushTelemetry();
   }
 }

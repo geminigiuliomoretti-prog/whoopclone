@@ -8,6 +8,7 @@ import '../../core/logging/structured_logger.dart';
 import '../../data/ble/ble_connection_manager.dart';
 import '../../data/ble/ble_diagnostic_service.dart';
 import '../../data/services/raw_capture_service.dart';
+import '../../data/services/battery_optimization_service.dart';
 
 /// Schermata Diagnostica Avanzata: Osservabilità, Cattura Raw e Replay (Fase 1 Roadmap)
 class DiagnosticScreen extends StatefulWidget {
@@ -39,12 +40,14 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
   String _selectedLogTag = 'ALL';
   LogLevel? _selectedLogLevel;
   List<LogEntry> _displayedLogs = [];
+  bool _isBatteryOptimizedIgnored = true;
 
   @override
   void initState() {
     super.initState();
     _snapshot = BleDiagnosticService.instance.currentSnapshot;
     _updateCaptureState();
+    _checkBatteryOptimization();
 
     _snapshotSub = BleDiagnosticService.instance.snapshotStream.listen((snapshot) {
       if (mounted) {
@@ -95,6 +98,15 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
     if (mounted) {
       setState(() {
         _captureFiles = files;
+      });
+    }
+  }
+
+  Future<void> _checkBatteryOptimization() async {
+    final res = await BatteryOptimizationService.instance.isIgnoringBatteryOptimizations();
+    if (mounted) {
+      setState(() {
+        _isBatteryOptimizedIgnored = res;
       });
     }
   }
@@ -158,6 +170,10 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
 
             // 2. Banner Stato Connessione & Flusso
             _buildConnectionStatusBanner(),
+            const SizedBox(height: 16),
+
+            // 2b. Ottimizzazione Batteria & Background (Fase 4: BGD-02)
+            _buildBatteryOptimizationSection(),
             const SizedBox(height: 16),
 
             // 3. Pannello RawCaptureService
@@ -295,6 +311,75 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
             Text(
               DateFormat('HH:mm:ss').format(_snapshot.lastPacketTime!),
               style: const TextStyle(color: Colors.white54, fontSize: 11),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================
+  // 2b. OTTIMIZZAZIONE BATTERIA & BACKGROUND
+  // ==========================================
+  Widget _buildBatteryOptimizationSection() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: WhoopTheme.cardSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _isBatteryOptimizedIgnored
+              ? Colors.greenAccent.withValues(alpha: 0.3)
+              : Colors.amberAccent.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _isBatteryOptimizedIgnored ? Icons.battery_charging_full : Icons.battery_alert,
+            color: _isBatteryOptimizedIgnored ? Colors.greenAccent : Colors.amberAccent,
+            size: 28,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'BACKGROUND & BATTERIA',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white.withValues(alpha: 0.5),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _isBatteryOptimizedIgnored
+                      ? 'Ottimizzazione Batteria Disabilitata (Background Illimitato)'
+                      : 'Ottimizzazione Batteria Attiva (Rischio kill notturno)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: _isBatteryOptimizedIgnored ? Colors.greenAccent : Colors.amberAccent,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (!_isBatteryOptimizedIgnored)
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.amberAccent,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+              onPressed: () async {
+                await BatteryOptimizationService.instance.requestIgnoreBatteryOptimizations();
+                await Future.delayed(const Duration(seconds: 1));
+                _checkBatteryOptimization();
+              },
+              child: const Text('Disabilita'),
             ),
         ],
       ),
