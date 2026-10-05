@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 /// Interfaccia Clock per rendere iniettabile la gestione temporale e del fuso orario nell'intera app.
 abstract class Clock {
   const Clock();

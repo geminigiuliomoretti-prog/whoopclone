@@ -795,11 +795,6 @@ class OvernightSleepEngine {
     final double remMin = sleepDurations['rem_min'] ?? 0.0;
     final double lightMin = sleepDurations['light_min'] ?? 0.0;
     final double stageSleepSum = swsMin + remMin + lightMin;
-
-    final double realWindowDurationMin = (effectiveWindowStart != null && effectiveWindowEnd != null)
-        ? (effectiveWindowEnd.difference(effectiveWindowStart).inSeconds / 60.0)
-        : 0.0;
-
     final double totalSleepMin = stageSleepSum;
 
     // 5. Temperatura Cutanea Relativa & Saturazione d'Ossigeno (SpO2)
@@ -1639,8 +1634,8 @@ class OvernightSleepEngine {
     void flushSegment() {
       if (segStart != null && segEnd != null && currentStage != null) {
         segments.add({
-          'start_utc_ms': segStart!.toUtc().millisecondsSinceEpoch,
-          'end_utc_ms': segEnd!.toUtc().millisecondsSinceEpoch,
+          'start_utc_ms': segStart.toUtc().millisecondsSinceEpoch,
+          'end_utc_ms': segEnd.toUtc().millisecondsSinceEpoch,
           'stage': currentStage,
           'confidence': epochCount > 0 ? double.parse((confidenceSum / epochCount).toStringAsFixed(2)) : 1.0,
         });
