@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../core/constants/whoop_theme.dart';
 import '../../data/services/insight_engine.dart';
+import 'provenance_badge.dart';
 
 /// Schermata Dettaglio Recupero WHOOP 5.0 (Full Page)
 /// Zero-Tolerance Mock Purge: Legge i dati calcolati matematicamente da SQLite (cicli_fisiologici)
@@ -18,6 +19,7 @@ class RecoveryDetailModal extends StatefulWidget {
   final double? sleepPerformancePct;
   final double? sleepPerfBaseline;
   final List<dynamic>? historicalCicli;
+  final String? provenance;
 
   const RecoveryDetailModal({
     super.key,
@@ -33,6 +35,7 @@ class RecoveryDetailModal extends StatefulWidget {
     this.sleepPerformancePct,
     this.sleepPerfBaseline,
     this.historicalCicli,
+    this.provenance = 'REAL',
   });
 
   static void show(
@@ -49,6 +52,7 @@ class RecoveryDetailModal extends StatefulWidget {
     double? sleepPerformancePct,
     double? sleepPerfBaseline,
     List<dynamic>? historicalCicli,
+    String? provenance = 'REAL',
   }) {
     Navigator.push(
       context,
@@ -66,6 +70,7 @@ class RecoveryDetailModal extends StatefulWidget {
           sleepPerformancePct: sleepPerformancePct,
           sleepPerfBaseline: sleepPerfBaseline,
           historicalCicli: historicalCicli,
+          provenance: provenance,
         ),
       ),
     );
@@ -174,6 +179,10 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
                             letterSpacing: 1.0,
                           ),
                         ),
+                        if (widget.provenance != null) ...[
+                          const SizedBox(height: 6),
+                          ProvenanceBadge(provenance: widget.provenance!),
+                        ],
                       ],
                     ),
                   ),

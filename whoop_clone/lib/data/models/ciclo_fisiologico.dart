@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../../core/utils/clock.dart';
 
 /// Modello per la tabella `cicli_fisiologici` (Single Source of Truth per la UI)
 /// Schema: data_iso (PK YYYY-MM-DD), strain_giornaliero, recovery_score, sleep_need_min,
@@ -46,20 +47,22 @@ class CicloFisiologico {
   DateTime get oraInizioCiclo {
     try {
       return DateTime.parse('${dataIso}T00:00:00.000Z');
-    } catch (_) {
-      return DateTime.now();
+    } catch (e) {
+      debugPrint('[CicloFisiologico] Error parsing oraInizioCiclo from dataIso "$dataIso": $e');
+      return Clock.current.now();
     }
   }
 
   DateTime? get oraFineCiclo {
     try {
       return DateTime.parse('${dataIso}T23:59:59.000Z');
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[CicloFisiologico] Error parsing oraFineCiclo from dataIso "$dataIso": $e');
       return null;
     }
   }
 
-  String get fusoOrario => '+02:00';
+  String get fusoOrario => Clock.current.formattedTimeZoneOffset;
   double? get sforzoGiornaliero => strainGiornaliero;
   double? get punteggioRecuperoPct => recoveryScore;
   double? get sonnoRichiestoMin => sleepNeedMin?.toDouble();

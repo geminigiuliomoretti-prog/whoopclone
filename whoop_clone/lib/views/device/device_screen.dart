@@ -4,6 +4,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../../core/constants/whoop_theme.dart';
 import '../../data/ble/ble_connection_manager.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
+import '../screens/diagnostic_screen.dart';
 
 /// Schermata Dedicata Gestione e Connessione Dispositivo WHOOP (`/device`)
 class DeviceScreen extends StatefulWidget {
@@ -65,6 +66,13 @@ class _DeviceScreenState extends State<DeviceScreen> with SingleTickerProviderSt
           ),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.troubleshoot, color: WhoopTheme.strainBlue),
+            tooltip: 'Diagnostica BLE & Raw Capture',
+            onPressed: () => DiagnosticScreen.navigateTo(context),
+          ),
+        ],
       ),
       body: isConnected
           ? _buildConnectedDashboard(context, viewModel)
@@ -269,16 +277,27 @@ class _DeviceScreenState extends State<DeviceScreen> with SingleTickerProviderSt
             height: 48,
             child: ElevatedButton.icon(
               onPressed: () async {
-                final success = await viewModel.bleManager.sendHapticVibrationCommand(pattern: 2);
+                final result = await viewModel.bleManager.sendHapticVibrationCommand(pattern: 2);
                 if (context.mounted) {
+                  final String msg;
+                  final Color bg;
+                  if (result.isStrapSuccess) {
+                    msg = '⚡ Sequenza Vibrazione inviata allo strap WHOOP.';
+                    bg = WhoopTheme.strainBlue;
+                  } else if (result == HapticResultStatus.phoneHapticOnly) {
+                    msg = '📱 Vibrazione eseguita solo su smartphone (Strap non connesso).';
+                    bg = Colors.amber.shade800;
+                  } else if (result == HapticResultStatus.strapFailed) {
+                    msg = '⚠️ Invio comando haptic alla strap fallito.';
+                    bg = Colors.redAccent;
+                  } else {
+                    msg = '⚠️ Nessun dispositivo connesso.';
+                    bg = Colors.orange;
+                  }
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(
-                        success
-                            ? '⚡ Sequenza Vibrazione inviata al motorino haptic...'
-                            : '⚠️ Impossibile inviare il comando di vibrazione BLE.',
-                      ),
-                      backgroundColor: success ? WhoopTheme.strainBlue : Colors.orange,
+                      content: Text(msg),
+                      backgroundColor: bg,
                     ),
                   );
                 }
@@ -359,7 +378,30 @@ class _DeviceScreenState extends State<DeviceScreen> with SingleTickerProviderSt
             },
           ),
 
-          const SizedBox(height: 32),
+          // Pulsante Diagnostica Avanzata & Raw Capture
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: OutlinedButton.icon(
+              onPressed: () => DiagnosticScreen.navigateTo(context),
+              icon: const Icon(Icons.troubleshoot, color: WhoopTheme.strainBlue),
+              label: const Text(
+                'DIAGNOSTICA BLE & RAW CAPTURE',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: WhoopTheme.strainBlue, width: 1.5),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 14),
 
           // Pulsante Rosso Disconnetti
           SizedBox(

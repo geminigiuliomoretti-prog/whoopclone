@@ -25,6 +25,7 @@ import '../data/services/noop_workout_detector.dart';
 import '../data/services/noop_system_services.dart';
 import '../data/services/haptic_alarm_service.dart';
 import '../data/services/overnight_sleep_engine.dart';
+import '../data/services/raw_capture_service.dart';
 
 /// ViewModel Reattivo WHOOP 5.0 (Single Source of Truth)
 /// Gestisce lo stato dell'applicazione leggendo esclusivamente dal DB SQLite.
@@ -84,6 +85,12 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   bool _isFallbackMode = false;
   Whoop96BytePacket? _last96BytePacket;
 
+  // Dati grafici reali aggregati da SQLite (CHT-01..04, STG-07)
+  List<Map<String, dynamic>> _currentHypnogramSegments = [];
+  List<Map<String, dynamic>?> _currentIntradayHrBuckets = [];
+  Map<String, dynamic> _currentHrZones = {};
+  bool _isChartsLoading = false;
+
   // Throttling/Debouncing Live BLE updates per prevenire rebuild continui della UI
   int _lastNotifiedBpm = 0;
   double _lastNotifiedHrv = 0.0;
@@ -130,7 +137,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
         'rhr_mean': _userProfile.rhrBaselineMean,
         'rmssd_mean': _userProfile.hrvBaselineMean,
         'rmssd_std': _userProfile.hrvBaselineStd,
-        'baseline_temp_celsius': 36.5,
+        'baseline_temp_celsius': _userProfile.baselineSampleCount >= 4 ? 36.5 : null,
         'sleep_baseline_min': _userProfile.sleepBaselineMin,
         'sleep_need_min': currentSleepNeedMinutes,
       },
@@ -143,7 +150,9 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     _initProfileListener();
     try {
       WidgetsBinding.instance.addObserver(this);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[WhoopViewModel] WidgetsBinding.addObserver notice: $e');
+    }
   }
 
   @override
@@ -258,6 +267,12 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   int get streakDays => _streakDays;
   RRCircularBuffer get rrBuffer => _rrBuffer;
   int _streakDays = 0;
+
+  // Chart Getters (CHT-01..04, STG-07)
+  List<Map<String, dynamic>> get currentHypnogramSegments => _currentHypnogramSegments;
+  List<Map<String, dynamic>?> get currentIntradayHrBuckets => _currentIntradayHrBuckets;
+  Map<String, dynamic> get currentHrZones => _currentHrZones;
+  bool get isChartsLoading => _isChartsLoading;
 
   double _savedStressScore = 0.0;
 
@@ -425,27 +440,30 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       }
 
       if (_liveBpm > 0 && (_liveHrvRmssd > 0 || _ultimoCiclo?.vfcMs != null)) {
-        _liveStressIndex = WhoopAnalyticsEngine.calculateStressScore(
-          hrLive: _liveBpm.toDouble(),
-          hrRest: (_ultimoCiclo?.fcrBpm ?? _userProfile.hrRestBaseline).toDouble(),
-          hrvLiveMs: _liveHrvRmssd > 0 ? _liveHrvRmssd : (_ultimoCiclo?.vfcMs ?? _userProfile.hrvBaselineMean),
-          baselineHrvMean: _userProfile.hrvBaselineMean,
-          baselineHrvStd: _userProfile.hrvBaselineStd,
-          accMagnitude: 1.0 + (enmoVal ?? 0.0),
-        );
+        final double? effectiveHrv = _liveHrvRmssd > 0 ? _liveHrvRmssd : _ultimoCiclo?.vfcMs;
+        if (effectiveHrv != null && effectiveHrv > 0) {
+          _liveStressIndex = WhoopAnalyticsEngine.calculateStressScore(
+            hrLive: _liveBpm.toDouble(),
+            hrRest: (_ultimoCiclo?.fcrBpm ?? _userProfile.hrRestBaseline).toDouble(),
+            hrvLiveMs: effectiveHrv,
+            baselineHrvMean: _userProfile.hrvBaselineMean,
+            baselineHrvStd: _userProfile.hrvBaselineStd,
+            accMagnitude: 1.0 + (enmoVal ?? 0.0),
+          );
 
-        // Salvataggio periodico diurno ogni 60 secondi su misurazioni_stress
-        if (_liveStressIndex > 0) {
-          final nowMs = now.millisecondsSinceEpoch;
-          if (_lastStressSampleSaveMs == 0 || nowMs - _lastStressSampleSaveMs >= 60000) {
-            _lastStressSampleSaveMs = nowMs;
-            final dateIso = now.toIso8601String().substring(0, 10);
-            DatabaseHelper().insertMisurazioneStress(
-              dateIso,
-              _liveStressIndex,
-              _liveHrvRmssd > 0 ? _liveHrvRmssd : _userProfile.hrvBaselineMean,
-              _liveBpm,
-            );
+          // Salvataggio periodico diurno ogni 60 secondi su misurazioni_stress
+          if (_liveStressIndex > 0) {
+            final nowMs = now.millisecondsSinceEpoch;
+            if (_lastStressSampleSaveMs == 0 || nowMs - _lastStressSampleSaveMs >= 60000) {
+              _lastStressSampleSaveMs = nowMs;
+              final dateIso = now.toIso8601String().substring(0, 10);
+              DatabaseHelper().insertMisurazioneStress(
+                dateIso,
+                _liveStressIndex,
+                effectiveHrv,
+                _liveBpm,
+              );
+            }
           }
         }
       }
@@ -580,6 +598,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
 
     try {
       await _repository.initializeAndSeedDatabase();
+      unawaited(RawCaptureService.instance.init());
 
       if (_bleManager.state == BleState.disconnected || _bleManager.state == BleState.reconnecting) {
         await _bleManager.ensureConnected();
@@ -633,6 +652,20 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       _alarmGoalIdx = alarmData['target_goal_idx'] as int;
       _alarmHapticIntensity = alarmData['haptic_intensity'] as int;
 
+      // Carica dati grafici aggregati da SQLite per la data selezionata (CHT-01..04, STG-07)
+      final dayStart = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, 0, 0, 0);
+      final dayEnd = dayStart.add(const Duration(days: 1));
+      _isChartsLoading = true;
+      try {
+        _currentHypnogramSegments = await DatabaseHelper().getHypnogramSegments(dateKey);
+        _currentIntradayHrBuckets = await DatabaseHelper().getIntradayHrBuckets(dayStart, dayEnd, bucketMinutes: 1);
+        _currentHrZones = await DatabaseHelper().getHrZoneDistribution(dayStart, dayEnd, _userProfile.hrMax.toDouble());
+      } catch (err) {
+        debugPrint('WhoopViewModel: Errore caricamento aggregazioni grafici: $err');
+      } finally {
+        _isChartsLoading = false;
+      }
+
       if (triggerAutoSync && !DatabaseHelper.isTestMode) {
         await triggerOvernightSyncIfNeeded();
       }
@@ -642,6 +675,29 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Recupera i segmenti dell'ipnogramma per una data specifica (STG-07, CHT-02)
+  Future<List<Map<String, dynamic>>> loadHypnogramSegments(String dateIso) async {
+    return await DatabaseHelper().getHypnogramSegments(dateIso);
+  }
+
+  /// Recupera i bucket aggregati di frequenza cardiaca intraday (CHT-02)
+  Future<List<Map<String, dynamic>?>> loadIntradayHrBuckets(
+    DateTime start,
+    DateTime end, {
+    int bucketMinutes = 1,
+  }) async {
+    return await DatabaseHelper().getIntradayHrBuckets(start, end, bucketMinutes: bucketMinutes);
+  }
+
+  /// Calcola la distribuzione del tempo nelle 5 zone cardiache (CHT-02)
+  Future<Map<String, dynamic>> loadHrZoneDistribution(
+    DateTime start,
+    DateTime end, {
+    double? maxHr,
+  }) async {
+    return await DatabaseHelper().getHrZoneDistribution(start, end, maxHr ?? _userProfile.hrMax.toDouble());
   }
 
   /// Caricamento iniziale all'avvio dell'applicazione
@@ -677,7 +733,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
           'rhr_mean': _userProfile.rhrBaselineMean,
           'rmssd_mean': _userProfile.hrvBaselineMean,
           'rmssd_std': _userProfile.hrvBaselineStd,
-          'baseline_temp_celsius': 36.5,
+          'baseline_temp_celsius': _userProfile.baselineSampleCount >= 4 ? 36.5 : null,
         },
       );
       if (result['has_data'] == true) {
@@ -718,18 +774,9 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     final dbPoints = await DatabaseHelper().getTelemetriaInTimeRange(startTime, endTime);
     final bool hasRealBleData = dbPoints.isNotEmpty;
 
-    if (dbPoints.isEmpty && !allowFallback) {
-      debugPrint('processAndAddManualSleep: Nessun dato in telemetria_grezza per $startTime - $endTime');
-      return {
-        'success': false,
-        'noTelemetryFound': true,
-        'message': 'Nessun dato biometrico registrato dalla fascia per questa fascia oraria.',
-      };
-    }
-
-    debugPrint('processAndAddManualSleep: Trovati ${dbPoints.length} campioni BLE per la finestra $startTime - $endTime');
+    debugPrint('processAndAddManualSleep: Trovati ${dbPoints.length} campioni BLE per la finestra $startTime - $endTime (hasRealBleData: $hasRealBleData)');
     
-    // 2. Invocazione dell'OvernightSleepEngine (processamento staging, HRV, RSA, recovery)
+    // 2. Invocazione dell'OvernightSleepEngine (processamento staging reale se presenti campioni; altrimenti registrazione pura USER_ENTERED con zero stadi e vitali null)
     final engineResult = await _overnightSleepEngine.processNightlyTelemetry(
       rawTelemetryRecords: dbPoints,
       userBaseline30d: {
@@ -746,7 +793,9 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     // 3. Aggiornamento data attiva e refresh reattivo senza sovrascrittura auto-sync
     try {
       _selectedDate = DateTime.parse(dateIso);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[WhoopViewModel] Error parsing dateIso "$dateIso": $e');
+    }
     await loadData(triggerAutoSync: false);
     notifyListeners();
 
@@ -832,7 +881,9 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   void dispose() {
     try {
       WidgetsBinding.instance.removeObserver(this);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[WhoopViewModel] WidgetsBinding.removeObserver notice: $e');
+    }
     _bleThrottleTimer?.cancel();
     _hrSubscription?.cancel();
     _packet96Subscription?.cancel();

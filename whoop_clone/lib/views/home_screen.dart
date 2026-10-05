@@ -10,9 +10,11 @@ import 'widgets/stress_wave_chart.dart';
 import 'widgets/weekly_dual_axis_chart.dart';
 import 'widgets/tonight_sleep_card.dart';
 import 'widgets/recovery_detail_modal.dart';
-import 'widgets/sleep_detail_modal.dart';
+import 'widgets/sleep_detail_modal.dart' hide ProvenanceBadge;
 import 'widgets/strain_detail_modal.dart';
 import 'widgets/whoop_fab_modal.dart';
+import 'widgets/provenance_badge.dart';
+import '../core/utils/clock.dart';
 import 'screens/health_vitals_detail_screen.dart';
 import 'screens/activity_details_screen.dart';
 import 'screens/journal_screen.dart';
@@ -181,12 +183,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       : 0.0,
                   spo2Pct: ciclo?.spo2Pct ?? 0.0,
                   tempDeltaC: ciclo?.tempCutaneaC ?? 0.0,
-                  hrvBaseline: viewModel.userProfile.hrvBaselineMean > 0 ? viewModel.userProfile.hrvBaselineMean.toDouble() : 72.0,
-                  fcrBaseline: viewModel.userProfile.hrRestBaseline > 0 ? viewModel.userProfile.hrRestBaseline : 53,
-                  respRateBaseline: 13.6,
-                  sleepPerformancePct: ciclo?.andamentoSonnoPct ?? sleep,
-                  sleepPerfBaseline: 75.0,
+                  hrvBaseline: (viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.hrvBaselineMean > 0)
+                      ? viewModel.userProfile.hrvBaselineMean.toDouble()
+                      : null,
+                  fcrBaseline: (viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.hrRestBaseline > 0)
+                      ? viewModel.userProfile.hrRestBaseline
+                      : null,
+                  respRateBaseline: viewModel.userProfile.baselineSampleCount >= 4 ? 13.6 : null,
+                  sleepPerformancePct: ciclo?.andamentoSonnoPct ?? (sleep > 0 ? sleep : null),
+                  sleepPerfBaseline: viewModel.userProfile.baselineSampleCount >= 4 ? 75.0 : null,
                   historicalCicli: viewModel.cicliList,
+                  provenance: ciclo?.provenance ?? 'REAL',
                 ),
                 onTapSleep: () => SleepDetailModal.show(
                   context,
@@ -205,11 +212,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           ? ((sonno.durataTotMin / sonno.tempoALettoMin) * 100).clamp(0.0, 100.0)
                           : 0.0),
                   consistencyPct: sonno?.regolaritaSonnoPct ?? 0.0,
-                  baselineDurationMin: viewModel.userProfile.sleepBaselineMin > 0
+                  baselineDurationMin: (viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.sleepBaselineMin > 0)
                       ? viewModel.userProfile.sleepBaselineMin.toDouble()
-                      : 480.0,
-                  baselinePerformancePct: 80.0,
+                      : null,
+                  baselinePerformancePct: viewModel.userProfile.baselineSampleCount >= 4 ? 80.0 : null,
                   historicalSonno: viewModel.sonnoList,
+                  provenance: sonno?.provenance ?? (ciclo?.provenance ?? 'REAL'),
                 ),
                 onTapStrain: () => StrainDetailModal.show(
                   context,
@@ -221,6 +229,27 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
+
+            if (ciclo != null && ciclo.provenance.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'RECUPERO: ',
+                      style: TextStyle(
+                        color: WhoopTheme.textMuted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    ProvenanceBadge(provenance: ciclo.provenance),
+                  ],
+                ),
+              ),
+            ],
 
             const SizedBox(height: 16),
 
@@ -786,9 +815,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           ? ((sonno.durataTotMin / sonno.tempoALettoMin) * 100).clamp(0.0, 100.0)
                           : 0.0),
                   consistencyPct: sonno?.regolaritaSonnoPct ?? 0.0,
-                  baselineDurationMin: viewModel.userProfile.sleepBaselineMin > 0 ? viewModel.userProfile.sleepBaselineMin.toDouble() : null,
-                  baselinePerformancePct: 80.0,
+                  baselineDurationMin: (viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.sleepBaselineMin > 0)
+                      ? viewModel.userProfile.sleepBaselineMin.toDouble()
+                      : null,
+                  baselinePerformancePct: viewModel.userProfile.baselineSampleCount >= 4 ? 80.0 : null,
                   historicalSonno: viewModel.sonnoList,
+                  provenance: sonno?.provenance ?? (ciclo?.provenance ?? 'REAL'),
                 ),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -824,14 +856,23 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const SizedBox(width: 14),
-                      const Text(
-                        'SONNO',
-                        style: TextStyle(
-                          color: WhoopTheme.textPrimary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.0,
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'SONNO',
+                            style: TextStyle(
+                              color: WhoopTheme.textPrimary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                          if (sonno != null && sonno.provenance.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            ProvenanceBadge(provenance: sonno.provenance),
+                          ],
+                        ],
                       ),
                       const Spacer(),
                       // Orari Inizio e Fine (es. 0:52 | 10:32)
@@ -1187,6 +1228,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final bool hasData = ciclo != null && (vfcMs > 0 || fcrBpm > 0 || punteggioRecuperoPct > 0 || sforzoGiornaliero > 0);
     final profile = viewModel.userProfile;
+    final bool isCalibrated = profile.baselineSampleCount >= 4;
 
     final allMetrics = [
       {
@@ -1194,18 +1236,18 @@ class _HomeScreenState extends State<HomeScreen> {
         'title': 'VARIABILITÀ DELLA FREQUENZA CARDIACA',
         'metricName': 'Variabilità FC (VFC)',
         'val': hasData && vfcMs > 0 ? '${vfcMs.toInt()}' : '--',
-        'base': '${profile.hrvBaselineMean.toInt()} ms',
-        'arrow': hasData && vfcMs > 0 ? (vfcMs >= profile.hrvBaselineMean ? '▲' : '▼') : '•',
-        'color': hasData && vfcMs > 0 ? (vfcMs >= profile.hrvBaselineMean ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
+        'base': isCalibrated ? '${profile.hrvBaselineMean.toInt()} ms' : 'In calibrazione',
+        'arrow': hasData && vfcMs > 0 && isCalibrated ? (vfcMs >= profile.hrvBaselineMean ? '▲' : '▼') : '•',
+        'color': hasData && vfcMs > 0 && isCalibrated ? (vfcMs >= profile.hrvBaselineMean ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
       },
       {
         'key': 'fcr',
         'title': 'FREQUENZA CARDIACA A RIPOSO',
         'metricName': 'FC a Riposo (FCR)',
         'val': hasData && fcrBpm > 0 ? '$fcrBpm' : '--',
-        'base': '${profile.hrRestBaseline} bpm',
-        'arrow': hasData && fcrBpm > 0 ? (fcrBpm <= profile.hrRestBaseline ? '▼' : '▲') : '•',
-        'color': hasData && fcrBpm > 0 ? (fcrBpm <= profile.hrRestBaseline ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
+        'base': isCalibrated ? '${profile.hrRestBaseline} bpm' : 'In calibrazione',
+        'arrow': hasData && fcrBpm > 0 && isCalibrated ? (fcrBpm <= profile.hrRestBaseline ? '▼' : '▲') : '•',
+        'color': hasData && fcrBpm > 0 && isCalibrated ? (fcrBpm <= profile.hrRestBaseline ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
       },
       {
         'key': 'steps',
@@ -1257,7 +1299,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'title': 'FABBISOGNO DI SONNO',
         'metricName': 'Fabbisogno di Sonno',
         'val': hasData && sonnoRichiestoMin > 0 ? '${(sonnoRichiestoMin / 60).floor()}:${(sonnoRichiestoMin % 60).round().toString().padLeft(2, '0')}' : '--',
-        'base': '${(profile.sleepBaselineMin / 60).floor()}h ${(profile.sleepBaselineMin % 60)}m',
+        'base': isCalibrated ? '${(profile.sleepBaselineMin / 60).floor()}h ${(profile.sleepBaselineMin % 60)}m' : 'In calibrazione',
         'arrow': '•',
         'color': WhoopTheme.textSecondary,
       },
@@ -1266,9 +1308,9 @@ class _HomeScreenState extends State<HomeScreen> {
         'title': 'RECUPERO',
         'metricName': 'Recupero',
         'val': hasData && punteggioRecuperoPct > 0 ? '${punteggioRecuperoPct.toInt()}%' : '--',
-        'base': 'Baseline 65%',
-        'arrow': hasData && punteggioRecuperoPct > 0 ? (punteggioRecuperoPct >= 65 ? '▲' : '▼') : '•',
-        'color': hasData && punteggioRecuperoPct > 0 ? (punteggioRecuperoPct >= 65 ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
+        'base': isCalibrated ? 'Baseline 65%' : 'In calibrazione',
+        'arrow': hasData && punteggioRecuperoPct > 0 && isCalibrated ? (punteggioRecuperoPct >= 65 ? '▲' : '▼') : '•',
+        'color': hasData && punteggioRecuperoPct > 0 && isCalibrated ? (punteggioRecuperoPct >= 65 ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
       },
       {
         'key': 'sleep_debt',
@@ -1284,7 +1326,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'title': 'FREQUENZA RESPIRATORIA',
         'metricName': 'Frequenza Respiratoria',
         'val': hasData && frequenzaRespiratoriaRpm > 0 ? '${frequenzaRespiratoriaRpm.toStringAsFixed(1)} rpm' : '--',
-        'base': '14.0 rpm',
+        'base': isCalibrated ? '14.0 rpm' : 'In calibrazione',
         'arrow': '•',
         'color': WhoopTheme.textPrimary,
       },
@@ -1293,7 +1335,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'title': 'TEMPERATURA CUTANEA',
         'metricName': 'Temperatura Cutanea',
         'val': (hasData && ciclo?.tempCutaneaC != null) ? '${ciclo!.tempCutaneaC! >= 0 ? '+' : ''}${ciclo.tempCutaneaC!.toStringAsFixed(1)} °C' : '--',
-        'base': '0.0 °C',
+        'base': isCalibrated ? '0.0 °C' : 'In calibrazione',
         'arrow': '•',
         'color': WhoopTheme.textPrimary,
       },
@@ -1302,7 +1344,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'title': 'OSSIGENO NEL SANGUE (SPO₂)',
         'metricName': 'Ossigeno nel Sangue (SpO₂)',
         'val': (hasData && ciclo?.spo2Pct != null && ciclo!.spo2Pct! > 0) ? '${ciclo.spo2Pct!.round()}%' : '--',
-        'base': '96%',
+        'base': isCalibrated ? '96%' : 'In calibrazione',
         'arrow': '•',
         'color': WhoopTheme.strainBlue,
       },

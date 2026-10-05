@@ -82,9 +82,11 @@ class _StressCheckSheetState extends State<StressCheckSheet> {
   Future<void> _completeSpotCheck() async {
     final viewModel = Provider.of<WhoopViewModel>(context, listen: false);
 
-    final double avgBpm = _bpmBuffer.isNotEmpty
+    final double? liveBpm = _bpmBuffer.isNotEmpty
         ? (_bpmBuffer.reduce((a, b) => a + b) / _bpmBuffer.length)
-        : (_currentBpm > 0 ? _currentBpm.toDouble() : 65.0);
+        : (_currentBpm > 0 ? _currentBpm.toDouble() : null);
+
+    final double avgBpm = liveBpm ?? (viewModel.ultimoCiclo?.fcrBpm?.toDouble() ?? viewModel.userProfile.hrRestBaseline.toDouble());
 
     final double hrRest = (viewModel.ultimoCiclo?.fcrBpm ?? viewModel.userProfile.hrRestBaseline).toDouble();
     final double hrvMean = viewModel.userProfile.hrvBaselineMean;
@@ -99,10 +101,11 @@ class _StressCheckSheetState extends State<StressCheckSheet> {
     );
 
     final String dataIso = DateTime.now().toIso8601String().substring(0, 10);
+    final double recordedHrv = _currentRmssd > 0 ? _currentRmssd : (hrvMean > 0 ? hrvMean : 0.0);
     await DatabaseHelper().insertMisurazioneStress(
       dataIso,
       calculatedScore,
-      _currentRmssd > 0 ? _currentRmssd : 60.0,
+      recordedHrv,
       avgBpm.round(),
     );
 

@@ -108,8 +108,8 @@ class _HapticBreatheScreenState extends State<HapticBreatheScreen> with SingleTi
   void _startSession() {
     if (!mounted) return;
     final vm = Provider.of<WhoopViewModel>(context, listen: false);
-    _initialBpm = vm.liveBpm > 0 ? vm.liveBpm : (vm.ultimoCiclo?.fcrBpm ?? 60);
-    _initialHrv = vm.liveHrvRmssd > 0 ? vm.liveHrvRmssd : (vm.ultimoCiclo?.vfcMs ?? 65.0);
+    _initialBpm = vm.liveBpm > 0 ? vm.liveBpm : vm.ultimoCiclo?.fcrBpm;
+    _initialHrv = vm.liveHrvRmssd > 0 ? vm.liveHrvRmssd : vm.ultimoCiclo?.vfcMs;
 
     if (!mounted) return;
     setState(() {
@@ -222,8 +222,8 @@ class _HapticBreatheScreenState extends State<HapticBreatheScreen> with SingleTi
 
     if (!mounted) return;
     final vm = Provider.of<WhoopViewModel>(context, listen: false);
-    _finalBpm = vm.liveBpm > 0 ? vm.liveBpm : (_initialBpm != null ? _initialBpm! - 4 : 56);
-    _finalHrv = vm.liveHrvRmssd > 0 ? vm.liveHrvRmssd : (_initialHrv != null ? _initialHrv! + 7.5 : 72.5);
+    _finalBpm = vm.liveBpm > 0 ? vm.liveBpm : _initialBpm;
+    _finalHrv = vm.liveHrvRmssd > 0 ? vm.liveHrvRmssd : _initialHrv;
 
     if (!mounted) return;
     _showBiofeedbackSummary();
@@ -256,8 +256,8 @@ class _HapticBreatheScreenState extends State<HapticBreatheScreen> with SingleTi
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildBioBadge('FC Media', '$_initialBpm → $_finalBpm', 'bpm', const Color(0xFF007AFF)),
-                _buildBioBadge('VFC / HRV', '${_initialHrv?.toStringAsFixed(0)} → ${_finalHrv?.toStringAsFixed(0)}', 'ms', WhoopTheme.recoveryGreen),
+                _buildBioBadge('FC Media', '${_initialBpm ?? "--"} → ${_finalBpm ?? "--"}', 'bpm', const Color(0xFF007AFF)),
+                _buildBioBadge('VFC / HRV', '${_initialHrv != null ? _initialHrv!.toStringAsFixed(0) : "--"} → ${_finalHrv != null ? _finalHrv!.toStringAsFixed(0) : "--"}', 'ms', WhoopTheme.recoveryGreen),
               ],
             ),
           ],

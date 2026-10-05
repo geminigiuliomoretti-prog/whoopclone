@@ -1,0 +1,51 @@
+# ==========================================
+# Root .gitignore — Whoop Clone Project
+# ==========================================
+
+# Operating System & IDE Files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.bak
+*.tmp
+
+# Flutter & Dart Build Artifacts
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+**/build/
+
+# Android Local Configuration & Gradle Cache
+**/android/local.properties
+**/android/.gradle/
+.gradle/
+*.apk
+*.aab
+
+# Python Caches & Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+
+# Large Media & Archives
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.mp4
+*.mov
+*.avi
+
+# Telemetry Captures & Diagnostic Logs
+captures/
+logs/
+*.ndjson
+line_1139.txt

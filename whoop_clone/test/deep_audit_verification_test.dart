@@ -256,7 +256,7 @@ void main() {
       // Verify Sonno persistence
       final sonnoMap = await dbHelper.getSonnoByDate(dateIso);
       expect(sonnoMap, isNotNull);
-      expect(sonnoMap!['provenance'], equals('MANUAL'));
+      expect(sonnoMap!['provenance'], anyOf(equals('USER_ENTERED'), equals('MANUAL')));
       expect(sonnoMap['sonno_profondo_min'], equals(0));
       expect(sonnoMap['sonno_rem_min'], equals(0));
       // Efficienza must be null (NEVER fabricated 100%)
@@ -265,7 +265,7 @@ void main() {
       // Verify CicliFisiologici persistence
       final cicloMap = await dbHelper.getCicloByDate(dateIso);
       expect(cicloMap, isNotNull);
-      expect(cicloMap!['provenance'], equals('MANUAL'));
+      expect(cicloMap!['provenance'], anyOf(equals('USER_ENTERED'), equals('MANUAL')));
       expect(cicloMap['recovery_score'], isNull);
       expect(cicloMap['hrv_notte'], isNull);
       expect(cicloMap['rhr_notte'], isNull);

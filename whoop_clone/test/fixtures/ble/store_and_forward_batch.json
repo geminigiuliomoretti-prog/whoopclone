@@ -1,0 +1,16 @@
+{
+  "description": "Store and Forward protocol handshake and ACK frames",
+  "opcode_22_send_historical": {
+    "raw_hex": "aa0c00fc010116000000010084046bc3",
+    "cmd": 22,
+    "seq": 1,
+    "crc32_valid": true
+  },
+  "opcode_23_ack_result": {
+    "raw_hex": "aa0a00820102172a0001e0bd4d8f",
+    "cmd": 23,
+    "seq": 2,
+    "acked_sequence": 42,
+    "crc32_valid": true
+  }
+}

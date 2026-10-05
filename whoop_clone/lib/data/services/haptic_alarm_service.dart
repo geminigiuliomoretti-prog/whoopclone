@@ -155,7 +155,7 @@ class HapticAlarmService extends ChangeNotifier {
   }
 
   /// Esegue un impulso di test immediato di vibrazione aptica
-  Future<bool> testVibrationPulse({HapticIntensity? overrideIntensity}) async {
+  Future<HapticResultStatus> testVibrationPulse({HapticIntensity? overrideIntensity}) async {
     final pattern = (overrideIntensity ?? _intensity).patternCode;
     return await _bleManager.sendHapticVibrationCommand(pattern: pattern);
   }

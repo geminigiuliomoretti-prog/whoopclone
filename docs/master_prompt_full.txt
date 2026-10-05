@@ -1,0 +1,1445 @@
+<USER_REQUEST>
+# MASTER PROMPT — WHOOP CLONE
+
+## FULL FORENSIC AUDIT → ARCHITECTURE REPAIR → IMPLEMENTATION → TESTING → REAL DEVICE VALIDATION
+
+Sei l'agent principale incaricato di portare questo progetto da uno stato attuale incompleto/inaffidabile a uno stato realmente funzionante.
+
+NON limitarti a correggere i test.
+NON limitarti a modificare la UI.
+NON considerare il progetto completato perché `flutter test`, test Python o altri test risultano verdi.
+NON assumere che una funzione funzioni solo perché esiste.
+
+se serve crea anche subagents, se serve
+
+
+NON assumere che un dato sia reale solo perché ha un valore plausibile.
+
+Devi lavorare come un senior software engineer + reverse engineer BLE + data engineer + QA engineer.
+
+Il progetto è un'app Flutter che deve acquisire dati da un wearable WHOOP-like tramite Bluetooth, salvarli localmente, elaborarli e presentarli nell'app senza dipendere dalle API cloud/pagate di WHOOP.
+
+Il requisito fondamentale è:
+
+REAL DEVICE DATA → RELIABLE INGESTION → VALIDATED TELEMETRY → PERSISTENCE → PROCESSING → SLEEP/RECOVERY ALGORITHMS → DATABASE → VIEWMODEL → UI
+
+Ogni anello deve essere verificato.
+
+==================================================
+
+## 0. REGOLA PRINCIPALE
+
+==================================================
+
+Un test verde NON significa automaticamente che una feature sia funzionante.
+
+Una feature è considerata RISOLTA soltanto quando:
+
+1. il comportamento è corretto;
+2. il dato utilizzato è realmente disponibile;
+3. il dato non è stato inventato da un fallback;
+4. il dato è stato validato;
+5. il dato è stato persistito correttamente;
+6. il dato attraversa tutta la pipeline;
+7. il risultato arriva correttamente alla UI;
+8. esiste un test comportamentale che dimostra tutto questo;
+9. i casi di errore sono gestiti;
+10. il comportamento è verificabile anche con dati reali del wearable quando applicabile.
+
+Se un test passa ma l'architettura continua a poter produrre risultati falsi, il problema NON è risolto.
+
+==================================================
+
+## 1. PRIMA FASE: AUDIT FORENSE COMPLETO
+
+==================================================
+
+Prima di modificare il codice, analizza l'intero repository.
+
+Leggi TUTTI i file sorgente, test, configurazioni, documentazione tecnica e script rilevanti.
+
+Non limitarti ai file apparentemente importanti.
+
+Costruisci mentalmente e poi documenta una mappa:
+
+BLE
+→ connection manager
+→ device discovery
+→ characteristics
+→ packet reception
+→ packet validation
+→ packet decoding
+→ sequence management
+→ synchronization
+→ persistence
+→ SQLite
+→ telemetry
+→ aggregation
+→ sleep
+→ baseline
+→ recovery
+→ workouts
+→ journal
+→ streak
+→ ViewModel
+→ UI
+→ background service
+→ haptics
+
+Per ogni componente identifica:
+
+* cosa riceve;
+* cosa produce;
+* da dove proviene il dato;
+* dove viene salvato;
+* quali fallback esistono;
+* quali valori sono hardcoded;
+* quali errori possono essere nascosti;
+* quali test lo verificano;
+* quali test verificano solo la presenza del codice;
+* quali dipendenze ha;
+* cosa succede quando il dato manca.
+
+Crea:
+
+/docs/AUDIT.md
+/docs/DATA_PIPELINE.md
+/docs/KNOWN_ISSUES.md
+/docs/TEST_STRATEGY.md
+
+In `KNOWN_ISSUES.md` assegna ogni problema a:
+
+P0 = blocca l'affidabilità fondamentale
+P1 = problema importante
+P2 = problema secondario
+P3 = miglioramento
+
+NON correggere superficialmente un problema per farlo sembrare risolto.
+
+==================================================
+
+## 2. PRINCIPIO ASSOLUTO: MAI INVENTARE DATI FISIOLOGICI
+
+==================================================
+
+Questo progetto NON deve mai mostrare dati fisiologici inventati come se provenissero dal wearable.
+
+Cerca nel codice ogni fallback relativo a:
+
+* HR
+* HRV
+* RHR
+* respiratory rate
+* respiration
+* SpO2
+* temperature
+* accelerazione
+* motion
+* sleep
+* sleep stages
+* recovery
+* stress
+* calories
+* strain
+* workouts
+
+Individua qualsiasi comportamento del tipo:
+
+NO DATA → valore numerico plausibile.
+
+Esempi di fallback pericolosi:
+
+HR = 55
+HRV = 65
+motion = 0.002
+respiratory power = 0.7
+temperature = 36.5
+ecc.
+
+Questi fallback devono essere eliminati oppure trasformati in stato esplicito di dato mancante.
+
+Regola:
+
+NO DATA = NULL / MISSING
+
+NON:
+
+NO DATA = ZERO
+
+NON:
+
+NO DATA = AVERAGE
+
+NON:
+
+NO DATA = PLAUSIBLE VALUE
+
+NON:
+
+NO DATA = SYNTHETIC PHYSIOLOGY
+
+Se viene usata un'estimazione matematica, deve essere esplicitamente classificata come ESTIMATED e non deve essere presentata come misura diretta.
+
+Ogni dato dovrebbe idealmente avere:
+
+value
+source
+timestamp
+quality
+confidence
+provenance
+method
+
+Esempio:
+
+REAL_MEASUREMENT
+DEVICE_DERIVED
+USER_ENTERED
+ESTIMATED
+MISSING
+
+Aggiungi test automatici che dimostrino che:
+
+# BLE disconnected + database vuoto
+
+nessun dato fisiologico inventato.
+
+==================================================
+
+## 3. ELIMINA I FALLBACK PERICOLOSI DEL SLEEP ENGINE
+
+==================================================
+
+Analizza completamente `overnight_sleep_engine.dart`.
+
+Particolare attenzione ai casi in cui mancano campioni.
+
+NON trasformare:
+
+NO DATA
+
+in:
+
+LIGHT SLEEP
+
+Un'epoca senza telemetria deve essere:
+
+MISSING
+
+oppure:
+
+UNKNOWN / LOW_CONFIDENCE
+
+mai automaticamente LIGHT.
+
+Implementa una struttura simile a:
+
+stage
+confidence
+sampleCount
+dataQuality
+source
+
+Per esempio:
+
+VALID
+LOW_CONFIDENCE
+MISSING
+
+Verifica:
+
+* sleep onset;
+* wake;
+* WASO;
+* total sleep;
+* sleep efficiency;
+* light;
+* SWS;
+* REM;
+* awake.
+
+Costruisci dataset controllati per verificare il comportamento.
+
+==================================================
+
+## 4. CORREGGI `allowFallback`
+
+==================================================
+
+Individua `processAndAddManualSleep()` e qualsiasi funzione equivalente.
+
+Se esiste un parametro o comportamento tipo:
+
+allowFallback = true
+
+valuta se eliminarlo.
+
+Il manual sleep NON deve consentire al sistema di inventare telemetria fisiologica.
+
+La registrazione manuale di:
+
+7h45
+
+deve produrre esattamente un dato di sonno manuale, non una notte fisiologica sintetica.
+
+Deve essere possibile distinguere:
+
+USER_ENTERED SLEEP
+
+da:
+
+DEVICE_MEASURED SLEEP.
+
+Aggiungi test espliciti per il caso:
+
+utente inserisce 7h45
+
+→ sleep duration corretta
+
+→ nessun HR inventato
+
+→ nessun HRV inventato
+
+→ nessun fake sleep stage
+
+→ nessun recovery calcolato usando valori sintetici.
+
+==================================================
+
+## 5. CREA UNA VERA TELEMETRY INGESTION LAYER
+
+==================================================
+
+Non lasciare che il BLE stream venga consumato direttamente da più parti del sistema in modo incontrollato.
+
+Crea, se necessario:
+
+TelemetryIngestionService
+
+Pipeline:
+
+RAW BLE PACKET
+↓
+RECEIVE
+↓
+TIMESTAMP
+↓
+SEQUENCE VALIDATION
+↓
+CRC / FRAME VALIDATION
+↓
+DECODE
+↓
+QUALITY CHECK
+↓
+DEDUPLICATION
+↓
+PERSISTENCE
+↓
+ACK
+↓
+PROCESSING
+
+L'ACK deve essere inviato solamente dopo che il dato è stato validato e persistito correttamente, se il protocollo lo richiede.
+
+NON:
+
+receive → ACK → forse save.
+
+==================================================
+
+## 6. DATABASE: LA TELEMETRIA GREZZA È LA SOURCE OF TRUTH
+
+==================================================
+
+La tabella `telemetria_grezza` deve diventare la fonte primaria per i dati provenienti dal wearable.
+
+Valuta l'aggiunta di:
+
+device_id
+session_id
+sequence_number
+packet_type
+raw_payload
+decoder_version
+crc_valid
+is_valid
+received_at
+device_timestamp
+ingest_latency
+duplicate
+source
+quality
+
+Non eliminare i dati raw prima che sia garantita la loro corretta elaborazione.
+
+Valuta attentamente l'attuale pruning di 7 giorni.
+
+La retention deve essere compatibile con:
+
+offline operation
+delayed sync
+debugging
+recovery
+store-and-forward.
+
+==================================================
+
+## 7. IMPLEMENTA SEQUENCE TRACKING
+
+==================================================
+
+Il sistema deve sapere se perde pacchetti.
+
+Implementa:
+
+lastSequence
+incomingSequence
+duplicate detection
+gap detection
+wraparound handling
+invalid packet detection
+
+Distinguere:
+
+EXPECTED
+DUPLICATE
+MISSING
+INVALID
+OUT_OF_ORDER
+
+Mantieni statistiche:
+
+packetsReceived
+packetsSaved
+packetsDuplicate
+packetsInvalid
+packetsMissing
+
+Aggiungi diagnostica.
+
+Esempio:
+
+Received: 12843
+Saved: 12840
+Duplicate: 2
+Invalid: 1
+Missing: 0
+
+Questo deve permettere di capire se un dato è stato perso dal wearable oppure dall'app.
+
+==================================================
+
+## 8. STORE-AND-FORWARD
+
+==================================================
+
+Analizza completamente la sincronizzazione storica.
+
+Implementa una macchina affidabile:
+
+CONNECT
+↓
+DISCOVER
+↓
+INITIALIZE
+↓
+REQUEST HISTORY
+↓
+RECEIVE FRAME
+↓
+VALIDATE
+↓
+DECODE
+↓
+PERSIST
+↓
+ACK
+↓
+NEXT FRAME
+↓
+UNTIL QUEUE EMPTY
+↓
+SYNC COMPLETE
+↓
+STREAMING
+
+Il sistema deve poter recuperare dati accumulati dal wearable dopo una disconnessione.
+
+Non considerare completata una sincronizzazione solamente perché è stato ricevuto un pacchetto.
+
+==================================================
+
+## 9. BLE CONNECTION STATE MACHINE
+
+==================================================
+
+Riscrivi o ristruttura il connection manager se necessario.
+
+Utilizza stati espliciti:
+
+DISCONNECTED
+SCANNING
+CONNECTING
+DISCOVERING
+SUBSCRIBING
+INITIALIZING
+SYNCING_HISTORY
+STREAMING
+RECONNECTING
+FAILED
+
+Le transizioni devono essere:
+
+* esplicite;
+* loggabili;
+* idempotenti;
+* recuperabili.
+
+Gestisci:
+
+Bluetooth off
+device unavailable
+device disconnected
+GATT error
+service discovery failure
+notification failure
+timeout
+reconnect
+historical sync.
+
+Non basarti solamente sul nome BLE.
+
+Usa quando possibile:
+
+device ID
+UUID
+service UUID
+characteristic UUID
+persisted device identity.
+
+==================================================
+
+## 10. PARSER 96-BYTE / PROTOCOLLO
+
+==================================================
+
+Analizza completamente:
+
+Whoop96BytePacket
+NoopProtocolDecoder
+CRC
+framing
+offset
+endianness
+timestamp
+sequence.
+
+Non assumere che gli offset siano corretti solo perché un test passa.
+
+Verifica:
+
+* frame AA;
+* flat packet;
+* lunghezze;
+* CRC;
+* sequence;
+* timestamps;
+* HR;
+* RR;
+* HRV;
+* acceleration;
+* temperature;
+* SpO2;
+* respiration.
+
+Crea una suite di GOLDEN PACKETS.
+
+Directory consigliata:
+
+test/fixtures/ble/
+
+Per ogni fixture:
+
+RAW HEX
++
+EXPECTED DECODED RESULT.
+
+Ogni modifica al parser deve rompere i test se altera un dato atteso.
+
+==================================================
+
+## 11. NON CONFONDERE MOTION CON ENMO
+
+==================================================
+
+Controlla attentamente qualsiasi formula del tipo:
+
+abs(magnitude - 1.0)
+
+e verifica che rappresenti davvero la metrica che il sistema chiama ENMO.
+
+Se il dato raw è accelerometrico, documenta:
+
+* unità;
+* frequenza;
+* asse;
+* magnitudine;
+* gravità;
+* preprocessing;
+* formula.
+
+Non utilizzare nomi scientifici per formule approssimative senza documentazione.
+
+==================================================
+
+## 12. RESPIRATORY RATE
+
+==================================================
+
+Analizza tutti i metodi usati per ottenere respiratory rate.
+
+Se esistono:
+
+direct rate
+RSA da PP
+RSA da RR
+BPM oscillation
+fallback
+
+non trattarli come equivalenti.
+
+Ogni risultato deve avere:
+
+value
+method
+sample_count
+confidence
+quality
+
+Se non è sufficientemente affidabile:
+
+MISSING / LOW_CONFIDENCE
+
+NON un numero arbitrario.
+
+==================================================
+
+## 13. BASELINE ENGINE
+
+==================================================
+
+Crea una vera gestione delle baseline.
+
+Devono essere calcolate da dati reali del dispositivo quando disponibili.
+
+Separare:
+
+cold start
+bootstrap
+normal operation.
+
+Baseline per:
+
+HRV
+RHR
+sleep
+respiration
+temperature
+eventualmente altri biomarcatori.
+
+Salvare:
+
+mean
+median se utile
+standard deviation
+sample count
+window
+timestamp
+source
+confidence.
+
+Non utilizzare continuamente valori hardcoded come baseline reale.
+
+==================================================
+
+## 14. RECOVERY ENGINE
+
+==================================================
+
+Una volta affidabile la telemetria, verifica il recovery engine.
+
+Deve essere sensibile alla deviazione dalla baseline.
+
+Test obbligatori:
+
+baseline HRV = 50
+HRV = 50
+→ nessuna forte penalizzazione
+
+baseline HRV = 50
+HRV = 30
+→ recovery diminuisce significativamente
+
+baseline HRV = 50
+HRV = 20
+→ recovery diminuisce ulteriormente
+
+HRV sopra baseline
+→ contributo positivo
+
+RHR sopra baseline
+→ contributo negativo
+
+RHR sotto baseline
+→ contributo positivo se previsto dal modello.
+
+Testare monotonicità.
+
+Testare missing data.
+
+Se HRV manca:
+
+NON inventare HRV.
+
+==================================================
+
+## 15. SLEEP SCORE / SLEEP PERFORMANCE
+
+==================================================
+
+Separare chiaramente:
+
+sleep duration
+sleep need
+sleep opportunity
+sleep performance
+sleep efficiency
+sleep stages.
+
+Verificare matematicamente tutti i casi limite.
+
+Caso obbligatorio:
+
+manual sleep = 7h45
+
+Modifica wake time.
+
+Il risultato deve aggiornarsi realmente.
+
+Non deve rimanere un valore precedente proveniente da:
+
+cached state
+hardcoded state
+old cycle
+stale ViewModel
+fallback.
+
+Creare test di regressione specifico.
+
+==================================================
+
+## 16. USER PROFILE / PERSISTENCE
+
+==================================================
+
+Individua tutte le fonti di default del profilo.
+
+Deve esistere una sola source of truth.
+
+Verifica:
+
+create profile
+save
+reload app
+restart app
+read DB
+update
+read ViewModel
+read UI.
+
+Test:
+
+utente inserisce dati
+→ salva
+→ chiude app
+→ riapre
+→ dati identici.
+
+Nessun valore deve tornare al default senza motivo.
+
+==================================================
+
+## 17. STREAK
+
+==================================================
+
+Verifica completamente la logica streak.
+
+Definisci esattamente cosa significa "giorno valido".
+
+Possibili criteri:
+
+real telemetry
+sleep
+recovery
+completed day.
+
+Non contare semplicemente righe database.
+
+Test:
+
+1 giorno
+2 giorni consecutivi
+giorno mancante
+oggi
+ieri
+timezone
+duplicate records
+partial day.
+
+==================================================
+
+## 18. HAPTICS
+
+==================================================
+
+Analizza `sendHapticVibrationCommand()`.
+
+NON permettere che:
+
+"true"
+
+significhi semplicemente:
+
+"ho tentato di fare qualcosa".
+
+Distinguere:
+
+PHONE_HAPTIC
+STRAP_COMMAND_SENT
+STRAP_ACKNOWLEDGED
+STRAP_FAILED
+NOT_CONNECTED
+
+Il risultato deve rappresentare la realtà.
+
+Se il wearable è scollegato:
+
+NON dichiarare:
+
+vibration sent.
+
+==================================================
+
+## 19. BACKGROUND / OVERNIGHT OPERATION
+
+==================================================
+
+Testare realmente:
+
+screen on
+screen off
+app background
+app minimized
+device connected
+device disconnected
+reconnect
+overnight
+morning sync.
+
+Il requisito è:
+
+schermo spento ≠ perdita di telemetria.
+
+Creare logging sufficiente per capire cosa succede durante una notte.
+
+==================================================
+
+## 20. UI
+
+==================================================
+
+La UI NON deve essere responsabile del calcolo dei dati.
+
+Architettura:
+
+DATABASE
+↓
+REPOSITORY
+↓
+VIEWMODEL
+↓
+UI
+
+La UI deve rappresentare:
+
+value
+unit
+timestamp
+quality
+provenance
+missing state.
+
+Se non ci sono dati:
+
+mostrare "No data" / equivalente appropriato.
+
+NON mostrare numeri inventati per riempire card o grafici.
+
+==================================================
+
+## 21. TEST SUITE
+
+==================================================
+
+Sostituisci gradualmente test superficiali come:
+
+assert file exists
+assert source contains string
+
+con test comportamentali.
+
+Formato:
+
+GIVEN
+WHEN
+THEN
+
+Esempio:
+
+GIVEN 100 raw BLE packets
+WHEN ingest
+THEN 100 valid telemetry records
+AND sequence is correct
+AND no duplicates
+AND expected decoded values match golden fixtures.
+
+Creare test per:
+
+BLE
+parser
+CRC
+sequence
+dedupe
+persistence
+sleep
+baseline
+recovery
+profile
+streak
+haptics
+background
+UI.
+
+==================================================
+
+## 22. END-TO-END TEST
+
+==================================================
+
+Questo deve essere uno dei test più importanti del progetto.
+
+Simulare:
+
+RAW BLE PACKETS
+↓
+DECODER
+↓
+INGESTION
+↓
+SQLITE
+↓
+EPOCHS
+↓
+SLEEP
+↓
+BASELINE
+↓
+RECOVERY
+↓
+VIEWMODEL
+↓
+UI
+
+Un singolo dato deve poter essere tracciato dall'ingresso BLE fino alla schermata finale.
+
+Se si perde lungo la strada, il test deve fallire.
+
+==================================================
+
+## 23. REAL DEVICE TEST
+
+==================================================
+
+Quando il codice è sufficientemente stabile, testare sul wearable reale.
+
+SCENARIO A
+
+BLE disconnected.
+
+Expected:
+
+nessun nuovo dato fisiologico.
+
+SCENARIO B
+
+BLE connected per almeno 30 minuti.
+
+Expected:
+
+telemetria continua.
+
+SCENARIO C
+
+disconnect temporaneo.
+
+Expected:
+
+reconnect.
+
+SCENARIO D
+
+device accumula dati offline.
+
+Expected:
+
+historical sync.
+
+SCENARIO E
+
+notte completa.
+
+Expected:
+
+sleep telemetry corretta.
+
+SCENARIO F
+
+screen off per tutta la notte.
+
+Expected:
+
+acquisizione e/o sincronizzazione corretta.
+
+SCENARIO G
+
+morning sync.
+
+Expected:
+
+dati persistiti e visualizzati.
+
+==================================================
+
+## 24. BUILD / PORTABILITY
+
+==================================================
+
+Cerca path assoluti.
+
+In particolare controlla script PowerShell e build.
+
+Non usare:
+
+C:\Users...
+
+Sostituire con path relativi alla root del repository.
+
+Il progetto deve poter essere clonato su un'altra macchina e compilato senza modificare manualmente i path.
+
+==================================================
+
+## 25. NON RISCRIVERE TUTTO SENZA MOTIVO
+
+==================================================
+
+Mantieni ciò che funziona.
+
+Non fare un rewrite totale solo perché l'architettura può essere migliorata.
+
+Prima:
+
+understand
+
+poi:
+
+measure
+
+poi:
+
+fix
+
+poi:
+
+test
+
+poi:
+
+refactor.
+
+Se un componente è valido, preservalo.
+
+Se un componente è strutturalmente sbagliato, sostituiscilo.
+
+==================================================
+
+## 26. ORDINE OBBLIGATORIO DI IMPLEMENTAZIONE
+
+==================================================
+
+Segui questo ordine salvo motivazione tecnica documentata:
+
+PHASE 0
+Audit completo
+
+PHASE 1
+Eliminazione fake data / fallback fisiologici
+
+PHASE 2
+Telemetry ingestion layer
+
+PHASE 3
+Packet validation
+
+PHASE 4
+Raw telemetry persistence
+
+PHASE 5
+Sequence/gap/deduplication
+
+PHASE 6
+Store-and-forward
+
+PHASE 7
+BLE state machine / reconnection
+
+PHASE 8
+Golden packet suite
+
+PHASE 9
+Sleep engine
+
+PHASE 10
+Sleep boundary detection
+
+PHASE 11
+Baseline engine
+
+PHASE 12
+Recovery engine
+
+PHASE 13
+Profile persistence
+
+PHASE 14
+Streak
+
+PHASE 15
+Haptics
+
+PHASE 16
+Background operation
+
+PHASE 17
+Dashboard/UI correctness
+
+PHASE 18
+End-to-end tests
+
+PHASE 19
+Real-device testing
+
+PHASE 20
+Final cleanup/documentation.
+
+NON saltare direttamente alla UI perché è più facile.
+
+==================================================
+
+## 27. DEFINITION OF DONE
+
+==================================================
+
+Il progetto NON è "finito" quando:
+
+* compila;
+* l'app si apre;
+* i test esistenti passano;
+* le schermate sono belle;
+* i numeri sembrano plausibili.
+
+È finito solamente quando:
+
+[ ] BLE connection stabile
+[ ] reconnect funzionante
+[ ] historical sync funzionante
+[ ] packet loss rilevato
+[ ] duplicate rilevati
+[ ] CRC verificato
+[ ] parser verificato con golden packets
+[ ] raw telemetry persistita
+[ ] nessun fake physiological data
+[ ] missing data rappresentati correttamente
+[ ] sleep stages derivati solamente da dati disponibili
+[ ] manual sleep separato da device sleep
+[ ] baseline derivata da dati reali
+[ ] recovery reagisce correttamente alle deviazioni
+[ ] profile persistente
+[ ] streak corretto
+[ ] haptic status veritiero
+[ ] background operation verificata
+[ ] UI riflette realmente il database
+[ ] end-to-end test funzionante
+[ ] real-device validation eseguita
+[ ] nessun path assoluto
+[ ] documentazione aggiornata.
+
+==================================================
+
+## 28. AUTONOMIA
+
+==================================================
+
+Lavora autonomamente.
+
+NON fermarti dopo il primo problema.
+
+NON chiedere conferma per ogni modifica normale.
+
+Se scopri un problema:
+
+1. documentalo;
+2. determina la causa;
+3. correggilo;
+4. scrivi/regola il test;
+5. esegui il test;
+6. controlla regressioni;
+7. passa al problema successivo.
+
+Se una soluzione fallisce:
+
+NON dichiarare il task completato.
+
+Analizza perché è fallita e prova una soluzione migliore.
+
+==================================================
+
+## 29. AUTO-CRITICA OBBLIGATORIA
+
+==================================================
+
+Dopo ogni fase chiediti:
+
+"Ho veramente risolto il problema o ho solamente fatto passare il test?"
+
+"Il dato che sto mostrando è reale?"
+
+"Da quale byte/device/database proviene?"
+
+"Posso tracciarlo fino alla sorgente?"
+
+"Cosa succede se il dato manca?"
+
+"Cosa succede se il Bluetooth si disconnette?"
+
+"Cosa succede se perdo 10 pacchetti?"
+
+"Cosa succede se ricevo lo stesso pacchetto due volte?"
+
+"Cosa succede dopo un riavvio?"
+
+"Cosa succede con lo schermo spento?"
+
+"Cosa succede durante una notte intera?"
+
+"Cosa succede se il database è vuoto?"
+
+"Cosa succede se il wearable non è connesso?"
+
+"Cosa succede se il valore è estremamente diverso dalla baseline?"
+
+Se non hai una risposta verificata, la feature NON è ancora affidabile.
+
+==================================================
+
+## 30. REGOLA CONTRO I FALSI POSITIVI
+
+==================================================
+
+Non usare questo ragionamento:
+
+"Il test passa → funziona."
+
+Usa:
+
+"Il comportamento reale è corretto → il test lo dimostra → non ci sono fallback falsi → la pipeline è verificata."
+
+Un test che verifica solamente che una funzione esista NON dimostra che la funzione funzioni.
+
+Un test che verifica che un numero sia tra 0 e 100 NON dimostra che il numero sia corretto.
+
+Un test che verifica che una schermata venga caricata NON dimostra che i dati mostrati siano corretti.
+
+==================================================
+
+## 31. OUTPUT FINALE
+
+==================================================
+
+Alla fine produci:
+
+/docs/FINAL_AUDIT.md
+
+contenente:
+
+1. problemi trovati;
+2. problemi risolti;
+3. problemi ancora aperti;
+4. modifiche architetturali;
+5. test aggiunti;
+6. test falliti e motivazione;
+7. test passati;
+8. comportamento BLE;
+9. comportamento sync;
+10. comportamento database;
+11. comportamento sleep;
+12. comportamento recovery;
+13. comportamento UI;
+14. limitazioni ancora presenti;
+15. real-device validation;
+16. cosa deve essere verificato manualmente.
+
+Inoltre produci:
+
+/docs/CHANGELOG_ENGINEERING.md
+
+con tutte le modifiche significative.
+
+==================================================
+
+## 32. PRIORITÀ ASSOLUTA
+
+==================================================
+
+La priorità non è:
+
+"far sembrare l'app completa".
+
+La priorità è:
+
+DATA INTEGRITY.
+
+Poi:
+
+RELIABLE BLE.
+
+Poi:
+
+PERSISTENCE.
+
+Poi:
+
+CORRECT PROCESSING.
+
+Poi:
+
+SLEEP.
+
+Poi:
+
+RECOVERY.
+
+Poi:
+
+UI.
+
+Un'app con UI perfetta e dati falsi è un fallimento.
+
+Un'app con UI ancora incompleta ma con una pipeline BLE → database → algoritmi affidabile è una base corretta.
+
+==================================================
+
+## 33. RISULTATO FINALE DESIDERATO
+
+==================================================
+
+Il risultato finale deve essere un'app nella quale posso prendere il wearable reale e dire:
+
+"Questo dato è arrivato dal dispositivo."
+
+E l'app deve poter dimostrare:
+
+quale packet lo conteneva,
+quale sequence aveva,
+quando è stato ricevuto,
+come è stato decodificato,
+quando è stato salvato,
+quale algoritmo lo ha utilizzato,
+quale risultato ha prodotto,
+e perché quel risultato è stato mostrato nella UI.
+
+Nessun numero fisiologico deve apparire semplicemente perché "serve qualcosa da mostrare".
+
+Se il dispositivo non fornisce il dato:
+
+MOSTRA MISSING.
+
+Se il dato è incerto:
+
+MOSTRA LOW CONFIDENCE.
+
+Se il dato è stimato:
+
+DICHIARA ESTIMATED.
+
+Se il dato è reale:
+
+CONSERVA LA PROVENANCE.
+
+==================================================
+
+## 34. INIZIA ADESSO
+
+==================================================
+
+Prima di modificare qualsiasi codice:
+
+1. completa l'audit;
+2. costruisci la mappa della pipeline;
+3. elenca tutti i problemi P0/P1/P2/P3;
+4. individua tutte le fonti di dati falsi;
+5. individua tutti i test superficiali;
+6. individua tutti i punti in cui i dati possono essere persi;
+7. individua tutte le fonti di default/hardcoded;
+8. individua tutti i problemi di BLE synchronization;
+9. individua tutte le dipendenze tra componenti.
+
+Poi inizia dalla P0 più importante.
+
+NON fermarti perché il progetto compila.
+
+NON fermarti perché i test attuali passano.
+
+NON fermarti dopo una singola correzione.
+
+Continua iterativamente fino a quando tutti i gate verificabili sono soddisfatti.
+
+Se durante l'implementazione scopri problemi nuovi, aggiungili all'audit e risolvili.
+
+Se una modifica rivela che un'assunzione precedente era sbagliata, correggi anche il codice dipendente.
+
+Il tuo obiettivo NON è modificare molti file.
+
+Il tuo obiettivo è rendere il sistema realmente affidabile.
+
+LA DOMANDA CHE DEVI PORTI CONTINUAMENTE È:
+
+"SE DOMANI COLLEGO IL WEARABLE REALE, POSSO DIMOSTRARE CHE OGNI NUMERO CHE VEDO NELL'APP DERIVA CORRETTAMENTE DAI DATI REALI DEL DISPOSITIVO?"
+
+Se la risposta è no, il lavoro non è finito.
+
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-10-04T12:58:10+02:00.
+</ADDITIONAL_METADATA>

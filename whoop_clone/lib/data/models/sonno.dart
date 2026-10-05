@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../../core/utils/clock.dart';
 
 /// Modello per la tabella `sonno`
 /// Schema: id (PK AUTOINCREMENT), data_iso, ora_inizio, ora_fine, durata_tot_min,
@@ -32,13 +33,15 @@ class Sonno {
   });
 
   // Getters di compatibilità per la UI
-  DateTime get inizioSonno => DateTime.tryParse(oraInizio) ?? DateTime.now();
-  DateTime get inizioRisveglio => DateTime.tryParse(oraFine) ?? DateTime.now();
-  DateTime get oraInizioCiclo => DateTime.tryParse('${dataIso}T00:00:00.000Z') ?? DateTime.now();
+  DateTime get inizioSonno => DateTime.tryParse(oraInizio) ?? Clock.current.now();
+  DateTime get inizioRisveglio => DateTime.tryParse(oraFine) ?? Clock.current.now();
+  DateTime get oraInizioCiclo => DateTime.tryParse('${dataIso}T00:00:00.000Z') ?? Clock.current.now();
   DateTime? get oraFineCiclo => DateTime.tryParse('${dataIso}T23:59:59.000Z');
-  String get fusoOrario => '+02:00';
+  String get fusoOrario => Clock.current.formattedTimeZoneOffset;
   double? get durataSonnoMin => durataTotMin.toDouble();
-  double? get sonnoLeggeroMin => (durataTotMin - sonnoProfondoMin - sonnoRemMin).clamp(0, 9999).toDouble();
+  double? get sonnoLeggeroMin => (provenance == 'USER_ENTERED' || provenance == 'MANUAL')
+      ? 0.0
+      : (durataTotMin - sonnoProfondoMin - sonnoRemMin).clamp(0, 9999).toDouble();
   double? get sonnoProfondoMinDouble => sonnoProfondoMin.toDouble();
   double? get sonnoRemMinDouble => sonnoRemMin.toDouble();
   double? get efficienzaSonnoPct => efficienzaPct;

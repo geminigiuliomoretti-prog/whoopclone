@@ -102,18 +102,22 @@ class RecoveryEngine {
   /// Z_tot = (0.45 * zHRV) + (0.30 * zRHR) + (0.15 * (SleepPerf - 70)/15)
   /// Penalty_stress = max(0, (nightlyStress - 1.0) * 15.0) applicata al recovery score
   /// Penalty_vitals = -5.0% se Skin Temp devia di > +-1.2 °C o Resp Rate devia di > +-1.5 rpm
-  static double calculateRecoveryScore({
-    required double currentRmssdMs,
+  static double? calculateRecoveryScore({
+    required double? currentRmssdMs,
     required List<double> historicalLnRmssd,
-    required double currentFcrBpm,
+    required double? currentFcrBpm,
     required List<double> historicalRhr,
-    double currentRespRateRpm = 14.5,
-    double baselineRespRateRpm = 14.0,
-    double sleepEfficiencyPct = 90.0,
-    double sleepPerformancePct = 85.0,
-    double nightlyStress = 0.5,
-    double skinTempDeltaC = 0.0,
+    double? currentRespRateRpm,
+    double? baselineRespRateRpm,
+    double? sleepEfficiencyPct,
+    double? sleepPerformancePct,
+    double? nightlyStress,
+    double? skinTempDeltaC,
   }) {
+    if (currentRmssdMs == null || currentRmssdMs <= 0 || currentFcrBpm == null || currentFcrBpm <= 0) {
+      return null;
+    }
+
     final currentLnRmssd = calculateLnRmssd(currentRmssdMs);
     final baseline = calculateBaseline(historicalLnRmssd, historicalRhr);
 
@@ -122,20 +126,21 @@ class RecoveryEngine {
     final zRhr = (baseline.meanRhr - currentFcrBpm) / (baseline.stdDevRhr > 0 ? baseline.stdDevRhr : 1.0);
 
     // 2. Penalty Stress Notturno
-    final penaltyStress = max(0.0, (nightlyStress - 1.0) * 15.0);
+    final penaltyStress = (nightlyStress != null && nightlyStress > 1.0) ? (nightlyStress - 1.0) * 15.0 : 0.0;
 
     // 3. Factor Prestazione Sonno
-    final sleepPerfFactor = (sleepPerformancePct - 70.0) / 15.0;
+    final sleepPerfFactor = sleepPerformancePct != null ? (sleepPerformancePct - 70.0) / 15.0 : 0.0;
 
     // 4. Z_tot pesato (z-scores biometrici e prestazione sonno)
     final zTot = (0.45 * zHrv) + (0.30 * zRhr) + (0.15 * sleepPerfFactor);
 
     // 5. Penalità Vitals Fuori Norma (-5%)
     double penaltyVitals = 0.0;
-    final respRateDelta = (currentRespRateRpm - baselineRespRateRpm).abs();
-    final skinTempDeltaAbs = skinTempDeltaC.abs();
+    final bool hasRespAnomaly = (currentRespRateRpm != null && baselineRespRateRpm != null) &&
+        (currentRespRateRpm - baselineRespRateRpm).abs() > 1.5;
+    final bool hasTempAnomaly = skinTempDeltaC != null && skinTempDeltaC.abs() > 1.2;
 
-    if (skinTempDeltaAbs > 1.2 || respRateDelta > 1.5) {
+    if (hasRespAnomaly || hasTempAnomaly) {
       penaltyVitals = 5.0;
     }
 

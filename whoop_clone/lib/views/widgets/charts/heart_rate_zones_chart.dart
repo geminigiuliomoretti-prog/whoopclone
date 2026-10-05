@@ -31,15 +31,20 @@ class HrZoneData {
   }
 }
 
-/// Grafico a barre orizzontali per la Distribuzione delle Zone Cardiache (Architettura NOOP)
+/// Grafico a barre orizzontali per la Distribuzione delle Zone Cardiache (Architettura NOOP, CHT-01..04)
+/// Gestisce 4 stati espliciti: Caricamento, Vuoto, Dati parziali, Dati completi.
 class HeartRateZonesChart extends StatelessWidget {
   final List<HrZoneData> zones;
   final int totalDurationSeconds;
+  final bool isLoading;
+  final bool isPartial;
 
   const HeartRateZonesChart({
     super.key,
     required this.zones,
     required this.totalDurationSeconds,
+    this.isLoading = false,
+    this.isPartial = false,
   });
 
   factory HeartRateZonesChart.fromPercentages({
@@ -49,9 +54,13 @@ class HeartRateZonesChart extends StatelessWidget {
     required double z4Pct,
     required double z5Pct,
     required int totalMinutes,
+    bool isLoading = false,
+    bool isPartial = false,
   }) {
     final totalSec = totalMinutes * 60;
     return HeartRateZonesChart(
+      isLoading: isLoading,
+      isPartial: isPartial,
       totalDurationSeconds: totalSec,
       zones: [
         HrZoneData(
@@ -98,8 +107,81 @@ class HeartRateZonesChart extends StatelessWidget {
     );
   }
 
+  /// Crea il grafico dai dati aggregati restituiti da `getHrZoneDistribution` (CHT-02)
+  factory HeartRateZonesChart.fromDistributionMap(
+    Map<String, dynamic> map, {
+    bool isLoading = false,
+    bool isPartial = false,
+  }) {
+    final z1Pct = (map['z1_pct'] as num?)?.toDouble() ?? 0.0;
+    final z2Pct = (map['z2_pct'] as num?)?.toDouble() ?? 0.0;
+    final z3Pct = (map['z3_pct'] as num?)?.toDouble() ?? 0.0;
+    final z4Pct = (map['z4_pct'] as num?)?.toDouble() ?? 0.0;
+    final z5Pct = (map['z5_pct'] as num?)?.toDouble() ?? 0.0;
+    final totalSec = (map['total_seconds'] as num?)?.toInt() ??
+        ((map['total_samples'] as num?)?.toInt() ?? 0);
+
+    return HeartRateZonesChart.fromPercentages(
+      z1Pct: z1Pct,
+      z2Pct: z2Pct,
+      z3Pct: z3Pct,
+      z4Pct: z4Pct,
+      z5Pct: z5Pct,
+      totalMinutes: (totalSec / 60.0).round(),
+      isLoading: isLoading,
+      isPartial: isPartial,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // 1. Stato: Caricamento (spinner discreto) (CHT-03)
+    if (isLoading) {
+      return Container(
+        height: 220,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: const Color(0xFF141920),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: WhoopTheme.cardBorder),
+        ),
+        child: const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(WhoopTheme.textSecondary),
+          ),
+        ),
+      );
+    }
+
+    // 2. Stato: Vuoto / Nessun dato registrato (CHT-03)
+    if (zones.isEmpty || totalDurationSeconds <= 0) {
+      return Container(
+        height: 120,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF141920),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: WhoopTheme.cardBorder),
+        ),
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.bar_chart_outlined, color: WhoopTheme.textMuted, size: 24),
+            SizedBox(height: 8),
+            Text(
+              'Nessun dato registrato per questa finestra temporale',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: WhoopTheme.textMuted, fontSize: 12),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -110,14 +192,30 @@ class HeartRateZonesChart extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'DISTRIBUZIONE ZONE CARDIACHE',
-            style: TextStyle(
-              color: WhoopTheme.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.1,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'DISTRIBUZIONE ZONE CARDIACHE',
+                style: TextStyle(
+                  color: WhoopTheme.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.1,
+                ),
+              ),
+              if (isPartial)
+                const Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, size: 12, color: Color(0xFFFF9F0A)),
+                    SizedBox(width: 4),
+                    Text(
+                      'Dati parziali',
+                      style: TextStyle(color: Color(0xFFFF9F0A), fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+            ],
           ),
           const SizedBox(height: 14),
 

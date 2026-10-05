@@ -80,7 +80,7 @@ void main() {
         skinTempDeltaC: 1.5, // Alterazione > +-1.2 °C
       );
 
-      expect(feverRecovery, equals(normalRecovery - 5.0));
+      expect(feverRecovery, equals(normalRecovery! - 5.0));
     });
   });
 }

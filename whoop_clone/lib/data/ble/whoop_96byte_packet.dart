@@ -45,14 +45,16 @@ class Whoop96BytePacket {
       final ay = accelY;
       final az = accelZ;
       final mag = math.sqrt(ax * ax + ay * ay + az * az);
-      final enmo = (mag - 1.0).abs();
-      return enmo > 0 ? enmo : 0.002;
+      final enmo = mag - 1.0;
+      return enmo > 0.0 ? enmo : 0.0;
     }
-    if (rawBytes.length < 12) return 0.002;
+    if (rawBytes.length < 12) return 0.0;
     final bd = ByteData.sublistView(Uint8List.fromList(rawBytes.sublist(8, 12)));
     final val = bd.getFloat32(0, Endian.little);
-    return (val.isFinite && val >= 0.0) ? val : 0.002;
+    return (val.isFinite && val >= 0.0) ? val : 0.0;
   }
+
+  double get enmo => motionVariance;
   
   /// Respiratory Power RSA:
   /// - In frame Whoop con header (0xAA), byte 15-16 è accelZ e byte 17 è tempC;
@@ -78,6 +80,10 @@ class Whoop96BytePacket {
   /// - In frame 0xAA: byte 17 (int8 normalizzato a offset raw)
   /// - In pacchetti flat: bytes 28-29 (uint16 LE) - Valore grezzo sensore AS6221
   int get skinTempRaw {
+    if (rawBytes.length >= 30) {
+      final val16 = rawBytes[28] | (rawBytes[29] << 8);
+      if (val16 > 1000 && val16 < 8000) return val16;
+    }
     if (isWhoopFramed) {
       if (rawBytes.length < 18) return 0;
       return rawBytes[17];

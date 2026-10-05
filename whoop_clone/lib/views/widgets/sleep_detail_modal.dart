@@ -1,7 +1,14 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../viewmodels/whoop_viewmodel.dart';
 import 'manual_activity_modal.dart';
+import 'charts/hypnogram_chart.dart';
+import 'charts/intraday_hr_chart.dart';
+import 'charts/heart_rate_zones_chart.dart';
+import 'charts/sparkline_14d.dart';
+import 'provenance_badge.dart';
 
 /// Schermata Dettaglio Sonno WHOOP 5.0 (Full Page)
 /// Zero-Tolerance Mock Purge: Legge i dati calcolati matematicamente da SQLite (sonno & cicli_fisiologici)
@@ -19,6 +26,10 @@ class SleepDetailModal extends StatefulWidget {
   final double? baselineDurationMin;
   final double? baselinePerformancePct;
   final List<dynamic>? historicalSonno;
+  final List<HypnogramBlock>? hypnogramBlocks;
+  final List<HrDataPoint>? intradayPoints;
+  final Map<String, dynamic>? hrZonesMap;
+  final String? provenance;
 
   const SleepDetailModal({
     super.key,
@@ -35,6 +46,10 @@ class SleepDetailModal extends StatefulWidget {
     this.baselineDurationMin,
     this.baselinePerformancePct,
     this.historicalSonno,
+    this.hypnogramBlocks,
+    this.intradayPoints,
+    this.hrZonesMap,
+    this.provenance = 'REAL',
   });
 
   static void show(
@@ -52,6 +67,10 @@ class SleepDetailModal extends StatefulWidget {
     double? baselineDurationMin,
     double? baselinePerformancePct,
     List<dynamic>? historicalSonno,
+    List<HypnogramBlock>? hypnogramBlocks,
+    List<HrDataPoint>? intradayPoints,
+    Map<String, dynamic>? hrZonesMap,
+    String? provenance = 'REAL',
   }) {
     Navigator.push(
       context,
@@ -70,6 +89,10 @@ class SleepDetailModal extends StatefulWidget {
           baselineDurationMin: baselineDurationMin,
           baselinePerformancePct: baselinePerformancePct,
           historicalSonno: historicalSonno,
+          hypnogramBlocks: hypnogramBlocks,
+          intradayPoints: intradayPoints,
+          hrZonesMap: hrZonesMap,
+          provenance: provenance,
         ),
       ),
     );
@@ -95,6 +118,29 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
     final double? basePerf = widget.baselinePerformancePct;
 
     final List<Map<String, dynamic>> last7DaysData = _buildLast7DaysSeries(widget.historicalSonno);
+
+    WhoopViewModel? viewModel;
+    try {
+      viewModel = Provider.of<WhoopViewModel>(context);
+    } catch (e) {
+      // ViewModel opzionale se la schermata viene visualizzata isolata
+      debugPrint('SleepDetailModal: WhoopViewModel non trovato nel contesto: $e');
+    }
+
+    final List<HypnogramBlock> hypnogramBlocks = widget.hypnogramBlocks ??
+        (viewModel != null && viewModel.currentHypnogramSegments.isNotEmpty
+            ? viewModel.currentHypnogramSegments.map((s) => HypnogramBlock.fromMap(s)).toList()
+            : <HypnogramBlock>[]);
+
+    final List<HrDataPoint> intradayPoints = widget.intradayPoints ??
+        (viewModel != null && viewModel.currentIntradayHrBuckets.isNotEmpty
+            ? HrDataPoint.fromBuckets(viewModel.currentIntradayHrBuckets)
+            : <HrDataPoint>[]);
+
+    final Map<String, dynamic> hrZonesMap = widget.hrZonesMap ??
+        (viewModel?.currentHrZones ?? <String, dynamic>{});
+
+    final List<double?> history14dSleep = viewModel?.history14dSleep ?? const <double?>[];
 
     return Scaffold(
       backgroundColor: WhoopTheme.background,
@@ -174,6 +220,10 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
                           height: 1.2,
                         ),
                       ),
+                      if (widget.provenance != null) ...[
+                        const SizedBox(height: 6),
+                        ProvenanceBadge(provenance: widget.provenance!),
+                      ],
                     ],
                   ),
                 ),
@@ -341,13 +391,13 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
             ),
             const SizedBox(height: 16),
 
-            // Card ORE DI SONNO
+            // Card ORE DI SONNO (con IntradayHrChart dai bucket reali aggregati CHT-01..02)
             _buildDetailCard(
               title: 'ORE DI SONNO',
               mainValue: _formatHoursMin(widget.durationMin),
               baselineValue: baseDur != null ? _formatHoursMin(baseDur) : '--:--',
               isUp: baseDur != null && widget.durationMin >= baseDur,
-              child: _buildHrTimelineChart(),
+              child: _buildHrTimelineChart(intradayPoints, viewModel),
             ),
 
             const SizedBox(height: 24),
@@ -365,14 +415,23 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
             ),
             const SizedBox(height: 12),
 
-            // Fasi Sonno Reali
+            // Fasi Sonno Reali con Ipnogramma interattivo (STG-07, CHT-01)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: WhoopTheme.officialCardDecoration(),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    HypnogramChart(
+                      blocks: hypnogramBlocks,
+                      height: 140,
+                      isLoading: viewModel?.isChartsLoading ?? false,
+                    ),
+                    const SizedBox(height: 16),
+                    const Divider(color: WhoopTheme.cardBorder, height: 1),
+                    const SizedBox(height: 14),
                     _buildPhaseRow('VEGLIA', widget.awakeMin, WhoopTheme.textMuted),
                     const SizedBox(height: 14),
                     _buildPhaseRow('LEGGERO', widget.lightSleepMin, WhoopTheme.strainBlue),
@@ -413,6 +472,63 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
                   const SizedBox(height: 16),
                   _buildBarRow('FABBISOGNO DI SONNO', _formatHoursMin(widget.sleepNeedMin), WhoopTheme.textSecondary, widget.sleepNeedMin > 0 ? (widget.sleepNeedMin / (widget.sleepNeedMin + 60)) : 0.0, isNeed: true),
                 ],
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Distribuzione Zone FC nel Sonno (CHT-01..02)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: HeartRateZonesChart.fromDistributionMap(
+                hrZonesMap,
+                isLoading: viewModel?.isChartsLoading ?? false,
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Trend Storico Sonno 14 Giorni (CHT-01)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: WhoopTheme.officialCardDecoration(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'TREND SONNO (14 GIORNI)',
+                          style: TextStyle(
+                            color: WhoopTheme.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                        Text(
+                          '${baseDur != null ? _formatHoursMin(baseDur) : "8:00"} BASELINE',
+                          style: const TextStyle(
+                            color: WhoopTheme.textMuted,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Sparkline14d(
+                      dataPoints: history14dSleep,
+                      baselineValue: baseDur != null ? (baseDur / 60.0) : 8.0,
+                      height: 55,
+                      primaryColor: WhoopTheme.sleepSlate,
+                      isLoading: viewModel?.isChartsLoading ?? false,
+                    ),
+                  ],
+                ),
               ),
             ),
 
@@ -625,17 +741,13 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
     );
   }
 
-  Widget _buildHrTimelineChart() {
-    return Column(
-      children: [
-        SizedBox(
-          height: 90,
-          width: double.infinity,
-          child: CustomPaint(
-            painter: _HrTimelinePainter(),
-          ),
-        ),
-      ],
+  Widget _buildHrTimelineChart(List<HrDataPoint> points, WhoopViewModel? viewModel) {
+    return IntradayHrChart(
+      points: points,
+      height: 150,
+      hrRestBaseline: viewModel?.userProfile.hrRestBaseline ?? 55,
+      hrMaxBaseline: viewModel?.userProfile.hrMax ?? 190,
+      isLoading: viewModel?.isChartsLoading ?? false,
     );
   }
 
@@ -860,26 +972,6 @@ class _SleepArcPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SleepArcPainter old) => old.percentage != percentage || old.arcColor != arcColor;
-}
-
-class _HrTimelinePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = WhoopTheme.sleepSlate
-      ..strokeWidth = 2.0
-      ..style = PaintingStyle.stroke;
-
-    final path = Path();
-    path.moveTo(0, size.height * 0.5);
-    path.quadraticBezierTo(size.width * 0.25, size.height * 0.2, size.width * 0.5, size.height * 0.6);
-    path.quadraticBezierTo(size.width * 0.75, size.height * 0.3, size.width, size.height * 0.4);
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _WeeklyLinePainter extends CustomPainter {

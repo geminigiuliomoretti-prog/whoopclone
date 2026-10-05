@@ -83,7 +83,7 @@ void main() {
         final isSws = (m >= 60 && m <= 180) || (m >= 360 && m <= 450);
         await dbHelper.insertTelemetriaPoint(
           bpm: isSws ? 52 : 62,
-          rrMs: isSws ? 1150.0 : 967.0,
+          rrMs: isSws ? 75.0 : 45.0,
           motionVar: isSws ? 0.002 : 0.04,
           timestamp: timestamp,
           respRate: 14.8,

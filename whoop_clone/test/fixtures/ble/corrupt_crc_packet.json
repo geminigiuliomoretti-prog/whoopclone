@@ -1,0 +1,11 @@
+{
+  "description": "Deterministic CRC corrupted frames for validation testing",
+  "corrupt_crc8_header": {
+    "raw_hex": "aa080057230144016c0f1371",
+    "expected_rejection_reason": "HEADER_CRC8_MISMATCH"
+  },
+  "corrupt_crc32_tail": {
+    "raw_hex": "aa0800a8230144016c0f138e",
+    "expected_rejection_reason": "PAYLOAD_CRC32_MISMATCH"
+  }
+}

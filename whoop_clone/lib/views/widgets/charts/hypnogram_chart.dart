@@ -1,19 +1,25 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../core/constants/whoop_theme.dart';
 
-/// Rappresentazione di un blocco di stadio di sonno nell'ipnogramma
+/// Rappresentazione di un blocco o segmento di stadio di sonno nell'ipnogramma (STG-07, CHT-01)
 class HypnogramBlock {
   final DateTime startTime;
   final DateTime endTime;
-  final String stage; // 'wake', 'light', 'sws', 'rem'
+  final String stage; // 'wake', 'light', 'sws', 'rem', 'missing'
   final int durationMinutes;
+  final double confidence;
 
   const HypnogramBlock({
     required this.startTime,
     required this.endTime,
     required this.stage,
     required this.durationMinutes,
+    this.confidence = 1.0,
   });
+
+  bool get isMissing =>
+      stage.toLowerCase() == 'missing' || stage.toLowerCase() == 'mancante';
 
   Color get color {
     switch (stage.toLowerCase()) {
@@ -28,8 +34,12 @@ class HypnogramBlock {
       case 'sws':
       case 'deep':
       case 'profondo':
-      default:
         return const Color(0xFF0A84FF); // Blu elettrico/profondo SWS
+      case 'missing':
+      case 'mancante':
+        return Colors.transparent; // Interruzione visiva (gap)
+      default:
+        return const Color(0xFF0A84FF);
     }
   }
 
@@ -46,24 +56,46 @@ class HypnogramBlock {
       case 'sws':
       case 'deep':
       case 'profondo':
-      default:
         return 'Sonno Profondo (SWS)';
+      case 'missing':
+      case 'mancante':
+        return 'Dati Mancanti (Interruzione)';
+      default:
+        return stage.toUpperCase();
     }
+  }
+
+  factory HypnogramBlock.fromMap(Map<String, dynamic> map) {
+    final startMs = (map['start_utc_ms'] as num?)?.toInt() ?? 0;
+    final endMs = (map['end_utc_ms'] as num?)?.toInt() ?? startMs;
+    final start = DateTime.fromMillisecondsSinceEpoch(startMs, isUtc: true).toLocal();
+    final end = DateTime.fromMillisecondsSinceEpoch(endMs, isUtc: true).toLocal();
+    final diffSec = end.difference(start).inSeconds;
+    final durationMin = math.max(1, (diffSec / 60.0).round());
+    return HypnogramBlock(
+      startTime: start,
+      endTime: end,
+      stage: (map['stage'] as String?) ?? 'LIGHT',
+      durationMinutes: durationMin,
+      confidence: (map['confidence'] as num?)?.toDouble() ?? 1.0,
+    );
   }
 }
 
-/// Grafico Ipnogramma Notturno Interattivo (Architettura NOOP)
-/// Supporta interazione touch con tooltip fluttuante per visualizzare orari esatti e durate delle fasi.
+/// Grafico Ipnogramma Notturno Interattivo (Architettura NOOP, CHT-01..04, STG-07)
+/// Gestisce 4 stati espliciti: Caricamento, Vuoto, Dati parziali (con evidenziazione lacune), Dati completi.
 class HypnogramChart extends StatefulWidget {
   final List<HypnogramBlock> blocks;
   final double height;
   final bool showLegend;
+  final bool isLoading;
 
   const HypnogramChart({
     super.key,
     required this.blocks,
     this.height = 140,
     this.showLegend = true,
+    this.isLoading = false,
   });
 
   @override
@@ -76,7 +108,8 @@ class _HypnogramChartState extends State<HypnogramChart> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.blocks.isEmpty) {
+    // 1. Stato: Caricamento (spinner discreto) (CHT-03)
+    if (widget.isLoading) {
       return Container(
         height: widget.height,
         alignment: Alignment.center,
@@ -85,18 +118,70 @@ class _HypnogramChartState extends State<HypnogramChart> {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: WhoopTheme.cardBorder),
         ),
-        child: const Text(
-          'Nessun dato di ipnogramma registrato',
-          style: TextStyle(color: WhoopTheme.textMuted, fontSize: 12),
+        child: const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(WhoopTheme.textSecondary),
+          ),
         ),
       );
     }
 
-    final totalMinutes = widget.blocks.map((b) => b.durationMinutes).reduce((a, b) => a + b);
+    // 2. Stato: Vuoto / Nessun dato registrato (CHT-03)
+    if (widget.blocks.isEmpty) {
+      return Container(
+        height: widget.height,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF141920),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: WhoopTheme.cardBorder),
+        ),
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.bedtime_outlined, color: WhoopTheme.textMuted, size: 24),
+            SizedBox(height: 8),
+            Text(
+              'Nessun dato registrato per questa finestra temporale',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: WhoopTheme.textMuted, fontSize: 12),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 3. Rilevamento Dati Parziali / Lacune
+    final bool hasGaps = widget.blocks.any((b) => b.isMissing);
+    final totalMinutes = widget.blocks.map((b) => b.durationMinutes).fold<int>(0, (a, b) => a + b);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (hasGaps) ...[
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, size: 14, color: Color(0xFFFF9F0A)),
+                SizedBox(width: 5),
+                Text(
+                  'Dati parziali: rilevate interruzioni nel tracciato notturno',
+                  style: TextStyle(
+                    color: Color(0xFFFF9F0A),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         // Area Grafica con Gestione Touch
         GestureDetector(
           onTapDown: (details) => _handleTouch(details.localPosition, totalMinutes),
@@ -114,7 +199,7 @@ class _HypnogramChartState extends State<HypnogramChart> {
             ),
             child: Stack(
               children: [
-                // Griglia e Barre Temporali
+                // Griglia e Barre Temporali di sfondo
                 Column(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -125,13 +210,37 @@ class _HypnogramChartState extends State<HypnogramChart> {
                   ],
                 ),
 
-                // Tracciato a Blocchi Reale
+                // Tracciato a Blocchi Reale con interruzioni visive esplicite (MISSING)
                 Positioned.fill(
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: widget.blocks.map((block) {
                       final flex = (block.durationMinutes * 1000) ~/ (totalMinutes > 0 ? totalMinutes : 1);
                       final isSelected = _selectedBlock == block;
+
+                      if (block.isMissing) {
+                        // Interruzione visiva esplicita per i buchi (MISSING)
+                        return Expanded(
+                          flex: flex > 0 ? flex : 1,
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 0.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0D1117),
+                              borderRadius: BorderRadius.circular(2),
+                              border: Border.all(
+                                color: isSelected ? Colors.white : const Color(0x33FF453A),
+                                width: isSelected ? 1.5 : 1.0,
+                              ),
+                            ),
+                            child: const Center(
+                              child: Text(
+                                '•',
+                                style: TextStyle(color: Color(0x66FF453A), fontSize: 10),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
 
                       return Expanded(
                         flex: flex > 0 ? flex : 1,
@@ -156,9 +265,12 @@ class _HypnogramChartState extends State<HypnogramChart> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.9),
+                        color: Colors.black.withValues(alpha: 0.92),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: _selectedBlock!.color, width: 1),
+                        border: Border.all(
+                          color: _selectedBlock!.isMissing ? const Color(0xFFFF453A) : _selectedBlock!.color,
+                          width: 1,
+                        ),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.5),
@@ -173,7 +285,7 @@ class _HypnogramChartState extends State<HypnogramChart> {
                           Text(
                             _selectedBlock!.displayName,
                             style: TextStyle(
-                              color: _selectedBlock!.color,
+                              color: _selectedBlock!.isMissing ? const Color(0xFFFF453A) : _selectedBlock!.color,
                               fontSize: 11,
                               fontWeight: FontWeight.w900,
                             ),
@@ -197,7 +309,7 @@ class _HypnogramChartState extends State<HypnogramChart> {
 
         if (widget.showLegend) ...[
           const SizedBox(height: 10),
-          _buildLegend(),
+          _buildLegend(hasGaps),
         ],
       ],
     );
@@ -242,7 +354,7 @@ class _HypnogramChartState extends State<HypnogramChart> {
     );
   }
 
-  Widget _buildLegend() {
+  Widget _buildLegend(bool hasGaps) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
@@ -250,6 +362,7 @@ class _HypnogramChartState extends State<HypnogramChart> {
         _buildLegendItem('REM', const Color(0xFF5AC8FA)),
         _buildLegendItem('Leggero', const Color(0xFF5856D6)),
         _buildLegendItem('SWS', const Color(0xFF0A84FF)),
+        if (hasGaps) _buildLegendItem('Interruzione', const Color(0xFFFF453A)),
       ],
     );
   }

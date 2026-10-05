@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart';
 
 /// Algoritmo CRC-32 WHOOP (Standard IEEE 802.3 / zlib con fallback legacy)
 /// Il firmware reale della band (WHOOP 4.0 / 5.0) verifica il CRC-32 standard IEEE 802.3

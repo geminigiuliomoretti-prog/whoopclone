@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../../core/utils/clock.dart';
 
 /// Modello per la tabella `allenamenti`
 /// Schema: id (PK AUTOINCREMENT), data_iso, nome_attivita, ora_inizio, ora_fine, durata_min,
@@ -70,11 +71,11 @@ class Allenamento {
         calorie = calorie ?? energiaBruciataCal;
 
   // Getters di compatibilità per la UI
-  DateTime get oraInizioAllenamento => DateTime.tryParse(oraInizio) ?? DateTime.now();
-  DateTime get oraFineAllenamento => DateTime.tryParse(oraFine) ?? DateTime.now();
-  DateTime get oraInizioCiclo => DateTime.tryParse('${dataIso}T00:00:00.000Z') ?? DateTime.now();
+  DateTime get oraInizioAllenamento => DateTime.tryParse(oraInizio) ?? Clock.current.now();
+  DateTime get oraFineAllenamento => DateTime.tryParse(oraFine) ?? Clock.current.now();
+  DateTime get oraInizioCiclo => DateTime.tryParse('${dataIso}T00:00:00.000Z') ?? Clock.current.now();
   DateTime? get oraFineCiclo => DateTime.tryParse('${dataIso}T23:59:59.000Z');
-  String get fusoOrario => '+02:00';
+  String get fusoOrario => Clock.current.formattedTimeZoneOffset;
   double? get sforzoRichiesto => strainAttivita;
   int? get energiaBruciataCal => calorie;
   int? get fcMaxBpm => hrMax;

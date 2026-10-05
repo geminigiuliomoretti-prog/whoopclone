@@ -1,0 +1,18 @@
+{
+  "description": "WHOOP proprietary 96-byte raw telemetry sensor packet",
+  "raw_hex": "aa002a00008dfc663a8a021900ceffd4030000000000684100000000801100008fc2f53e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "total_bytes": 96,
+  "expected": {
+    "sequence_number": 42,
+    "heart_rate_bpm": 58,
+    "hrv_rmssd_ms": 65.0,
+    "respiratory_rate": 14.5,
+    "skin_temp_raw": 4480,
+    "skin_temp_celsius": 35.0,
+    "spo2_ratio": 0.48,
+    "spo2_pct": 98.0,
+    "accel_x_g": 0.025,
+    "accel_y_g": -0.05,
+    "accel_z_g": 0.98
+  }
+}

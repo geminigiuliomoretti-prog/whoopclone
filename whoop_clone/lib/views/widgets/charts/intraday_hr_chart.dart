@@ -2,23 +2,40 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../core/constants/whoop_theme.dart';
 
-/// Punto di telemetria cardiaca intraday
+/// Punto di telemetria cardiaca intraday con supporto per valori nulli (gap reale)
 class HrDataPoint {
   final DateTime timestamp;
-  final int bpm;
+  final int? bpm;
 
   const HrDataPoint({
     required this.timestamp,
     required this.bpm,
   });
+
+  bool get hasData => bpm != null && bpm! > 0;
+
+  /// Converte i bucket SQL aggregati restituiti da `getIntradayHrBuckets` (CHT-02)
+  static List<HrDataPoint> fromBuckets(List<Map<String, dynamic>?> buckets) {
+    final List<HrDataPoint> list = [];
+    for (final b in buckets) {
+      if (b == null) continue;
+      final ts = b['timestamp'] is DateTime
+          ? b['timestamp'] as DateTime
+          : DateTime.fromMillisecondsSinceEpoch(b['timestamp_utc_ms'] as int? ?? 0, isUtc: true).toLocal();
+      final bpmVal = (b['avg'] as num?)?.toInt() ?? (b['bpm'] as num?)?.toInt();
+      list.add(HrDataPoint(timestamp: ts, bpm: bpmVal));
+    }
+    return list;
+  }
 }
 
-/// Grafico Curva Cardiaca Intraday 24h con gradiente fluido (Architettura NOOP)
+/// Grafico Curva Cardiaca Intraday 24h con gestione dei gap > 5 minuti e 4 stati espliciti (CHT-01..04)
 class IntradayHrChart extends StatefulWidget {
   final List<HrDataPoint> points;
   final double height;
   final int? hrRestBaseline;
   final int? hrMaxBaseline;
+  final bool isLoading;
 
   const IntradayHrChart({
     super.key,
@@ -26,6 +43,7 @@ class IntradayHrChart extends StatefulWidget {
     this.height = 180,
     this.hrRestBaseline = 55,
     this.hrMaxBaseline = 190,
+    this.isLoading = false,
   });
 
   @override
@@ -37,7 +55,8 @@ class _IntradayHrChartState extends State<IntradayHrChart> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.points.isEmpty) {
+    // 1. Stato: Caricamento (spinner discreto) (CHT-03)
+    if (widget.isLoading) {
       return Container(
         height: widget.height,
         alignment: Alignment.center,
@@ -46,14 +65,55 @@ class _IntradayHrChartState extends State<IntradayHrChart> {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: WhoopTheme.cardBorder),
         ),
-        child: const Text(
-          'Nessun dato di frequenza cardiaca continuo',
-          style: TextStyle(color: WhoopTheme.textMuted, fontSize: 12),
+        child: const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(WhoopTheme.textSecondary),
+          ),
         ),
       );
     }
 
-    final bpms = widget.points.map((p) => p.bpm).toList();
+    final validPoints = widget.points.where((p) => p.hasData).toList();
+
+    // 2. Stato: Vuoto / Nessun dato registrato (CHT-03)
+    if (validPoints.isEmpty) {
+      return Container(
+        height: widget.height,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF141920),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: WhoopTheme.cardBorder),
+        ),
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.favorite_border, color: WhoopTheme.textMuted, size: 24),
+            SizedBox(height: 8),
+            Text(
+              'Nessun dato registrato per questa finestra temporale',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: WhoopTheme.textMuted, fontSize: 12),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 3. Rilevamento Buchi / Dati Parziali (gap > 5 minuti)
+    bool hasGaps = false;
+    for (int i = 1; i < validPoints.length; i++) {
+      if (validPoints[i].timestamp.difference(validPoints[i - 1].timestamp).inMinutes > 5) {
+        hasGaps = true;
+        break;
+      }
+    }
+
+    final bpms = validPoints.map((p) => p.bpm!).toList();
     final minBpm = bpms.reduce(math.min);
     final maxBpm = bpms.reduce(math.max);
     final avgBpm = (bpms.reduce((a, b) => a + b) / bpms.length).round();
@@ -61,6 +121,26 @@ class _IntradayHrChartState extends State<IntradayHrChart> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (hasGaps) ...[
+          const Padding(
+            padding: EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, size: 14, color: Color(0xFFFF9F0A)),
+                SizedBox(width: 5),
+                Text(
+                  'Dati parziali: rilevate interruzioni nel segnale (> 5 min)',
+                  style: TextStyle(
+                    color: Color(0xFFFF9F0A),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         // Header con Statistiche Rapide Min / Avg / Max
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -72,12 +152,12 @@ class _IntradayHrChartState extends State<IntradayHrChart> {
         ),
         const SizedBox(height: 10),
 
-        // Area Grafico CustomPaint
+        // Area Grafico CustomPaint con spezzamento esplicito delle linee (CHT-01)
         GestureDetector(
-          onTapDown: (details) => _selectPointAt(details.localPosition),
-          onHorizontalDragUpdate: (details) => _selectPointAt(details.localPosition),
+          onTapDown: (details) => _selectPointAt(details.localPosition, validPoints),
+          onHorizontalDragUpdate: (details) => _selectPointAt(details.localPosition, validPoints),
           onTapUp: (_) => setState(() => _selectedPoint = null),
-          onHorizontalDragEnd: (_) => setState(() => _selectedPoint = null),
+          onHorizontalDragEnd: (_) => setState(() => _selectedBlockNull()),
           child: Container(
             height: widget.height,
             width: double.infinity,
@@ -89,7 +169,7 @@ class _IntradayHrChartState extends State<IntradayHrChart> {
             ),
             child: CustomPaint(
               painter: _IntradayHrPainter(
-                points: widget.points,
+                points: validPoints,
                 minBpm: math.min(minBpm, widget.hrRestBaseline ?? 50),
                 maxBpm: math.max(maxBpm, widget.hrMaxBaseline ?? 180),
                 selectedPoint: _selectedPoint,
@@ -114,21 +194,32 @@ class _IntradayHrChartState extends State<IntradayHrChart> {
     );
   }
 
-  void _selectPointAt(Offset pos) {
-    if (widget.points.isEmpty) return;
+  void _selectedBlockNull() {
+    setState(() => _selectedPoint = null);
+  }
+
+  void _selectPointAt(Offset pos, List<HrDataPoint> validPoints) {
+    if (validPoints.isEmpty) return;
     final width = context.size?.width ?? 300.0;
     final ratio = (pos.dx / width).clamp(0.0, 1.0);
-    final index = ((widget.points.length - 1) * ratio).round();
+    final index = ((validPoints.length - 1) * ratio).round().clamp(0, validPoints.length - 1);
 
     setState(() {
-      _selectedPoint = widget.points[index];
+      _selectedPoint = validPoints[index];
     });
   }
 
   Widget _buildStatBadge(String label, String val, Color color) {
     return Row(
       children: [
-        Text('$label: ', style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
+        Text(
+          '$label: ',
+          style: const TextStyle(
+            color: WhoopTheme.textSecondary,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         Text(val, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w900)),
       ],
     );
@@ -150,38 +241,43 @@ class _IntradayHrPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (points.length < 2) return;
+    if (points.isEmpty) return;
 
     final bpmRange = (maxBpm - minBpm) > 0 ? (maxBpm - minBpm) : 100;
-    final double stepX = size.width / (points.length - 1);
 
-    final path = Path();
-    final fillPath = Path();
-
-    Offset getPointOffset(int i) {
-      final x = i * stepX;
-      final yRatio = (points[i].bpm - minBpm) / bpmRange;
+    // Se c'è solo un punto
+    if (points.length == 1) {
+      final p = points.first;
+      final yRatio = (p.bpm! - minBpm) / bpmRange;
       final y = size.height - (yRatio * (size.height - 20)) - 10;
-      return Offset(x, y.clamp(5.0, size.height - 5.0));
+      canvas.drawCircle(Offset(size.width / 2, y), 4, Paint()..color = WhoopTheme.strainBlue);
+      return;
     }
 
-    final first = getPointOffset(0);
-    path.moveTo(first.dx, first.dy);
-    fillPath.moveTo(first.dx, size.height);
-    fillPath.lineTo(first.dx, first.dy);
+    final startTime = points.first.timestamp;
+    final endTime = points.last.timestamp;
+    final totalSpanMs = endTime.difference(startTime).inMilliseconds;
+    final double safeSpanMs = totalSpanMs > 0 ? totalSpanMs.toDouble() : 1.0;
 
-    for (int i = 1; i < points.length; i++) {
-      final p0 = getPointOffset(i - 1);
-      final p1 = getPointOffset(i);
-      final controlX = (p0.dx + p1.dx) / 2;
-      path.cubicTo(controlX, p0.dy, controlX, p1.dy, p1.dx, p1.dy);
-      fillPath.cubicTo(controlX, p0.dy, controlX, p1.dy, p1.dx, p1.dy);
+    Offset getPointOffset(HrDataPoint pt, int i) {
+      final double x;
+      if (totalSpanMs > 0) {
+        final elapsed = pt.timestamp.difference(startTime).inMilliseconds;
+        x = (elapsed / safeSpanMs) * size.width;
+      } else {
+        x = (i / (points.length - 1)) * size.width;
+      }
+      final yRatio = (pt.bpm! - minBpm) / bpmRange;
+      final y = size.height - (yRatio * (size.height - 20)) - 10;
+      return Offset(x.clamp(0.0, size.width), y.clamp(5.0, size.height - 5.0));
     }
 
-    fillPath.lineTo(size.width, size.height);
-    fillPath.close();
+    final strokePaint = Paint()
+      ..color = WhoopTheme.strainBlue
+      ..strokeWidth = 2.2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
 
-    // Sfumatura gradiente verticale
     final gradient = LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
@@ -194,21 +290,60 @@ class _IntradayHrPainter extends CustomPainter {
     final fillPaint = Paint()
       ..shader = gradient.createShader(Rect.fromLTWH(0, 0, size.width, size.height))
       ..style = PaintingStyle.fill;
-    canvas.drawPath(fillPath, fillPaint);
 
-    // Tracciato principale
-    final strokePaint = Paint()
-      ..color = WhoopTheme.strainBlue
-      ..strokeWidth = 2.2
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-    canvas.drawPath(path, strokePaint);
+    // Spezzamento esplicito delle linee in presenza di gap > 5 minuti (CHT-01)
+    List<Offset> currentSegment = [];
+
+    void drawSegment(List<Offset> seg) {
+      if (seg.isEmpty) return;
+      if (seg.length == 1) {
+        canvas.drawCircle(seg.first, 2.5, Paint()..color = WhoopTheme.strainBlue);
+        return;
+      }
+
+      final path = Path();
+      final fillPath = Path();
+
+      path.moveTo(seg.first.dx, seg.first.dy);
+      fillPath.moveTo(seg.first.dx, size.height);
+      fillPath.lineTo(seg.first.dx, seg.first.dy);
+
+      for (int j = 1; j < seg.length; j++) {
+        final p0 = seg[j - 1];
+        final p1 = seg[j];
+        final controlX = (p0.dx + p1.dx) / 2;
+        path.cubicTo(controlX, p0.dy, controlX, p1.dy, p1.dx, p1.dy);
+        fillPath.cubicTo(controlX, p0.dy, controlX, p1.dy, p1.dx, p1.dy);
+      }
+
+      fillPath.lineTo(seg.last.dx, size.height);
+      fillPath.close();
+
+      canvas.drawPath(fillPath, fillPaint);
+      canvas.drawPath(path, strokePaint);
+    }
+
+    currentSegment.add(getPointOffset(points[0], 0));
+
+    for (int i = 1; i < points.length; i++) {
+      final prev = points[i - 1];
+      final curr = points[i];
+      final diffMinutes = curr.timestamp.difference(prev.timestamp).inMinutes;
+
+      if (diffMinutes > 5) {
+        // Gap > 5 minuti: spezza la linea senza interpolare
+        drawSegment(currentSegment);
+        currentSegment = [];
+      }
+      currentSegment.add(getPointOffset(curr, i));
+    }
+    drawSegment(currentSegment);
 
     // Evidenziazione punto selezionato su touch
-    if (selectedPoint != null) {
+    if (selectedPoint != null && selectedPoint!.hasData) {
       final selectedIndex = points.indexOf(selectedPoint!);
       if (selectedIndex >= 0) {
-        final pos = getPointOffset(selectedIndex);
+        final pos = getPointOffset(selectedPoint!, selectedIndex);
 
         final linePaint = Paint()
           ..color = Colors.white.withValues(alpha: 0.5)

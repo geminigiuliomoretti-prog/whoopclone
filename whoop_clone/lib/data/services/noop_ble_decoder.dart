@@ -146,7 +146,9 @@ class NoopBleDecoder {
           if (x.isFinite && y.isFinite && z.isFinite && (x.abs() <= 16.0 && y.abs() <= 16.0 && z.abs() <= 16.0)) {
             accelEnmo = calculateEnmo(x, y, z);
           }
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('[NoopBleDecoder] Error decoding accelerometer data: $e');
+        }
       }
 
       // 3. Intervalli R-R (Bytes 40-43 rMSSD o estrazione serie)

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -9,24 +10,100 @@ import 'whoop_96byte_packet.dart';
 import 'noop_protocol_decoder.dart';
 import '../services/overnight_sleep_engine.dart';
 import '../database/database_helper.dart';
+import 'ble_diagnostic_service.dart';
+import '../services/raw_capture_service.dart';
+import '../../core/logging/structured_logger.dart';
 
 enum BleState {
   disconnected,
-  requestingPermissions,
   scanning,
   connecting,
+  discovering,
+  subscribing,
+  initializing,
+  syncingHistory,
+  streaming,
+  reconnecting,
+  failed,
+
+  // Compatibilità per UI e test legacy
+  requestingPermissions,
   bonding,
   connected,
-  reconnecting,
   error,
 }
 
+/// Risultato veritiero dell'invio del comando di vibrazione (Truthful Haptics)
+enum HapticResultStatus {
+  phoneHapticOnly,
+  strapCommandSent,
+  strapAcknowledged,
+  strapFailed,
+  notConnected;
+
+  bool get isStrapSuccess =>
+      this == HapticResultStatus.strapCommandSent ||
+      this == HapticResultStatus.strapAcknowledged;
+  bool get wasPhoneVibrated =>
+      this == HapticResultStatus.phoneHapticOnly ||
+      this == HapticResultStatus.strapCommandSent ||
+      this == HapticResultStatus.strapAcknowledged ||
+      this == HapticResultStatus.strapFailed;
+}
+
+/// BLE-06: Evento di disconnessione tracciato con status code nativo e diagnostica
+class DisconnectionEvent {
+  final DateTime timestamp;
+  final int? statusCode;
+  final String reason;
+  final Duration sessionDuration;
+
+  DisconnectionEvent({
+    required this.timestamp,
+    this.statusCode,
+    required this.reason,
+    required this.sessionDuration,
+  });
+
+  @override
+  String toString() =>
+      'DisconnectionEvent(timestamp: $timestamp, code: $statusCode, reason: $reason, duration: ${sessionDuration.inSeconds}s)';
+}
+
+/// BLE-06: Interprete dei codici di disconnessione standard Android / iOS GATT
+String interpretDisconnectCode(int? code, [String? description]) {
+  if (code == null) return description ?? 'Disconnessione sconosciuta';
+  switch (code) {
+    case 0:
+      return 'GATT_SUCCESS (Disconnessione normale)';
+    case 8:
+      return 'GATT_CONN_TIMEOUT (Timeout di connessione superato)';
+    case 19:
+      return 'GATT_CONN_TERMINATE_PEER_USER (Terminata dal cinturino/peer)';
+    case 22:
+      return 'GATT_CONN_TERMINATE_LOCAL_HOST (Terminata dall\'host locale)';
+    case 34:
+      return 'GATT_CONN_LMP_TIMEOUT (LMP Response Timeout)';
+    case 62:
+      return 'GATT_CONN_FAIL_ESTABLISH (Impossibile stabilire connessione)';
+    case 133:
+      return 'GATT_ERROR 133 (Errore stack Android / Dispositivo non raggiungibile)';
+    default:
+      if (description != null && description.isNotEmpty) {
+        return 'GATT Error $code ($description)';
+      }
+      return 'GATT Error $code';
+  }
+}
+
 /// BleConnectionManager gestisce la connessione BLE con il bracciale Whoop:
-/// 1. Richiesta permessi Android (BLUETOOTH_SCAN, BLUETOOTH_CONNECT, ACCESS_FINE_LOCATION).
-/// 2. Flusso Zero-Scan all'avvio dell'app via SharedPreferences e FlutterBluePlus.systemDevices.
-/// 3. Binding reattivo CCCD per la caratteristica Heart Rate 0x2A37 (Service 0x180D).
-/// 4. Prevenzione deadlock GATT e resetto degli stati incagliati.
-/// 5. Invocazione multi-protocollo comandi allarme/vibrazione haptic (WriteWithResponse e WriteWithoutResponse).
+/// BLE-01: Single-flight lock, protezione disconnect in connecting, backoff esponenziale con jitter e reset solo dopo >60s streaming.
+/// BLE-02: Unico percorso reattivo di bind da listener connected, guard atomica _bindInProgress, cancellazione preventiva sottoscrizioni.
+/// BLE-03: Scansione ordinata (stopScan prima di connect), blocco scansione se in connecting, bonding eseguito una sola volta se non bonded.
+/// BLE-04: Coda TX asincrona non bloccante per ACK Opcode 23 storico (nessun await nel listener 1Hz, nessun ACK in streaming live).
+/// BLE-05: Politica autoConnect uniforme (false per manuale, true per background).
+/// BLE-06: Tracciamento status code reali di disconnessione in lista circolare (ultimi 20 eventi).
+/// Data Watchdog: Connessione zombie interrotta se nessun dato per >15s in streaming.
 class BleConnectionManager {
   static const String heartRateServiceUuid = '180d';
   static const String heartRateCharUuid = '2a37';
@@ -49,13 +126,31 @@ class BleConnectionManager {
   BluetoothDevice? _connectedDevice;
   int? _batteryLevelPct;
   int _autoReconnectAttempts = 0;
-  
+  int _backoffAttempt = 0;
+  final math.Random _random = math.Random();
+
+  // BLE-01: Lock atomico single-flight per tentativi di connessione
+  bool _isConnecting = false;
+  // BLE-02: Guard atomica per impedire binding paralleli
+  bool _bindInProgress = false;
+  // BLE-03: Set dei dispositivi per cui è già stato richiesto/verificato il bonding
+  final Set<String> _bondedDevices = <String>{};
+
+  // BLE-04: Coda di scrittura asincrona non bloccante
+  final List<Uint8List> _txQueue = [];
+  bool _isTxProcessing = false;
+
+  // BLE-06: Lista circolare ultimi 20 eventi di disconnessione
+  final List<DisconnectionEvent> _disconnectionHistory = [];
+  DateTime? _sessionStartTime;
+
   bool _isProprietaryChannelActive = false;
   bool _fallbackModeActive = false;
   BluetoothCharacteristic? _cmdToStrapChar;
 
   final StreamController<HrDataPacket> _hrStreamController =
       StreamController<HrDataPacket>.broadcast();
+  // ignore: non_constant_identifier_names
   final StreamController<Whoop96BytePacket> _96ByteStreamController =
       StreamController<Whoop96BytePacket>.broadcast();
   final StreamController<BleState> _stateStreamController =
@@ -68,20 +163,38 @@ class BleConnectionManager {
   StreamSubscription<List<ScanResult>>? _scanSubscription;
   StreamSubscription<BluetoothConnectionState>? _connectionSubscription;
   StreamSubscription<List<int>>? _hrNotificationSubscription;
+  // ignore: non_constant_identifier_names
   StreamSubscription<List<int>>? _96ByteNotificationSubscription;
   StreamSubscription<List<int>>? _batteryNotificationSubscription;
   StreamSubscription<List<int>>? _ackNotificationSubscription;
   StreamSubscription<List<int>>? _eventsNotificationSubscription;
+
   Timer? _reconnectTimer;
   Timer? _proprietaryTimeoutTimer;
+  Timer? _stateTransitionTimer;
+  Timer? _stableStreamingTimer;
+  Timer? _dataWatchdogTimer;
+
+  // Data Watchdog: timeout 15 secondi per assenza dati in streaming
+  static const Duration defaultDataWatchdogTimeout = Duration(seconds: 15);
+  Duration dataWatchdogTimeout = defaultDataWatchdogTimeout;
 
   // Getters
   BleState get state => _state;
+  bool get isConnected =>
+      _state == BleState.connected ||
+      _state == BleState.streaming ||
+      _state == BleState.syncingHistory;
+  bool get isStreaming => _state == BleState.streaming;
+  bool get isConnecting => _isConnecting || _state == BleState.connecting;
   String? get statusMessage => _statusMessage;
   BluetoothDevice? get connectedDevice => _connectedDevice;
   int? get batteryLevelPct => _batteryLevelPct;
   bool get isProprietaryChannelActive => _isProprietaryChannelActive;
   bool get fallbackModeActive => _fallbackModeActive;
+  List<DisconnectionEvent> get disconnectionHistory => List.unmodifiable(_disconnectionHistory);
+  int get backoffAttempt => _backoffAttempt;
+  int get autoReconnectAttempts => _autoReconnectAttempts;
 
   Stream<HrDataPacket> get hrStream => _hrStreamController.stream;
   Stream<Whoop96BytePacket> get packet96ByteStream => _96ByteStreamController.stream;
@@ -90,22 +203,93 @@ class BleConnectionManager {
   Stream<List<int>> get ackNotificationStream => _ackNotificationStreamController.stream;
   Stream<List<ScanResult>> get scanResultsStream => FlutterBluePlus.scanResults;
 
-  void _updateState(BleState newState, [String? message]) {
+  void _updateState(BleState newState, [String? message, Duration? transitionTimeout]) {
+    _stateTransitionTimer?.cancel();
     _state = newState;
     _statusMessage = message;
+
+    // Gestione timer watchdog e stabilità in base al nuovo stato
+    if (newState == BleState.streaming) {
+      _startDataWatchdog();
+      _startStableStreamingTimer();
+    } else if (newState != BleState.syncingHistory) {
+      _dataWatchdogTimer?.cancel();
+      _stableStreamingTimer?.cancel();
+    }
+
+    if (!_stateStreamController.isClosed) {
+      _stateStreamController.add(_state);
+    }
+
+    BleDiagnosticService.instance.recordStateTransition(newState, message);
+    StructuredLogger.instance.info(
+      LogTag.ble,
+      'Transizione stato BLE: $newState ${message != null ? "($message)" : ""}',
+    );
+
+    final isTransient = newState == BleState.connecting ||
+        newState == BleState.discovering ||
+        newState == BleState.subscribing ||
+        newState == BleState.initializing ||
+        newState == BleState.syncingHistory ||
+        newState == BleState.bonding ||
+        newState == BleState.requestingPermissions;
+
+    if (isTransient) {
+      final timeoutDuration = transitionTimeout ?? const Duration(seconds: 15);
+      _stateTransitionTimer = Timer(timeoutDuration, () {
+        if (_state == newState) {
+          debugPrint('BleConnectionManager: TIMEOUT transizione stato $newState superato (${timeoutDuration.inSeconds}s)');
+          _recordDisconnection(8, 'Timeout transizione di stato: $newState');
+          _updateState(BleState.failed, 'Timeout transizione per lo stato $newState');
+          _handleAutoReconnection();
+        }
+      });
+    }
+  }
+
+  void resetStateForTest() {
+    _stateTransitionTimer?.cancel();
+    _stateTransitionTimer = null;
+    _dataWatchdogTimer?.cancel();
+    _dataWatchdogTimer = null;
+    _stableStreamingTimer?.cancel();
+    _stableStreamingTimer = null;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _cancelAllSubscriptions();
+    _txQueue.clear();
+    _disconnectionHistory.clear();
+    _bondedDevices.clear();
+    _isConnecting = false;
+    _bindInProgress = false;
+    _isTxProcessing = false;
+    _backoffAttempt = 0;
+    _sessionStartTime = null;
+    _state = BleState.disconnected;
+    _statusMessage = null;
+    _connectedDevice = null;
+    _cmdToStrapChar = null;
+    _isProprietaryChannelActive = false;
+    _fallbackModeActive = false;
+    _batteryLevelPct = null;
     if (!_stateStreamController.isClosed) {
       _stateStreamController.add(_state);
     }
   }
 
-  void resetStateForTest() {
-    _state = BleState.disconnected;
-    _statusMessage = null;
-    _connectedDevice = null;
-    _cmdToStrapChar = null;
-    if (!_stateStreamController.isClosed) {
-      _stateStreamController.add(_state);
-    }
+  /// Cancella tutte le sottoscrizioni a notifiche BLE
+  void _cancelAllSubscriptions() {
+    _hrNotificationSubscription?.cancel();
+    _hrNotificationSubscription = null;
+    _96ByteNotificationSubscription?.cancel();
+    _96ByteNotificationSubscription = null;
+    _batteryNotificationSubscription?.cancel();
+    _batteryNotificationSubscription = null;
+    _ackNotificationSubscription?.cancel();
+    _ackNotificationSubscription = null;
+    _eventsNotificationSubscription?.cancel();
+    _eventsNotificationSubscription = null;
   }
 
   /// 1. Richiesta permessi Android per Bluetooth e Posizione
@@ -148,7 +332,13 @@ class BleConnectionManager {
   }
 
   /// Avvia la scansione BLE attiva
+  /// BLE-03: Non avvia la scansione se un tentativo di connessione è già in corso
   Future<void> startScanOnly({Duration timeout = const Duration(seconds: 15)}) async {
+    if (isConnecting) {
+      debugPrint('BleConnectionManager: startScanOnly ignorato - connessione in corso (BLE-03)');
+      return;
+    }
+
     final hasPermissions = await requestBlePermissions();
     if (!hasPermissions) return;
 
@@ -165,16 +355,35 @@ class BleConnectionManager {
   }
 
   /// Connette ad uno specifico dispositivo selezionato
-  Future<void> connectToSpecificDevice(BluetoothDevice device) async {
+  /// BLE-01: Single-flight lock
+  /// BLE-03: Ferma immediatamente la scansione prima di iniziare connect()
+  Future<void> connectToSpecificDevice(BluetoothDevice device, {bool isAutoReconnect = false}) async {
+    if (isConnecting) {
+      debugPrint('BleConnectionManager: connectToSpecificDevice ignorato - connessione già in corso (BLE-01)');
+      return;
+    }
+
     try {
+      _scanSubscription?.cancel();
+      _scanSubscription = null;
       await FlutterBluePlus.stopScan();
     } catch (_) {}
 
-    await _connectToDevice(device);
+    await _connectToDevice(device, isAutoReconnect: isAutoReconnect);
   }
 
+  /// Alias per compatibilità
+  Future<void> connectToDevice(BluetoothDevice device, {bool isAutoReconnect = false}) =>
+      connectToSpecificDevice(device, isAutoReconnect: isAutoReconnect);
+
   /// Scansione automatica e prima connessione Whoop trovata
+  /// BLE-03: Non avvia se isConnecting; ferma scansione prima di connettere
   Future<void> startScanAndConnect() async {
+    if (isConnecting) {
+      debugPrint('BleConnectionManager: startScanAndConnect ignorato - connessione in corso (BLE-03)');
+      return;
+    }
+
     final hasPermissions = await requestBlePermissions();
     if (!hasPermissions) return;
 
@@ -191,8 +400,13 @@ class BleConnectionManager {
               advName.contains('WHOOP') ||
               deviceName.contains('WP4') ||
               deviceName.contains('WP5')) {
-            await FlutterBluePlus.stopScan();
-            await _connectToDevice(r.device);
+            // BLE-03: Ferma immediatamente la scansione prima di avviare connect()
+            await _scanSubscription?.cancel();
+            _scanSubscription = null;
+            try {
+              await FlutterBluePlus.stopScan();
+            } catch (_) {}
+            await _connectToDevice(r.device, isAutoReconnect: false);
             break;
           }
         }
@@ -258,7 +472,9 @@ class BleConnectionManager {
 
   /// Dimentica l'accoppiamento con il dispositivo WHOOP corrente
   Future<void> forgetDevice() async {
-    await disconnect();
+    if (_state != BleState.connecting && !_isConnecting) {
+      await disconnect();
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('whoop_paired_device_id');
@@ -278,7 +494,14 @@ class BleConnectionManager {
   }
 
   /// 2. Flusso Zero-Scan all'avvio dell'applicazione
-  Future<bool> connectSavedDevice() async {
+  /// BLE-01: Single-flight lock idempotente; NON esegue disconnect se connecting
+  /// BLE-05: autoConnect: false per manuale, autoConnect: true per background reconnection
+  Future<bool> connectSavedDevice({bool isAutoReconnect = false}) async {
+    if (isConnecting) {
+      debugPrint('BleConnectionManager: connectSavedDevice ignorato - connessione già in corso (BLE-01)');
+      return false;
+    }
+
     final savedId = await getPairedDeviceId();
     if (savedId == null || savedId.isEmpty) {
       debugPrint('BleConnectionManager: Nessun ID salvato. Avvio scansione...');
@@ -286,21 +509,13 @@ class BleConnectionManager {
       return false;
     }
 
-    if (_state == BleState.connecting || _state == BleState.bonding) {
-      debugPrint('BleConnectionManager: Resetto stato incagliato...');
-      final preservedReconnectTimer = _reconnectTimer;
-      await disconnect(cancelReconnectTimer: false);
-      if (preservedReconnectTimer != null && preservedReconnectTimer.isActive) {
-        _reconnectTimer = preservedReconnectTimer;
-      }
-    }
-
-    debugPrint('BleConnectionManager: Flusso Zero-Scan per dispositivo salvato: $savedId');
+    _isConnecting = true;
+    _updateState(BleState.connecting, 'Riconnessione al cinturino WHOOP...');
+    debugPrint('BleConnectionManager: Flusso Zero-Scan per dispositivo salvato: $savedId (autoConnect: $isAutoReconnect)');
 
     try {
       final device = BluetoothDevice.fromId(savedId);
       _connectedDevice = device;
-      _updateState(BleState.connecting, 'Riconnessione al cinturino WHOOP...');
 
       List<BluetoothDevice> systemDevices = [];
       try {
@@ -309,101 +524,173 @@ class BleConnectionManager {
 
       bool isAlreadyConnectedToOs = systemDevices.any((d) => d.remoteId.str == savedId);
 
-      _connectionSubscription?.cancel();
-      _connectionSubscription = device.connectionState.listen((state) async {
-        debugPrint('BleConnectionManager: ConnectionState reattivo -> $state');
-        if (state == BluetoothConnectionState.connected) {
-          _updateState(BleState.connected, 'WHOOP Connesso');
-          try {
-            await device.requestMtu(247);
-          } catch (_) {}
-          await _bindToDevice(device);
-        } else if (state == BluetoothConnectionState.disconnected && _state == BleState.connected) {
-          _updateState(BleState.disconnected, 'Connessione al cinturino WHOOP interrotta.');
-          _handleAutoReconnection();
-        }
-      });
+      // BLE-02: Configura l'UNICO listener di stato da cui partirà _bindToDevice
+      _setupConnectionStateListener(device);
 
       if (isAlreadyConnectedToOs) {
-        debugPrint('BleConnectionManager: Dispositivo già connesso all\'OS. Binding diretto...');
+        debugPrint('BleConnectionManager: Dispositivo già connesso a livello OS.');
         try {
-          await device.requestMtu(247);
+          final currentConnState = await device.connectionState.first.timeout(
+            const Duration(seconds: 2),
+            onTimeout: () => BluetoothConnectionState.connected,
+          );
+          if (currentConnState == BluetoothConnectionState.connected && _state != BleState.connected) {
+            _sessionStartTime ??= DateTime.now();
+            _updateState(BleState.connected, 'WHOOP Connesso');
+            await _bindToDevice(device);
+          }
         } catch (_) {}
-        await _bindToDevice(device);
         return true;
       } else {
-        try {
-          await device.connect(autoConnect: true, timeout: const Duration(seconds: 6));
-          try {
-            await device.requestMtu(247);
-          } catch (_) {}
-          _updateState(BleState.connected, 'WHOOP Connesso');
-          await _bindToDevice(device);
-          return true;
-        } catch (e) {
-          debugPrint('BleConnectionManager: Connessione diretta non riuscita subito ($e). Avvio riconnessione automatica e scansione...');
-          _updateState(BleState.reconnecting, 'Riconnessione in corso...');
-          _handleAutoReconnection();
-          return false;
-        }
+        // BLE-05: Connessione con autoConnect configurato e timeout pulito di 15s
+        await device.connect(
+          autoConnect: isAutoReconnect,
+          timeout: const Duration(seconds: 15),
+        );
+        // BLE-02: _bindToDevice partirà dal connectionState listener
+        return true;
       }
     } catch (e) {
-      debugPrint('BleConnectionManager: Errore Zero-Scan ($e)');
+      debugPrint('BleConnectionManager: Errore connessione dispositivo salvato ($e)');
+      _recordDisconnection(8, 'Timeout o fallimento connessione saved device: $e');
       _updateState(BleState.reconnecting, 'Riconnessione in corso...');
       _handleAutoReconnection();
       return false;
+    } finally {
+      _isConnecting = false;
     }
   }
 
   /// 3. Connessione e Pairing con il Sensore
-  Future<void> _connectToDevice(BluetoothDevice device) async {
+  /// BLE-01: Single-flight lock idempotente
+  /// BLE-02: NON invoca _bindToDevice direttamente qui (unico percorso dal listener)
+  /// BLE-03: Bonding eseguito solo una volta e solo se non già bonded
+  /// BLE-05: autoConnect: false per prima connessione
+  Future<void> _connectToDevice(BluetoothDevice device, {bool isAutoReconnect = false}) async {
+    if (isConnecting) {
+      debugPrint('BleConnectionManager: _connectToDevice ignorato - connessione già in corso (BLE-01)');
+      return;
+    }
+    _isConnecting = true;
     _updateState(BleState.connecting, 'Connessione a ${device.platformName}...');
     _connectedDevice = device;
 
     try {
       await _savePairedDeviceId(device.remoteId.str, device.platformName);
 
-      _connectionSubscription?.cancel();
-      _connectionSubscription = device.connectionState.listen((state) {
-        if (state == BluetoothConnectionState.disconnected && _state == BleState.connected) {
-          _updateState(BleState.disconnected, 'Connessione al cinturino WHOOP interrotta.');
-          _handleAutoReconnection();
-        }
-      });
+      // BLE-02: Configura l'UNICO listener di stato
+      _setupConnectionStateListener(device);
 
-      await device.connect(autoConnect: false, timeout: const Duration(seconds: 8));
+      // BLE-03: Bonding ordinato
+      await _ensureBonded(device);
 
-      // Negoziazione MTU a 247 per consentire il passaggio diretto di frame a 96-Byte
-      try {
-        await device.requestMtu(247);
-      } catch (_) {}
+      // BLE-05: Connessione con timeout 15s
+      await device.connect(
+        autoConnect: isAutoReconnect,
+        timeout: const Duration(seconds: 15),
+      );
 
-      _updateState(BleState.bonding, 'Creazione Bonding / Pairing BLE...');
-      try {
-        await device.createBond();
-      } catch (_) {}
-
-      _updateState(BleState.connected, 'WHOOP Connesso');
-      await _bindToDevice(device);
+      // BLE-02: Non invochiamo _bindToDevice qui!
+      // Verrà scatenato UNICAMENTE da _setupConnectionStateListener quando state == connected
     } catch (e) {
-      _updateState(BleState.error, 'Errore di connessione BLE: $e');
+      debugPrint('BleConnectionManager: Errore durante connect: $e');
+      _recordDisconnection(133, 'Errore di connessione BLE: $e');
+      _updateState(BleState.failed, 'Errore di connessione BLE: $e');
       _handleAutoReconnection();
+    } finally {
+      _isConnecting = false;
     }
   }
 
-  /// Binding e sottoscrizione GATT (Zero-Scan Re-engagement & CCCD Binding)
-  Future<void> _bindToDevice(BluetoothDevice device) async {
-    if (_state != BleState.connected) {
-      _updateState(BleState.connected, 'WHOOP Connesso');
+  /// BLE-02 & BLE-06: Configura l'UNICO listener di stato del dispositivo
+  void _setupConnectionStateListener(BluetoothDevice device) {
+    _connectionSubscription?.cancel();
+    _connectionSubscription = device.connectionState.listen((connState) async {
+      debugPrint('BleConnectionManager: ConnectionState reattivo -> $connState');
+      if (connState == BluetoothConnectionState.connected) {
+        _sessionStartTime ??= DateTime.now();
+        _updateState(BleState.connected, 'WHOOP Connesso');
+        await _bindToDevice(device);
+      } else if (connState == BluetoothConnectionState.disconnected) {
+        final code = device.disconnectReason?.code;
+        final desc = device.disconnectReason?.description;
+        _recordDisconnection(code, desc);
+        _cancelAllSubscriptions();
+        _dataWatchdogTimer?.cancel();
+        _stableStreamingTimer?.cancel();
+        _bindInProgress = false;
+        _updateState(BleState.disconnected, 'Connessione al cinturino WHOOP interrotta.');
+        _handleAutoReconnection();
+      }
+    });
+  }
+
+  /// BLE-03: Verifica ed esecuzione ordinata del bonding (solo Android, una volta per sessione)
+  Future<void> _ensureBonded(BluetoothDevice device) async {
+    if (kIsWeb) return;
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+
+    final deviceId = device.remoteId.str;
+    if (_bondedDevices.contains(deviceId)) {
+      debugPrint('BleConnectionManager: Dispositivo $deviceId già verificato come bonded.');
+      return;
     }
 
-    // Avvia il Foreground Service Android nativo per mantenere la connessione attiva ad app chiusa
-    _startNativeForegroundService();
+    try {
+      BluetoothBondState currentBond = device.prevBondState ?? BluetoothBondState.none;
+      if (currentBond != BluetoothBondState.bonded) {
+        try {
+          currentBond = await device.bondState.first.timeout(const Duration(seconds: 2));
+        } catch (_) {}
+      }
+
+      if (currentBond == BluetoothBondState.bonded) {
+        _bondedDevices.add(deviceId);
+        debugPrint('BleConnectionManager: Dispositivo $deviceId già accoppiato/bonded.');
+        return;
+      }
+
+      _updateState(BleState.bonding, 'Creazione Bonding / Pairing BLE...');
+      debugPrint('BleConnectionManager: Invocazione createBond per $deviceId...');
+      await device.createBond().timeout(const Duration(seconds: 10));
+      _bondedDevices.add(deviceId);
+      debugPrint('BleConnectionManager: createBond completato per $deviceId.');
+    } catch (e) {
+      debugPrint('BleConnectionManager: Avviso createBond: $e');
+    }
+  }
+
+  /// BLE-02: Binding e sottoscrizione GATT (Unico Percorso di Bind protetto da guard atomica)
+  Future<void> _bindToDevice(BluetoothDevice device) async {
+    if (_bindInProgress) {
+      debugPrint('BleConnectionManager: _bindToDevice già in corso (guard atomica BLE-02). Ignoro chiamata.');
+      return;
+    }
+    _bindInProgress = true;
+    debugPrint('BleConnectionManager: Avvio _bindToDevice (Unico percorso)');
 
     try {
+      // 1. Elimina/cancella esplicitamente le sottoscrizioni precedenti prima di ri-sottoscrivere
+      _cancelAllSubscriptions();
+
+      // 2. Avvia il Foreground Service Android nativo per connessione persistente
+      _startNativeForegroundService();
+
+      // 3. Negoziazione MTU a 247 sequenziale
+      try {
+        await device.requestMtu(247).timeout(const Duration(seconds: 4));
+        debugPrint('BleConnectionManager: MTU 247 negoziata con successo');
+      } catch (e) {
+        debugPrint('BleConnectionManager: MTU request fallback/warning: $e');
+      }
+
+      // 4. Discovery e sottoscrizione sequenziale
       await _discoverAndSetupServices(device);
     } catch (e) {
       debugPrint('BleConnectionManager: Errore durante _bindToDevice: $e');
+      _updateState(BleState.failed, 'Errore configurazione servizi: $e');
+    } finally {
+      _bindInProgress = false;
     }
   }
 
@@ -417,9 +704,9 @@ class BleConnectionManager {
     }
   }
 
-  /// 4. Discovery dei Servizi GATT e Sottoscrizione
-  /// 4. Discovery dei Servizi GATT e Sottoscrizione con sequenza rigida WHOOP (0004 -> 0007 -> 0005 -> 0003 -> 0x2A37)
+  /// 4. Discovery dei Servizi GATT e Sottoscrizione Sequenziale
   Future<void> _discoverAndSetupServices(BluetoothDevice device) async {
+    _updateState(BleState.discovering, 'Discovery servizi GATT in corso...');
     _cmdToStrapChar = null;
     List<BluetoothService> services = await device.discoverServices();
     BluetoothService? whoopProprietaryService;
@@ -452,6 +739,8 @@ class BleConnectionManager {
         whoopProprietaryService = service;
       }
     }
+
+    _updateState(BleState.subscribing, 'Sottoscrizione canali telemetrici in corso...');
 
     if (whoopProprietaryService != null) {
       BluetoothCharacteristic? eventsChar;
@@ -502,8 +791,12 @@ class BleConnectionManager {
         try {
           await eventsChar.setNotifyValue(true);
           _eventsNotificationSubscription?.cancel();
+          final charUuidStr = eventsChar.uuid.toString();
           _eventsNotificationSubscription = eventsChar.onValueReceived.listen((eventBytes) {
             if (eventBytes.isNotEmpty) {
+              final u8 = Uint8List.fromList(eventBytes);
+              RawCaptureService.instance.recordNotification(charUuidStr, u8);
+              BleDiagnosticService.instance.recordPacketReceived(charUuid: charUuidStr, bytes: u8);
               debugPrint('BleConnectionManager: Evento strap ricevuto (0004): $eventBytes');
             }
           });
@@ -522,24 +815,34 @@ class BleConnectionManager {
       }
 
       // 3. Data (0005) - Telemetria e Streaming 96-Byte
+      // BLE-04: Listener non bloccante. Non invia ACK per lo streaming live a 1 Hz!
       if (dataChar != null) {
         try {
           await dataChar.setNotifyValue(true);
           _96ByteNotificationSubscription?.cancel();
-          _96ByteNotificationSubscription = dataChar.onValueReceived.listen((bytes) async {
+          final dataCharUuidStr = dataChar.uuid.toString();
+          _96ByteNotificationSubscription = dataChar.onValueReceived.listen((bytes) {
             if (bytes.length >= 96) {
-              final p96 = Whoop96BytePacket.fromBytes(Uint8List.fromList(bytes));
+              final bytesU8 = Uint8List.fromList(bytes);
+              RawCaptureService.instance.recordNotification(dataCharUuidStr, bytesU8);
+              BleDiagnosticService.instance.recordPacketReceived(charUuid: dataCharUuidStr, bytes: bytesU8);
+              final p96 = Whoop96BytePacket.fromBytes(bytesU8);
               if (!_96ByteStreamController.isClosed) {
                 _96ByteStreamController.add(p96);
               }
               _isProprietaryChannelActive = true;
               _fallbackModeActive = false;
+              _onTelemetryDataReceived();
 
-              // Invia la risposta ACK Opcode 0x17 per far avanzare il puntatore Flash nello strap
-              final ackFrame = Uint8List.fromList(
-                StoreAndForwardHandler.buildOpcode23HistoricalDataResult(p96.seqNumber),
-              );
-              await writeAlarmCommand(ackFrame);
+              // BLE-04: Non inviare ACK per i normali pacchetti live di streaming.
+              // Solo durante sync storico (syncingHistory) si invia l'ACK opcode 23,
+              // e viene accodato in modo asincrono non bloccante (NO await).
+              if (_state == BleState.syncingHistory) {
+                final ackFrame = Uint8List.fromList(
+                  StoreAndForwardHandler.buildOpcode23HistoricalDataResult(p96.seqNumber),
+                );
+                enqueueCommand(ackFrame);
+              }
             }
           });
           debugPrint('BleConnectionManager: [3/5] Sottoscritto canale 0005 (Data 96-Byte)');
@@ -553,8 +856,14 @@ class BleConnectionManager {
         try {
           await cmdFromStrapChar.setNotifyValue(true);
           _ackNotificationSubscription?.cancel();
+          final cmdCharUuidStr = cmdFromStrapChar.uuid.toString();
           _ackNotificationSubscription = cmdFromStrapChar.onValueReceived.listen((ackBytes) {
             if (ackBytes.isNotEmpty) {
+              final bytesU8 = Uint8List.fromList(ackBytes);
+              RawCaptureService.instance.recordNotification(cmdCharUuidStr, bytesU8);
+              BleDiagnosticService.instance.recordPacketReceived(charUuid: cmdCharUuidStr, bytes: bytesU8);
+              BleDiagnosticService.instance.recordAckReceived(ackBytes);
+              StructuredLogger.instance.info(LogTag.ble, 'ACK/Response ricevuto da CMD_FROM_STRAP: $ackBytes');
               debugPrint('BleConnectionManager: ACK/Response ricevuto da CMD_FROM_STRAP: $ackBytes');
               if (!_ackNotificationStreamController.isClosed) {
                 _ackNotificationStreamController.add(ackBytes);
@@ -580,8 +889,12 @@ class BleConnectionManager {
           if (batteryChar.properties.notify) {
             await batteryChar.setNotifyValue(true);
             _batteryNotificationSubscription?.cancel();
+            final batteryCharUuidStr = batteryChar.uuid.toString();
             _batteryNotificationSubscription = batteryChar.onValueReceived.listen((val) {
               if (val.isNotEmpty) {
+                final bytesU8 = Uint8List.fromList(val);
+                RawCaptureService.instance.recordNotification(batteryCharUuidStr, bytesU8);
+                BleDiagnosticService.instance.recordPacketReceived(charUuid: batteryCharUuidStr, bytes: bytesU8);
                 _batteryLevelPct = val[0];
                 if (!_batteryStreamController.isClosed) {
                   _batteryStreamController.add(_batteryLevelPct!);
@@ -597,8 +910,13 @@ class BleConnectionManager {
         try {
           await hrChar.setNotifyValue(true);
           _hrNotificationSubscription?.cancel();
+          final hrCharUuidStr = hrChar.uuid.toString();
           _hrNotificationSubscription = hrChar.onValueReceived.listen((value) {
             if (value.isNotEmpty) {
+              final bytesU8 = Uint8List.fromList(value);
+              RawCaptureService.instance.recordNotification(hrCharUuidStr, bytesU8);
+              BleDiagnosticService.instance.recordPacketReceived(charUuid: hrCharUuidStr, bytes: bytesU8);
+              _onTelemetryDataReceived();
               final packet = HrDataPacket.fromBytes(value);
               if (!_hrStreamController.isClosed) {
                 _hrStreamController.add(packet);
@@ -611,7 +929,7 @@ class BleConnectionManager {
         }
       }
 
-      // SEQUENZA DI SBLOCCO SENSORI DORMISCENTI (Preludio di Inizializzazione Hardware Profonda):
+      // SEQUENZA DI SBLOCCO SENSORI DORMISCENTI:
       await _executeHardwareUnlockSequence(device);
     } else {
       _fallbackModeActive = true;
@@ -619,8 +937,13 @@ class BleConnectionManager {
         try {
           await hrChar.setNotifyValue(true);
           _hrNotificationSubscription?.cancel();
+          final fallbackHrCharUuidStr = hrChar.uuid.toString();
           _hrNotificationSubscription = hrChar.onValueReceived.listen((value) {
             if (value.isNotEmpty) {
+              final bytesU8 = Uint8List.fromList(value);
+              RawCaptureService.instance.recordNotification(fallbackHrCharUuidStr, bytesU8);
+              BleDiagnosticService.instance.recordPacketReceived(charUuid: fallbackHrCharUuidStr, bytes: bytesU8);
+              _onTelemetryDataReceived();
               final packet = HrDataPacket.fromBytes(value);
               if (!_hrStreamController.isClosed) {
                 _hrStreamController.add(packet);
@@ -629,12 +952,15 @@ class BleConnectionManager {
           });
         } catch (_) {}
       }
+      _updateState(BleState.connected, 'WHOOP Connesso (Fallback HR)');
+      _updateState(BleState.streaming, 'WHOOP Connesso - Streaming HR');
     }
   }
 
-  /// Esegue la sequenza di risveglio e sblocco hardware del sensore WHOOP (Connessione a fondo)
+  /// Esegue la sequenza di risveglio e sblocco hardware del sensore WHOOP
   Future<void> _executeHardwareUnlockSequence(BluetoothDevice device) async {
     try {
+      _updateState(BleState.initializing, 'Inizializzazione hardware...');
       final isMaverick = device.platformName.toUpperCase().contains('5.0') ||
           device.platformName.toUpperCase().contains('WP5');
 
@@ -681,56 +1007,193 @@ class BleConnectionManager {
       await sendStoreAndForwardSyncHandshake();
 
       debugPrint('BleConnectionManager: Sblocco hardware profondo completato con successo!');
+      _updateState(BleState.connected, 'WHOOP Connesso');
+      _updateState(BleState.streaming, 'WHOOP Connesso - Streaming attivo');
     } catch (e) {
       debugPrint('BleConnectionManager: Errore durante sequenza di sblocco hardware: $e');
+      _updateState(BleState.failed, 'Errore durante sequenza di sblocco hardware: $e');
     }
   }
 
   /// Invia l'Handshake di Sincronizzazione Opcode 0x16 (Trigger Data Retrieval) a CMD_TO_STRAP
   Future<void> sendStoreAndForwardSyncHandshake() async {
-    if (_state != BleState.connected) return;
+    if (!isConnected) return;
+    _updateState(BleState.syncingHistory, 'Sincronizzazione dati offline flash...');
     final handshakeFrame = Uint8List.fromList(StoreAndForwardHandler.buildOpcode22SendHistoricalData());
     await writeAlarmCommand(handshakeFrame);
     debugPrint('BleConnectionManager: Inviato Handshake Opcode 0x16 (Trigger Data Retrieval)');
   }
 
-  /// 5. Gestione Riconnessione Automatica Ininterrotta in Background
+  /// BLE-01: Calcolo Backoff Esponenziale con Jitter (2s -> 4s -> 8s -> 16s -> 32s -> max 60s)
+  @visibleForTesting
+  static Duration calculateBackoffDelay(int attempt, {bool withJitter = true, math.Random? random}) {
+    if (attempt <= 0) attempt = 1;
+    int baseSec = 2 * (1 << (attempt - 1));
+    if (baseSec > 60 || baseSec < 2) {
+      baseSec = 60;
+    }
+    if (!withJitter) {
+      return Duration(seconds: baseSec);
+    }
+    final rand = random ?? math.Random();
+    final jitterMs = rand.nextInt(500); // Jitter tra 0 e 500 ms
+    return Duration(milliseconds: (baseSec * 1000) + jitterMs);
+  }
+
+  /// BLE-01: Avvio ciclo di riconnessione automatica con backoff
   void _handleAutoReconnection() {
     if (_state == BleState.reconnecting) return;
-    _autoReconnectAttempts = 0;
     _updateState(BleState.reconnecting, 'Connessione persa. Riconnessione automatica in corso...');
+    _scheduleNextReconnectAttempt();
+  }
 
+  void _scheduleNextReconnectAttempt() {
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
-      if (_state == BleState.connected) {
-        timer.cancel();
-        _autoReconnectAttempts = 0;
-        return;
-      }
+    final nextAttempt = _backoffAttempt + 1;
+    final delay = calculateBackoffDelay(nextAttempt, withJitter: true, random: _random);
+    debugPrint('BleConnectionManager: Prossimo tentativo di riconnessione (#$nextAttempt) programmato tra ${delay.inMilliseconds}ms');
 
+    _reconnectTimer = Timer(delay, () async {
+      if (isConnected) return;
+      _backoffAttempt++;
       _autoReconnectAttempts++;
-      debugPrint('BleConnectionManager: Tentativo di riconnessione automatica ininterrotta #$_autoReconnectAttempts...');
+      debugPrint('BleConnectionManager: Tentativo di riconnessione automatica #$_backoffAttempt...');
 
-      // Prima prova il dispositivo salvato via Zero-Scan
-      bool reconnected = await connectSavedDevice();
+      // BLE-05: autoConnect: true durante riconnessione in background
+      bool reconnected = await connectSavedDevice(isAutoReconnect: true);
       if (reconnected) {
-        timer.cancel();
         return;
       }
 
-      // Se il dispositivo salvato non risponde subito, avvia la scansione attiva
-      if (_autoReconnectAttempts % 3 == 0) {
+      // Se il dispositivo salvato non risponde dopo 3 tentativi consecutivi, attiva scansione se non in corso
+      if (_backoffAttempt % 3 == 0 && !isConnecting) {
         debugPrint('BleConnectionManager: Scansione attiva per ritrovare la strap WHOOP...');
         await startScanAndConnect();
+      }
+
+      // Rischedula il prossimo tentativo se ancora disconnesso e non in corso di connessione
+      if (!isConnected && !isConnecting) {
+        _scheduleNextReconnectAttempt();
       }
     });
   }
 
+  /// BLE-01: Reset del contatore di backoff solo dopo una connessione stabile mantenuta per > 60s in streaming
+  void _startStableStreamingTimer() {
+    _stableStreamingTimer?.cancel();
+    _stableStreamingTimer = Timer(const Duration(seconds: 60), () {
+      if (_state == BleState.streaming) {
+        debugPrint('BleConnectionManager: Connessione stabile per > 60s in streaming. Reset contatore backoff.');
+        _backoffAttempt = 0;
+        _autoReconnectAttempts = 0;
+      }
+    });
+  }
+
+  /// Data Watchdog: Avvia il timer di 15 secondi per il controllo ricezione frame in streaming
+  void _startDataWatchdog() {
+    _dataWatchdogTimer?.cancel();
+    _dataWatchdogTimer = Timer(dataWatchdogTimeout, _onDataWatchdogFired);
+  }
+
+  /// Resetta il watchdog quando si riceve un pacchetto valido di telemetria
+  void _onTelemetryDataReceived() {
+    if (_state == BleState.streaming) {
+      _dataWatchdogTimer?.cancel();
+      _dataWatchdogTimer = Timer(dataWatchdogTimeout, _onDataWatchdogFired);
+    }
+  }
+
+  /// Data Watchdog: Chiamato se nessun frame viene ricevuto per più di 15s in streaming
+  Future<void> _onDataWatchdogFired() async {
+    if (_state != BleState.streaming) return;
+    debugPrint('BleConnectionManager: DATA WATCHDOG SCATTATO (>15s senza frame in streaming). Connessione zombie rilevata!');
+    _recordDisconnection(-1, 'Data Watchdog: Connessione zombie (>15s senza dati)');
+    _addDebugLog('[WATCHDOG] Connessione zombie rilevata: nessun dato da 15s in streaming');
+
+    _dataWatchdogTimer?.cancel();
+    _dataWatchdogTimer = null;
+    _stableStreamingTimer?.cancel();
+    _stableStreamingTimer = null;
+
+    // Disconnessione pulita forzata
+    _cancelAllSubscriptions();
+    if (_connectedDevice != null) {
+      final dev = _connectedDevice;
+      _connectedDevice = null;
+      try {
+        await dev!.disconnect();
+      } catch (_) {}
+    }
+
+    _updateState(BleState.disconnected, 'Connessione zombie terminata da watchdog');
+    _handleAutoReconnection();
+  }
+
+  /// BLE-06: Registra un evento di disconnessione nella lista circolare (ultimi 20 eventi)
+  void _recordDisconnection(int? code, String? description) {
+    final duration = _sessionStartTime != null
+        ? DateTime.now().difference(_sessionStartTime!)
+        : Duration.zero;
+    _sessionStartTime = null;
+
+    final reason = interpretDisconnectCode(code, description);
+    final event = DisconnectionEvent(
+      timestamp: DateTime.now(),
+      statusCode: code,
+      reason: reason,
+      sessionDuration: duration,
+    );
+
+    _disconnectionHistory.add(event);
+    if (_disconnectionHistory.length > 20) {
+      _disconnectionHistory.removeAt(0);
+    }
+
+    _addDebugLog('[DISCONNECT] Code: $code, Reason: $reason, Durata: ${duration.inSeconds}s');
+    debugPrint('BleConnectionManager: Registrato evento disconnessione: $event');
+
+    BleDiagnosticService.instance.recordDisconnection(code ?? 0, reason);
+    StructuredLogger.instance.warn(
+      LogTag.ble,
+      'Disconnessione: codice $code, motivo "$reason", durata: ${duration.inSeconds}s',
+    );
+  }
+
+  /// BLE-04: Accoda un comando da inviare a CMD_TO_STRAP in modo asincrono non bloccante
+  void enqueueCommand(Uint8List payload) {
+    _txQueue.add(payload);
+    _processTxQueue();
+  }
+
+  Future<void> _processTxQueue() async {
+    if (_isTxProcessing) return;
+    _isTxProcessing = true;
+    try {
+      while (_txQueue.isNotEmpty) {
+        if (!isConnected || _connectedDevice == null) {
+          _txQueue.clear();
+          break;
+        }
+        final payload = _txQueue.removeAt(0);
+        await writeAlarmCommand(payload);
+        if (_txQueue.isNotEmpty) {
+          await Future.delayed(const Duration(milliseconds: 20));
+        }
+      }
+    } catch (e) {
+      debugPrint('BleConnectionManager: Errore svuotamento coda comandi TX: $e');
+    } finally {
+      _isTxProcessing = false;
+    }
+  }
+
   /// Public method per forzare il ripristino della connessione BLE
   Future<void> ensureConnected() async {
-    if (_state == BleState.disconnected || _state == BleState.reconnecting) {
-      final reconnected = await connectSavedDevice();
-      if (!reconnected) {
+    if (isConnecting) return;
+    if (_state == BleState.disconnected || _state == BleState.reconnecting || _state == BleState.failed) {
+      final reconnected = await connectSavedDevice(isAutoReconnect: true);
+      if (!reconnected && !isConnecting) {
         await startScanAndConnect();
       }
     }
@@ -738,7 +1201,6 @@ class BleConnectionManager {
 
   final List<String> _debugLogs = [];
   List<String> get debugLogs => List.unmodifiable(_debugLogs);
-
   final StreamController<List<String>> _debugLogsController = StreamController<List<String>>.broadcast();
   Stream<List<String>> get debugLogsStream => _debugLogsController.stream;
 
@@ -759,7 +1221,7 @@ class BleConnectionManager {
     final hexString = payload.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join(' ');
     final timestamp = DateTime.now().toIso8601String().substring(11, 19);
 
-    if (_state != BleState.connected || _connectedDevice == null) {
+    if (!isConnected || _connectedDevice == null) {
       _addDebugLog('[$timestamp] [TX ERROR] Dispositivo non connesso. Payload: $hexString');
       return false;
     }
@@ -798,6 +1260,16 @@ class BleConnectionManager {
           }
           _addDebugLog('[$timestamp] [TX SUCCESS] CMD_TO_STRAP (${cmdToStrapChar.uuid})\nHEX: $hexString');
           debugPrint('BleConnectionManager: Scritto frame su CMD_TO_STRAP (${cmdToStrapChar.uuid}) [HEX: $hexString]');
+          final opcode = payload.length > 6 ? payload[6] : (payload.isNotEmpty ? payload[0] : 0);
+          BleDiagnosticService.instance.recordWriteSent(
+            opcode: opcode,
+            bytes: payload,
+            description: 'CMD_TO_STRAP (${cmdToStrapChar.uuid})',
+          );
+          StructuredLogger.instance.info(
+            LogTag.haptic,
+            'Scritto comando su CMD_TO_STRAP (opcode=0x${opcode.toRadixString(16)}, len=${payload.length})',
+          );
           return true;
         } catch (e) {
           _addDebugLog('[$timestamp] [TX GATT ERROR] Errore di scrittura su ${cmdToStrapChar.uuid}: $e\nHEX: $hexString');
@@ -815,7 +1287,7 @@ class BleConnectionManager {
     }
   }
 
-  /// Invia il pacchetto di prova vibrazione immediata con tutti i protocolli WHOOP (Opcode 68 RUN_ALARM + Opcode 79 HAPTICS + Opcode 19 MAVERICK + Opcode 66 ALARM)
+  /// Invia il pacchetto di prova vibrazione immediata con tutti i protocolli WHOOP
   Future<bool> sendTestVibrationPulseNow() async {
     _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
 
@@ -825,7 +1297,7 @@ class BleConnectionManager {
     } catch (_) {}
 
     // 2. Invio dei frame di comando haptic reali WHOOP
-    if (_state == BleState.connected && _connectedDevice != null) {
+    if (isConnected && _connectedDevice != null) {
       // Opcode 68: RUN_ALARM (Trigger immediato buzzer allarme Harvard WHOOP 4.0)
       final runAlarm = HapticClockEncoder.buildRunAlarmCommand(seq: _hapticPacketCounter);
       await writeAlarmCommand(runAlarm);
@@ -861,61 +1333,71 @@ class BleConnectionManager {
     return false;
   }
 
-  /// Invia la sequenza di vibrazione haptic immediata alla strap WHOOP BLE e al motore aptico dello smartphone
-  Future<bool> sendHapticVibrationCommand({int pattern = 1}) async {
-    // 1. Vibrazione fisica immediata sul motore dello smartphone
+  /// Invia la sequenza di vibrazione haptic veritiera alla strap WHOOP BLE e allo smartphone
+  Future<HapticResultStatus> sendHapticVibrationCommand({int pattern = 1}) async {
+    bool phoneVibrated = false;
+    // 1. Vibrazione fisica sul motore dello smartphone
     try {
       HapticFeedback.heavyImpact();
       await Future.delayed(const Duration(milliseconds: 80));
       HapticFeedback.vibrate();
       await Future.delayed(const Duration(milliseconds: 80));
       HapticFeedback.heavyImpact();
+      phoneVibrated = true;
     } catch (_) {}
 
-    // 2. Invocazione multi-protocollo al cinturino WHOOP BLE (Opcode 68, Opcode 79, Opcode 19, Motor Direct)
-    if (_state == BleState.connected && _connectedDevice != null) {
-      try {
-        _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
-
-        // Opcode 68 (RUN_ALARM immediato)
-        final runAlarm = HapticClockEncoder.buildRunAlarmCommand(seq: _hapticPacketCounter);
-        await writeAlarmCommand(runAlarm);
-        await Future.delayed(const Duration(milliseconds: 50));
-
-        // Opcode 79 (RUN_HAPTICS_PATTERN WHOOP 4.0)
-        final runHaptics = HapticClockEncoder.buildRunHapticsPatternCommand(
-          seq: (_hapticPacketCounter + 1) & 0xFF,
-          patternId: pattern > 0 ? pattern : 2,
-        );
-        await writeAlarmCommand(runHaptics);
-        await Future.delayed(const Duration(milliseconds: 50));
-
-        // Opcode 19 (RUN_HAPTIC_PATTERN_MAVERICK per WHOOP 5.0)
-        final runMaverick = HapticClockEncoder.buildRunHapticPatternMaverickCommand(
-          seq: (_hapticPacketCounter + 2) & 0xFF,
-          loops: 3,
-        );
-        await writeAlarmCommand(runMaverick);
-        await Future.delayed(const Duration(milliseconds: 50));
-
-        // Direct haptic motor
-        final payloadDirect = HapticClockEncoder.encodeHapticMotorDirect(pattern: pattern);
-        await writeAlarmCommand(payloadDirect);
-
-        _hapticPacketCounter = (_hapticPacketCounter + 4) & 0xFF;
-        return true;
-      } catch (e) {
-        debugPrint('Errore invio sequenza vibrazione BLE: $e');
-      }
+    if (!isConnected || _connectedDevice == null) {
+      return phoneVibrated
+          ? HapticResultStatus.phoneHapticOnly
+          : HapticResultStatus.notConnected;
     }
-    return true;
+
+    // 2. Invocazione multi-protocollo al cinturino WHOOP BLE
+    try {
+      _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
+
+      // Opcode 68 (RUN_ALARM immediato)
+      final runAlarm = HapticClockEncoder.buildRunAlarmCommand(seq: _hapticPacketCounter);
+      final okAlarm = await writeAlarmCommand(runAlarm);
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Opcode 79 (RUN_HAPTICS_PATTERN WHOOP 4.0)
+      final runHaptics = HapticClockEncoder.buildRunHapticsPatternCommand(
+        seq: (_hapticPacketCounter + 1) & 0xFF,
+        patternId: pattern > 0 ? pattern : 2,
+      );
+      final okHaptics = await writeAlarmCommand(runHaptics);
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Opcode 19 (RUN_HAPTIC_PATTERN_MAVERICK per WHOOP 5.0)
+      final runMaverick = HapticClockEncoder.buildRunHapticPatternMaverickCommand(
+        seq: (_hapticPacketCounter + 2) & 0xFF,
+        loops: 3,
+      );
+      final okMaverick = await writeAlarmCommand(runMaverick);
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Direct haptic motor
+      final payloadDirect = HapticClockEncoder.encodeHapticMotorDirect(pattern: pattern);
+      final okDirect = await writeAlarmCommand(payloadDirect);
+
+      _hapticPacketCounter = (_hapticPacketCounter + 4) & 0xFF;
+
+      if (okAlarm || okHaptics || okMaverick || okDirect) {
+        return HapticResultStatus.strapCommandSent;
+      } else {
+        return HapticResultStatus.strapFailed;
+      }
+    } catch (e) {
+      debugPrint('Errore invio sequenza vibrazione BLE: $e');
+      return HapticResultStatus.strapFailed;
+    }
   }
 
   /// Invia il comando di cancellazione sveglia alla strap WHOOP
   Future<bool> sendCancelAlarmCommand() async {
-    if (_state == BleState.connected && _connectedDevice != null) {
+    if (isConnected && _connectedDevice != null) {
       _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
-      // Opcode 69: DISABLE_ALARM
       final disableCmd = HapticClockEncoder.buildDisableAlarmCommand(seq: _hapticPacketCounter);
       await writeAlarmCommand(disableCmd);
       await Future.delayed(const Duration(milliseconds: 40));
@@ -927,7 +1409,20 @@ class BleConnectionManager {
   }
 
   /// Disconnessione manuale e pulizia risorse
-  Future<void> disconnect({bool cancelReconnectTimer = true}) async {
+  /// BLE-01: Non esegue MAI disconnect() se lo stato è BleState.connecting o se isConnecting
+  Future<void> disconnect({bool cancelReconnectTimer = true, bool force = false}) async {
+    if (!force && (_state == BleState.connecting || _isConnecting)) {
+      debugPrint('BleConnectionManager: disconnect() ignorato durante lo stato connecting (BLE-01)');
+      return;
+    }
+
+    _stateTransitionTimer?.cancel();
+    _stateTransitionTimer = null;
+    _dataWatchdogTimer?.cancel();
+    _dataWatchdogTimer = null;
+    _stableStreamingTimer?.cancel();
+    _stableStreamingTimer = null;
+
     if (cancelReconnectTimer) {
       _reconnectTimer?.cancel();
       _reconnectTimer = null;
@@ -935,19 +1430,17 @@ class BleConnectionManager {
     _proprietaryTimeoutTimer?.cancel();
     _scanSubscription?.cancel();
     _connectionSubscription?.cancel();
-    _hrNotificationSubscription?.cancel();
-    _96ByteNotificationSubscription?.cancel();
-    _batteryNotificationSubscription?.cancel();
-    _ackNotificationSubscription?.cancel();
-    _eventsNotificationSubscription?.cancel();
+    _cancelAllSubscriptions();
 
     if (_connectedDevice != null) {
-      try {
-        await _connectedDevice!.disconnect();
-      } catch (_) {}
+      final dev = _connectedDevice;
       _connectedDevice = null;
+      try {
+        await dev!.disconnect();
+      } catch (_) {}
     }
 
+    _recordDisconnection(0, 'Disconnessione richiesta dall\'utente');
     _cmdToStrapChar = null;
     _batteryLevelPct = null;
     _isProprietaryChannelActive = false;
@@ -956,7 +1449,7 @@ class BleConnectionManager {
   }
 
   void dispose() {
-    disconnect();
+    disconnect(force: true);
     if (!_hrStreamController.isClosed) _hrStreamController.close();
     if (!_96ByteStreamController.isClosed) _96ByteStreamController.close();
     if (!_stateStreamController.isClosed) _stateStreamController.close();
@@ -964,4 +1457,37 @@ class BleConnectionManager {
     if (!_ackNotificationStreamController.isClosed) _ackNotificationStreamController.close();
     if (!_debugLogsController.isClosed) _debugLogsController.close();
   }
+
+  // --- Testing Hooks ---
+  @visibleForTesting
+  void setIsConnectingForTesting(bool value) {
+    _isConnecting = value;
+  }
+
+  @visibleForTesting
+  void setBackoffAttemptForTesting(int value) {
+    _backoffAttempt = value;
+  }
+
+  @visibleForTesting
+  void updateStateForTesting(BleState state, [String? message]) {
+    _updateState(state, message);
+  }
+
+  @visibleForTesting
+  void recordDisconnectionForTesting(int? code, String? description) {
+    _recordDisconnection(code, description);
+  }
+
+  @visibleForTesting
+  Future<void> triggerWatchdogForTesting() => _onDataWatchdogFired();
+
+  @visibleForTesting
+  void onTelemetryDataReceivedForTesting() => _onTelemetryDataReceived();
+
+  @visibleForTesting
+  int get txQueueLength => _txQueue.length;
+
+  @visibleForTesting
+  bool get bindInProgress => _bindInProgress;
 }

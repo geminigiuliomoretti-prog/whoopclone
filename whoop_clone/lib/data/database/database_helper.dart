@@ -1,18 +1,14 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import '../../core/utils/clock.dart';
 
 /// DatabaseHelper Singleton — Schema v4 per Sprint 2.
-/// Gestisce le 5 tabelle fondamentali + messaggi AI Coach:
-/// 1. utente_profilo
-/// 2. cicli_fisiologici
-/// 3. allenamenti
-/// 4. sonno
-/// 5. voci_diario
-/// 6. messaggi_coach_ai
+/// Gestisce le tabelle fondamentali + telemetria e segmenti sonno
 class DatabaseHelper {
   static const String _dbName = 'whoop_clone.db';
-  static const int _dbVersion = 14;
+  static const int _dbVersion = 18;
 
   // Nomi Tabelle
   static const String tableUtenteProfilo = 'utente_profilo';
@@ -27,6 +23,7 @@ class DatabaseHelper {
   static const String tableImpostazioniSveglia = 'impostazioni_sveglia';
   static const String tableAttivitaTracce = 'attivita_tracce';
   static const String tableTelemetriaGrezza = 'telemetria_grezza';
+  static const String tableSleepStageSegments = 'sleep_stage_segments';
 
   static DatabaseHelper? _instance;
   static Database? _database;
@@ -237,6 +234,7 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         data_iso TEXT NOT NULL,
         timestamp TEXT NOT NULL,
+        timestamp_utc_ms INTEGER,
         valore_stress REAL NOT NULL,
         hrv_ms REAL,
         bpm INTEGER
@@ -284,11 +282,26 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TEXT NOT NULL,
         timestamp_utc_ms INTEGER,
-        bpm INTEGER NOT NULL,
+        device_id TEXT,
+        session_id TEXT,
+        sequence_number INTEGER,
+        packet_type TEXT,
+        raw_payload BLOB,
+        decoder_version TEXT,
+        crc_valid INTEGER DEFAULT 1,
+        is_valid INTEGER DEFAULT 1,
+        received_at TEXT,
+        device_timestamp TEXT,
+        ingest_latency_ms INTEGER,
+        duplicate INTEGER DEFAULT 0,
+        source TEXT DEFAULT 'REAL_STREAM',
+        quality TEXT DEFAULT 'VALID',
+        bpm INTEGER,
+        rmssd_ms REAL,
         rr_ms REAL,
         rr_intervals_json TEXT,
-        accel_enmo REAL DEFAULT 0.002,
-        motion_var REAL DEFAULT 0.002,
+        accel_enmo REAL,
+        motion_var REAL,
         skin_temp_celsius REAL,
         skin_temp_raw INTEGER,
         spo2_pct REAL,
@@ -298,15 +311,40 @@ class DatabaseHelper {
       );
     ''');
 
+    // 13. sleep_stage_segments (STG-07)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $tableSleepStageSegments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sonno_id INTEGER,
+        start_utc_ms INTEGER,
+        end_utc_ms INTEGER,
+        stage TEXT,
+        confidence REAL
+      );
+    ''');
+
     // Indici per velocizzare filtri temporali e prevenire Full Table Scan
     await db.execute('CREATE INDEX IF NOT EXISTS idx_stress_data_iso ON $tableMisurazioniStress (data_iso);');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_stress_timestamp ON $tableMisurazioniStress (timestamp);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_stress_utc ON $tableMisurazioniStress (timestamp_utc_ms);');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_telemetria_timestamp ON $tableTelemetriaGrezza (timestamp);');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_telemetria_utc ON $tableTelemetriaGrezza (timestamp_utc_ms);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_telemetria_seq ON $tableTelemetriaGrezza (sequence_number);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_telemetria_session ON $tableTelemetriaGrezza (session_id);');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_attivita_tracce_workout ON $tableAttivitaTracce (workout_id);');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_cicli_data_iso ON $tableCicliFisiologici (data_iso);');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_sonno_data_iso ON $tableSonno (data_iso);');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_allenamenti_data_iso ON $tableAllenamenti (data_iso);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_sleep_stage_segments_sonno ON $tableSleepStageSegments (sonno_id);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_sleep_stage_segments_time ON $tableSleepStageSegments (start_utc_ms, end_utc_ms);');
+  }
+
+  Future<void> _safeExecuteAlter(Database db, String sql) async {
+    try {
+      await db.execute(sql);
+    } catch (e) {
+      debugPrint('[DatabaseHelper] Upgrade step notice (may already exist): $e');
+    }
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -394,50 +432,85 @@ class DatabaseHelper {
       ''');
     }
     if (oldVersion < 10) {
-      try { await db.execute('ALTER TABLE $tableCicliFisiologici ADD COLUMN frequenza_respiratoria_rpm REAL;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableCicliFisiologici ADD COLUMN temp_cutanea_c REAL;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableCicliFisiologici ADD COLUMN spo2_pct REAL;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableCicliFisiologici ADD COLUMN fc_max_bpm INTEGER;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableCicliFisiologici ADD COLUMN fc_media_bpm INTEGER;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableTelemetriaGrezza ADD COLUMN timestamp_utc_ms INTEGER;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableTelemetriaGrezza ADD COLUMN rr_intervals_json TEXT;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableTelemetriaGrezza ADD COLUMN accel_enmo REAL DEFAULT 0.002;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableTelemetriaGrezza ADD COLUMN skin_temp_celsius REAL;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableTelemetriaGrezza ADD COLUMN spo2_pct REAL;'); } catch (_) {}
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableCicliFisiologici ADD COLUMN frequenza_respiratoria_rpm REAL;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableCicliFisiologici ADD COLUMN temp_cutanea_c REAL;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableCicliFisiologici ADD COLUMN spo2_pct REAL;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableCicliFisiologici ADD COLUMN fc_max_bpm INTEGER;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableCicliFisiologici ADD COLUMN fc_media_bpm INTEGER;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN timestamp_utc_ms INTEGER;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN rr_intervals_json TEXT;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN accel_enmo REAL DEFAULT 0.002;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN skin_temp_celsius REAL;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN spo2_pct REAL;');
     }
     if (oldVersion < 11) {
-      try { await db.execute('ALTER TABLE $tableTelemetriaGrezza ADD COLUMN skin_temp_raw INTEGER;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableTelemetriaGrezza ADD COLUMN spo2_ratio_r REAL;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableTelemetriaGrezza ADD COLUMN resp_rate REAL;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableTelemetriaGrezza ADD COLUMN resp_power REAL;'); } catch (_) {}
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN skin_temp_raw INTEGER;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN spo2_ratio_r REAL;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN resp_rate REAL;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN resp_power REAL;');
     }
     if (oldVersion < 12) {
-      try { await db.execute('ALTER TABLE $tableCicliFisiologici ADD COLUMN valore_stress_notte REAL;'); } catch (_) {}
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableCicliFisiologici ADD COLUMN valore_stress_notte REAL;');
     }
     if (oldVersion < 13) {
-      try {
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_stress_data_iso ON $tableMisurazioniStress (data_iso);');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_stress_timestamp ON $tableMisurazioniStress (timestamp);');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_telemetria_timestamp ON $tableTelemetriaGrezza (timestamp);');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_telemetria_utc ON $tableTelemetriaGrezza (timestamp_utc_ms);');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_attivita_tracce_workout ON $tableAttivitaTracce (workout_id);');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_cicli_data_iso ON $tableCicliFisiologici (data_iso);');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_sonno_data_iso ON $tableSonno (data_iso);');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_allenamenti_data_iso ON $tableAllenamenti (data_iso);');
-      } catch (_) {}
+      await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_stress_data_iso ON $tableMisurazioniStress (data_iso);');
+      await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_stress_timestamp ON $tableMisurazioniStress (timestamp);');
+      await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_telemetria_timestamp ON $tableTelemetriaGrezza (timestamp);');
+      await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_telemetria_utc ON $tableTelemetriaGrezza (timestamp_utc_ms);');
+      await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_attivita_tracce_workout ON $tableAttivitaTracce (workout_id);');
+      await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_cicli_data_iso ON $tableCicliFisiologici (data_iso);');
+      await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_sonno_data_iso ON $tableSonno (data_iso);');
+      await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_allenamenti_data_iso ON $tableAllenamenti (data_iso);');
     }
     if (oldVersion < 14) {
-      try { await db.execute('ALTER TABLE $tableUtenteProfilo ADD COLUMN is_bootstrap_completed INTEGER NOT NULL DEFAULT 0;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableUtenteProfilo ADD COLUMN bootstrap_timestamp TEXT;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableUtenteProfilo ADD COLUMN bootstrap_version TEXT;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableUtenteProfilo ADD COLUMN baseline_source TEXT DEFAULT \'INITIAL_PROFILE\';'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableUtenteProfilo ADD COLUMN baseline_sample_count INTEGER DEFAULT 0;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableUtenteProfilo ADD COLUMN baseline_calc_period TEXT;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableUtenteProfilo ADD COLUMN paired_device_mac TEXT;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableUtenteProfilo ADD COLUMN paired_device_name TEXT;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableCicliFisiologici ADD COLUMN provenance TEXT DEFAULT \'REAL\';'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableSonno ADD COLUMN regolarita_sonno_pct REAL;'); } catch (_) {}
-      try { await db.execute('ALTER TABLE $tableSonno ADD COLUMN provenance TEXT DEFAULT \'REAL\';'); } catch (_) {}
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableUtenteProfilo ADD COLUMN is_bootstrap_completed INTEGER NOT NULL DEFAULT 0;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableUtenteProfilo ADD COLUMN bootstrap_timestamp TEXT;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableUtenteProfilo ADD COLUMN bootstrap_version TEXT;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableUtenteProfilo ADD COLUMN baseline_source TEXT DEFAULT \'INITIAL_PROFILE\';');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableUtenteProfilo ADD COLUMN baseline_sample_count INTEGER DEFAULT 0;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableUtenteProfilo ADD COLUMN baseline_calc_period TEXT;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableUtenteProfilo ADD COLUMN paired_device_mac TEXT;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableUtenteProfilo ADD COLUMN paired_device_name TEXT;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableCicliFisiologici ADD COLUMN provenance TEXT DEFAULT \'REAL\';');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableSonno ADD COLUMN regolarita_sonno_pct REAL;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableSonno ADD COLUMN provenance TEXT DEFAULT \'REAL\';');
+    }
+    if (oldVersion < 15) {
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN device_id TEXT;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN session_id TEXT;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN sequence_number INTEGER;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN packet_type TEXT;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN raw_payload BLOB;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN decoder_version TEXT;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN crc_valid INTEGER DEFAULT 1;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN is_valid INTEGER DEFAULT 1;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN received_at TEXT;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN device_timestamp TEXT;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN ingest_latency_ms INTEGER;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN duplicate INTEGER DEFAULT 0;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN source TEXT DEFAULT \'REAL_STREAM\';');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN quality TEXT DEFAULT \'VALID\';');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableTelemetriaGrezza ADD COLUMN rmssd_ms REAL;');
+      await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_telemetria_seq ON $tableTelemetriaGrezza (sequence_number);');
+      await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_telemetria_session ON $tableTelemetriaGrezza (session_id);');
+    }
+    if (oldVersion < 16) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS $tableSleepStageSegments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sonno_id INTEGER,
+          start_utc_ms INTEGER,
+          end_utc_ms INTEGER,
+          stage TEXT,
+          confidence REAL
+        );
+      ''');
+      await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_sleep_stage_segments_sonno ON $tableSleepStageSegments (sonno_id);');
+      await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_sleep_stage_segments_time ON $tableSleepStageSegments (start_utc_ms, end_utc_ms);');
+    }
+    if (oldVersion < 18) {
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableMisurazioniStress ADD COLUMN timestamp_utc_ms INTEGER;');
+      await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_stress_utc ON $tableMisurazioniStress (timestamp_utc_ms);');
     }
   }
 
@@ -445,11 +518,23 @@ class DatabaseHelper {
   // Misurazioni Stress CRUD
   // ─────────────────────────────────────────────────────────────
 
-  Future<int> insertMisurazioneStress(String dataIso, double valoreStress, double hrvMs, int bpm, {String? timestamp}) async {
+  Future<int> insertMisurazioneStress(
+    String dataIso,
+    double valoreStress,
+    double hrvMs,
+    int bpm, {
+    String? timestamp,
+    int? timestampUtcMs,
+  }) async {
     final db = await database;
+    final ts = timestamp != null
+        ? (DateTime.tryParse(timestamp)?.toUtc() ?? Clock.current.now().toUtc())
+        : Clock.current.now().toUtc();
+    final ms = timestampUtcMs ?? ts.millisecondsSinceEpoch;
     return await db.insert(tableMisurazioniStress, {
       'data_iso': dataIso,
-      'timestamp': timestamp ?? DateTime.now().toIso8601String(),
+      'timestamp': ts.toIso8601String(),
+      'timestamp_utc_ms': ms,
       'valore_stress': valoreStress,
       'hrv_ms': hrvMs,
       'bpm': bpm,
@@ -588,6 +673,74 @@ class DatabaseHelper {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 4b. Segmenti Ipnogramma CRUD (STG-07 & CHT-02)
+  // ─────────────────────────────────────────────────────────────
+
+  Future<int> insertSleepStageSegment(Map<String, dynamic> data) async {
+    final db = await database;
+    return await db.insert(tableSleepStageSegments, data);
+  }
+
+  Future<void> insertSleepStageSegments(int sonnoId, List<Map<String, dynamic>> segments) async {
+    final db = await database;
+    final batch = db.batch();
+    for (final s in segments) {
+      batch.insert(tableSleepStageSegments, {
+        'sonno_id': sonnoId,
+        'start_utc_ms': s['start_utc_ms'],
+        'end_utc_ms': s['end_utc_ms'],
+        'stage': s['stage'],
+        'confidence': s['confidence'] ?? 1.0,
+      });
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<List<Map<String, dynamic>>> getHypnogramSegments(String dateIso) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT 
+        s.id,
+        s.sonno_id,
+        s.start_utc_ms,
+        s.end_utc_ms,
+        s.stage,
+        s.confidence
+      FROM $tableSleepStageSegments s
+      INNER JOIN $tableSonno sn ON sn.id = s.sonno_id
+      WHERE sn.data_iso = ?
+      ORDER BY s.start_utc_ms ASC
+    ''', [dateIso]);
+
+    if (rows.isNotEmpty) return rows;
+
+    // Fallback: se i segmenti sono stati salvati senza un record sonno associato o con data diretta
+    final dayStart = DateTime.tryParse(dateIso)?.toUtc();
+    if (dayStart != null) {
+      final startMs = DateTime.utc(dayStart.year, dayStart.month, dayStart.day).millisecondsSinceEpoch;
+      final endMs = startMs + 86400000;
+      return await db.query(
+        tableSleepStageSegments,
+        where: 'start_utc_ms >= ? AND start_utc_ms < ?',
+        whereArgs: [startMs, endMs],
+        orderBy: 'start_utc_ms ASC',
+      );
+    }
+
+    return [];
+  }
+
+  Future<List<Map<String, dynamic>>> getHypnogramSegmentsBySonnoId(int sonnoId) async {
+    final db = await database;
+    return await db.query(
+      tableSleepStageSegments,
+      where: 'sonno_id = ?',
+      whereArgs: [sonnoId],
+      orderBy: 'start_utc_ms ASC',
+    );
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -765,9 +918,11 @@ class DatabaseHelper {
   // ─────────────────────────────────────────────────────────────
 
   Future<int> insertTelemetriaPoint({
-    required int bpm,
+    int? bpm,
+    double? rmssdMs,
     double? rrMs,
-    double motionVar = 0.002,
+    String? rrIntervalsJson,
+    double? motionVar = 0.0,
     double? accelEnmo,
     double? skinTempCelsius,
     int? skinTempRaw,
@@ -777,16 +932,47 @@ class DatabaseHelper {
     double? respPower,
     DateTime? timestamp,
     int? timestampUtcMs,
+    String? deviceId,
+    String? sessionId,
+    int? sequenceNumber,
+    String? packetType,
+    List<int>? rawPayload,
+    String? decoderVersion,
+    bool crcValid = true,
+    bool isValid = true,
+    DateTime? receivedAt,
+    DateTime? deviceTimestamp,
+    int? ingestLatencyMs,
+    bool duplicate = false,
+    String source = 'REAL_STREAM',
+    String quality = 'VALID',
   }) async {
     final db = await database;
-    final ts = (timestamp ?? DateTime.now()).toUtc();
+    final ts = (timestamp ?? Clock.current.now()).toUtc();
     final ms = timestampUtcMs ?? ts.millisecondsSinceEpoch;
+    final rxAt = (receivedAt ?? Clock.current.now()).toUtc();
     return await db.insert(tableTelemetriaGrezza, {
       'timestamp': ts.toIso8601String(),
       'timestamp_utc_ms': ms,
+      'device_id': deviceId,
+      'session_id': sessionId,
+      'sequence_number': sequenceNumber,
+      'packet_type': packetType,
+      'raw_payload': rawPayload != null ? Uint8List.fromList(rawPayload) : null,
+      'decoder_version': decoderVersion,
+      'crc_valid': crcValid ? 1 : 0,
+      'is_valid': isValid ? 1 : 0,
+      'received_at': rxAt.toIso8601String(),
+      'device_timestamp': deviceTimestamp?.toUtc().toIso8601String(),
+      'ingest_latency_ms': ingestLatencyMs,
+      'duplicate': duplicate ? 1 : 0,
+      'source': source,
+      'quality': quality,
       'bpm': bpm,
+      'rmssd_ms': rmssdMs ?? (rrMs != null && rrMs < 300 ? rrMs : null),
       'rr_ms': rrMs,
-      'accel_enmo': accelEnmo ?? motionVar,
+      'rr_intervals_json': rrIntervalsJson,
+      'accel_enmo': accelEnmo,
       'motion_var': motionVar,
       'skin_temp_celsius': skinTempCelsius,
       'skin_temp_raw': skinTempRaw,
@@ -812,6 +998,179 @@ class DatabaseHelper {
     return maps;
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // 11b. Query SQL di Aggregazione Intraday (CHT-02)
+  // ─────────────────────────────────────────────────────────────
+
+  /// Raggruppa i dati di telemetria cardiaca grezza in bucket temporali di [bucketMinutes] minuti
+  /// per evitare di caricare decine di migliaia di punti grezzi in RAM.
+  /// Se un bucket non ha dati, restituisce esplicitamente `null` (gap reale).
+  Future<List<Map<String, dynamic>?>> getIntradayHrBuckets(
+    DateTime start,
+    DateTime end, {
+    int bucketMinutes = 1,
+  }) async {
+    final db = await database;
+    final startMs = start.toUtc().millisecondsSinceEpoch;
+    final endMs = end.toUtc().millisecondsSinceEpoch;
+    final bucketMs = bucketMinutes * 60 * 1000;
+
+    if (endMs <= startMs || bucketMs <= 0) return [];
+
+    final rows = await db.rawQuery('''
+      SELECT
+        CAST(COALESCE(timestamp_utc_ms, strftime('%s', timestamp) * 1000) / ? AS INTEGER) AS bucket_idx,
+        MIN(bpm) AS min_bpm,
+        ROUND(AVG(bpm)) AS avg_bpm,
+        MAX(bpm) AS max_bpm,
+        COUNT(bpm) AS count_samples
+      FROM $tableTelemetriaGrezza
+      WHERE COALESCE(timestamp_utc_ms, strftime('%s', timestamp) * 1000) >= ?
+        AND COALESCE(timestamp_utc_ms, strftime('%s', timestamp) * 1000) <= ?
+        AND bpm IS NOT NULL AND bpm > 0
+      GROUP BY bucket_idx
+      ORDER BY bucket_idx ASC
+    ''', [bucketMs, startMs, endMs]);
+
+    final Map<int, Map<String, dynamic>> mapped = {};
+    for (final r in rows) {
+      final idx = (r['bucket_idx'] as num?)?.toInt();
+      if (idx != null) {
+        mapped[idx] = r;
+      }
+    }
+
+    final startBucket = startMs ~/ bucketMs;
+    final endBucket = endMs ~/ bucketMs;
+    final List<Map<String, dynamic>?> result = [];
+
+    for (int b = startBucket; b <= endBucket; b++) {
+      final row = mapped[b];
+      if (row != null && (row['count_samples'] as num? ?? 0) > 0) {
+        result.add({
+          'bucket_idx': b,
+          'timestamp': DateTime.fromMillisecondsSinceEpoch(b * bucketMs, isUtc: true),
+          'timestamp_utc_ms': b * bucketMs,
+          'min': (row['min_bpm'] as num?)?.toInt(),
+          'avg': (row['avg_bpm'] as num?)?.toInt(),
+          'max': (row['max_bpm'] as num?)?.toInt(),
+          'count': (row['count_samples'] as num?)?.toInt() ?? 0,
+        });
+      } else {
+        result.add(null);
+      }
+    }
+
+    return result;
+  }
+
+  /// Calcola il tempo e la distribuzione percentuale nelle 5 zone cardiache WHOOP nel range [start, end].
+  Future<Map<String, dynamic>> getHrZoneDistribution(
+    DateTime start,
+    DateTime end,
+    double maxHr,
+  ) async {
+    final db = await database;
+    final startMs = start.toUtc().millisecondsSinceEpoch;
+    final endMs = end.toUtc().millisecondsSinceEpoch;
+
+    if (endMs <= startMs || maxHr <= 0) {
+      return {
+        'total_samples': 0,
+        'total_seconds': 0,
+        'z1_seconds': 0,
+        'z2_seconds': 0,
+        'z3_seconds': 0,
+        'z4_seconds': 0,
+        'z5_seconds': 0,
+        'below_z1_seconds': 0,
+        'z1_pct': 0.0,
+        'z2_pct': 0.0,
+        'z3_pct': 0.0,
+        'z4_pct': 0.0,
+        'z5_pct': 0.0,
+      };
+    }
+
+    final z1Min = maxHr * 0.50;
+    final z2Min = maxHr * 0.60;
+    final z3Min = maxHr * 0.70;
+    final z4Min = maxHr * 0.80;
+    final z5Min = maxHr * 0.90;
+
+    final rows = await db.rawQuery('''
+      SELECT
+        COUNT(CASE WHEN bpm >= ? AND bpm < ? THEN 1 END) AS count_z1,
+        COUNT(CASE WHEN bpm >= ? AND bpm < ? THEN 1 END) AS count_z2,
+        COUNT(CASE WHEN bpm >= ? AND bpm < ? THEN 1 END) AS count_z3,
+        COUNT(CASE WHEN bpm >= ? AND bpm < ? THEN 1 END) AS count_z4,
+        COUNT(CASE WHEN bpm >= ? THEN 1 END) AS count_z5,
+        COUNT(CASE WHEN bpm < ? THEN 1 END) AS count_below_z1,
+        COUNT(bpm) AS total_count
+      FROM $tableTelemetriaGrezza
+      WHERE COALESCE(timestamp_utc_ms, strftime('%s', timestamp) * 1000) >= ?
+        AND COALESCE(timestamp_utc_ms, strftime('%s', timestamp) * 1000) <= ?
+        AND bpm IS NOT NULL AND bpm > 0
+    ''', [
+      z1Min, z2Min,
+      z2Min, z3Min,
+      z3Min, z4Min,
+      z4Min, z5Min,
+      z5Min,
+      z1Min,
+      startMs, endMs,
+    ]);
+
+    if (rows.isEmpty) {
+      return {
+        'total_samples': 0,
+        'total_seconds': 0,
+        'z1_seconds': 0,
+        'z2_seconds': 0,
+        'z3_seconds': 0,
+        'z4_seconds': 0,
+        'z5_seconds': 0,
+        'below_z1_seconds': 0,
+        'z1_pct': 0.0,
+        'z2_pct': 0.0,
+        'z3_pct': 0.0,
+        'z4_pct': 0.0,
+        'z5_pct': 0.0,
+      };
+    }
+
+    final r = rows.first;
+    final totalCount = (r['total_count'] as num?)?.toInt() ?? 0;
+    final countZ1 = (r['count_z1'] as num?)?.toInt() ?? 0;
+    final countZ2 = (r['count_z2'] as num?)?.toInt() ?? 0;
+    final countZ3 = (r['count_z3'] as num?)?.toInt() ?? 0;
+    final countZ4 = (r['count_z4'] as num?)?.toInt() ?? 0;
+    final countZ5 = (r['count_z5'] as num?)?.toInt() ?? 0;
+    final countBelowZ1 = (r['count_below_z1'] as num?)?.toInt() ?? 0;
+
+    final double z1Pct = totalCount > 0 ? (countZ1 / totalCount) * 100.0 : 0.0;
+    final double z2Pct = totalCount > 0 ? (countZ2 / totalCount) * 100.0 : 0.0;
+    final double z3Pct = totalCount > 0 ? (countZ3 / totalCount) * 100.0 : 0.0;
+    final double z4Pct = totalCount > 0 ? (countZ4 / totalCount) * 100.0 : 0.0;
+    final double z5Pct = totalCount > 0 ? (countZ5 / totalCount) * 100.0 : 0.0;
+
+    return {
+      'total_samples': totalCount,
+      'total_seconds': totalCount,
+      'z1_seconds': countZ1,
+      'z2_seconds': countZ2,
+      'z3_seconds': countZ3,
+      'z4_seconds': countZ4,
+      'z5_seconds': countZ5,
+      'below_z1_seconds': countBelowZ1,
+      'z1_pct': double.parse(z1Pct.toStringAsFixed(1)),
+      'z2_pct': double.parse(z2Pct.toStringAsFixed(1)),
+      'z3_pct': double.parse(z3Pct.toStringAsFixed(1)),
+      'z4_pct': double.parse(z4Pct.toStringAsFixed(1)),
+      'z5_pct': double.parse(z5Pct.toStringAsFixed(1)),
+    };
+  }
+
   /// Pruning di manutenzione: elimina i record obsoleti da telemetria_grezza
   /// più vecchi di [daysToKeep] giorni per prevenire la crescita incontrollata del file SQLite.
   Future<int> pruneOldTelemetry({int daysToKeep = 7}) async {
@@ -833,18 +1192,19 @@ class DatabaseHelper {
 
   Future<void> clearAllTables() async {
     final db = await database;
-    try { await db.execute('DELETE FROM $tablePreferenzeDashboard'); } catch (_) {}
-    try { await db.execute('DELETE FROM $tableAbitudiniCustom'); } catch (_) {}
-    try { await db.execute('DELETE FROM $tableMessaggiCoachAi'); } catch (_) {}
-    try { await db.execute('DELETE FROM $tableVociDiario'); } catch (_) {}
-    try { await db.execute('DELETE FROM $tableSonno'); } catch (_) {}
-    try { await db.execute('DELETE FROM $tableAllenamenti'); } catch (_) {}
-    try { await db.execute('DELETE FROM $tableCicliFisiologici'); } catch (_) {}
-    try { await db.execute('DELETE FROM $tableMisurazioniStress'); } catch (_) {}
-    try { await db.execute('DELETE FROM $tableImpostazioniSveglia'); } catch (_) {}
-    try { await db.execute('DELETE FROM $tableAttivitaTracce'); } catch (_) {}
-    try { await db.execute('DELETE FROM $tableTelemetriaGrezza'); } catch (_) {}
     try {
+      await db.execute('DELETE FROM $tableSleepStageSegments');
+      await db.execute('DELETE FROM $tablePreferenzeDashboard');
+      await db.execute('DELETE FROM $tableAbitudiniCustom');
+      await db.execute('DELETE FROM $tableMessaggiCoachAi');
+      await db.execute('DELETE FROM $tableVociDiario');
+      await db.execute('DELETE FROM $tableSonno');
+      await db.execute('DELETE FROM $tableAllenamenti');
+      await db.execute('DELETE FROM $tableCicliFisiologici');
+      await db.execute('DELETE FROM $tableMisurazioniStress');
+      await db.execute('DELETE FROM $tableImpostazioniSveglia');
+      await db.execute('DELETE FROM $tableAttivitaTracce');
+      await db.execute('DELETE FROM $tableTelemetriaGrezza');
       await db.execute('DELETE FROM $tableUtenteProfilo');
       await db.insert(tableUtenteProfilo, {
         'id': 1,
@@ -861,6 +1221,9 @@ class DatabaseHelper {
         'baseline_source': 'INITIAL_PROFILE',
         'baseline_sample_count': 0,
       });
-    } catch (_) {}
+    } catch (e, stack) {
+      debugPrint('[DatabaseHelper] Error clearing database tables: $e\n$stack');
+      rethrow;
+    }
   }
 }

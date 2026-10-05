@@ -197,4 +197,27 @@ class SqliteWhoopRepository implements WhoopRepository {
     }
     return vitals;
   }
+
+  /// Recupera i segmenti dell'ipnogramma per una data (STG-07, CHT-02)
+  Future<List<Map<String, dynamic>>> getHypnogramSegments(String dateIso) async {
+    return await sleepRepository.getHypnogramSegments(dateIso);
+  }
+
+  /// Recupera i bucket aggregati di frequenza cardiaca intraday (CHT-02)
+  Future<List<Map<String, dynamic>?>> getIntradayHrBuckets(
+    DateTime start,
+    DateTime end, {
+    int bucketMinutes = 1,
+  }) async {
+    return await sleepRepository.getIntradayHrBuckets(start, end, bucketMinutes: bucketMinutes);
+  }
+
+  /// Calcola la distribuzione delle 5 zone cardiache (CHT-02)
+  Future<Map<String, dynamic>> getHrZoneDistribution(
+    DateTime start,
+    DateTime end,
+    double maxHr,
+  ) async {
+    return await sleepRepository.getHrZoneDistribution(start, end, maxHr);
+  }
 }

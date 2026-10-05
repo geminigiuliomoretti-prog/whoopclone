@@ -1,0 +1,21 @@
+{
+  "description": "Valid WHOOP 4.0 / 5.0 framed command packet (RUN_ALARM Opcode 68 / 0x44)",
+  "raw_hex": "aa0800a8230144016c0f1371",
+  "total_bytes": 12,
+  "header": {
+    "sync_byte": 170,
+    "body_length": 8,
+    "crc8": 168,
+    "crc8_valid": true
+  },
+  "body": {
+    "type": 35,
+    "sequence_number": 1,
+    "command_opcode": 68,
+    "payload_hex": "01"
+  },
+  "tail": {
+    "crc32_uint32": 1897074540,
+    "crc32_valid": true
+  }
+}

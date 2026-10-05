@@ -92,7 +92,7 @@ class BackgroundSyncDaemon {
   StreamSubscription? _packet96Sub;
 
   // Buffer per i dati di movimento/accelerazione estratti dal pacchetto 96 byte
-  double _lastMotionVar = 0.002;
+  double _lastMotionVar = 0.0;
   double? _lastRespPower;
   double? _lastRespRate;
   double? _lastSkinTempC;
@@ -109,7 +109,7 @@ class BackgroundSyncDaemon {
     _packet96Sub = bleManager.packet96ByteStream.listen((packet) async {
       // Estrazione dei dati biometrici avanzati dal pacchetto proprietario Whoop 96 byte
       if (packet.rawBytes.length >= 40) {
-        _lastMotionVar = _extractFloat32LE(packet.rawBytes, 8) ?? 0.002;
+        _lastMotionVar = packet.motionVariance;
         _lastRespPower = _extractFloat32LE(packet.rawBytes, 16);
         _lastRespRate = _extractFloat32LE(packet.rawBytes, 20);
         final rawTemp = _extractUint16LE(packet.rawBytes, 28);
@@ -148,7 +148,9 @@ class BackgroundSyncDaemon {
               timestampUtcMs: packet.timestamp.toUtc().millisecondsSinceEpoch,
             );
           }
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('[BackgroundSyncDaemon] Error saving packet telemetry: $e');
+        }
       }
     });
 
@@ -213,7 +215,9 @@ class BackgroundSyncDaemon {
               timestamp: hrPacket.timestamp,
               timestampUtcMs: hrPacket.timestamp.toUtc().millisecondsSinceEpoch,
             );
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('[BackgroundSyncDaemon] Error saving HR telemetry: $e');
+          }
         }
       }
     });
@@ -255,7 +259,9 @@ class BackgroundSyncDaemon {
               avgHrv,
               avgRhr.round(),
             );
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('[BackgroundSyncDaemon] Error computing/saving stress measurement: $e');
+          }
         }
       }
     });

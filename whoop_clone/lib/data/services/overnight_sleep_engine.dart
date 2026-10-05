@@ -112,7 +112,9 @@ class StoreAndForwardHandler {
 }
 
 /// Fasi del Sonno Staging Deterministico WHOOP 5.0
-enum SleepStage { wake, light, deepSws, rem }
+enum SleepStage { wake, light, deepSws, rem, missing, unknown }
+
+enum EpochQuality { valid, lowConfidence, missing }
 
 extension SleepStageExtension on SleepStage {
   String toHypnogramString() {
@@ -125,6 +127,10 @@ extension SleepStageExtension on SleepStage {
         return 'SWS';
       case SleepStage.rem:
         return 'REM';
+      case SleepStage.missing:
+        return 'MISSING';
+      case SleepStage.unknown:
+        return 'UNKNOWN';
     }
   }
 }
@@ -175,7 +181,9 @@ class Epoch30s {
   final double rmssdVarInWindow; // Varianza inter-epoca del rMSSD
   final int hrFluctuations; // Picchi isolati di FC nell'epoca
   final List<double> ppIntervals; // Intervalli picco-picco in secondi
-  String stage; // WAKE, LIGHT, SWS, REM
+  final int sampleCount;
+  final EpochQuality quality;
+  String stage; // WAKE, LIGHT, SWS, REM, MISSING, UNKNOWN
 
   Epoch30s({
     required this.index,
@@ -189,6 +197,8 @@ class Epoch30s {
     required this.hrFluctuations,
     required this.ppIntervals,
     this.stage = 'LIGHT',
+    this.sampleCount = 30,
+    this.quality = EpochQuality.valid,
   });
 
   Map<String, dynamic> toMap() => {
@@ -200,6 +210,8 @@ class Epoch30s {
         'resp_power': respPower,
         'resp_rate': respRate,
         'stage': stage,
+        'sample_count': sampleCount,
+        'quality': quality.name,
       };
 }
 
@@ -310,12 +322,12 @@ class AutoSleepDetector {
     int? tempRaw,
     double? spo2Ratio,
   }) {
-    final double enmoVal = enmo ?? (hr < restHr + 10.0 ? 0.003 : 0.060);
-    final double rmssdVal = rmssd ?? hrvBaseline;
-    final double rPower = respPower ?? (hr < restHr + 8.0 ? 0.70 : 0.40);
+    final double enmoVal = enmo ?? 0.0;
+    final double rmssdVal = rmssd ?? 0.0;
+    final double rPower = respPower ?? 0.0;
     final double rRate = respRate ?? 0.0;
-    final double rVar = rmssdVar ?? 0.10;
-    final int hFluc = hrFluc ?? 2;
+    final double rVar = rmssdVar ?? 0.0;
+    final int hFluc = hrFluc ?? 0;
 
     final sample = SleepTelemetrySample(
       timestamp: timestamp,
@@ -493,7 +505,7 @@ class AutoSleepDetector {
         'rhr_mean': restHr,
         'rmssd_mean': hrvBaseline,
         'rmssd_std': 15.0,
-        'baseline_temp_celsius': 36.5,
+        'baseline_temp_celsius': null,
         'sleep_baseline_min': 480,
       };
 
@@ -613,7 +625,7 @@ class OvernightSleepEngine {
   }) async {
     final double rhrBaseline = (userBaseline30d['rhr_mean'] ?? 55.0).toDouble();
     final double hrvBaseline = (userBaseline30d['rmssd_mean'] ?? 65.0).toDouble();
-    final double tempBaseline = (userBaseline30d['baseline_temp_celsius'] ?? 36.5).toDouble();
+    final double? tempBaseline = (userBaseline30d['baseline_temp_celsius'] as num?)?.toDouble();
     final double sleepNeedMin = (userBaseline30d['sleep_need_min'] ??
             userBaseline30d['sleep_baseline_min'] ??
             480.0)
@@ -652,7 +664,9 @@ class OvernightSleepEngine {
             };
           }).toList();
         }
-      } catch (_) {}
+      } catch (e, stack) {
+        debugPrint('[OvernightSleepEngine] Error querying telemetria range: $e\n$stack');
+      }
     }
 
     // Se la fascia era scollegata e SQLite non ha campioni:
@@ -697,7 +711,7 @@ class OvernightSleepEngine {
           'total_sleep_min': totalManualSleepMin,
           'sws_min': 0.0,
           'rem_min': 0.0,
-          'light_min': totalManualSleepMin,
+          'light_min': 0.0,
           'waso_min': 0.0,
           'sleep_performance_pct': sleepPerfPct,
           'sleep_stress': null,
@@ -786,15 +800,12 @@ class OvernightSleepEngine {
         ? (effectiveWindowEnd.difference(effectiveWindowStart).inSeconds / 60.0)
         : 0.0;
 
-    final double totalSleepMin = stageSleepSum > 0
-        ? stageSleepSum
-        : ((realWindowDurationMin > 0)
-            ? (realWindowDurationMin - totalWakeMin).clamp(0.0, realWindowDurationMin)
-            : (sleepDurations['total_sleep_min'] ?? 0.0));
+    final double totalSleepMin = stageSleepSum;
 
     // 5. Temperatura Cutanea Relativa & Saturazione d'Ossigeno (SpO2)
-    final double? deltaSkinTemp = _calculateDeltaSkinTemp(rawTelemetryRecords, tempBaseline);
-    final double? spo2Pct = _calculateSpo2(rawTelemetryRecords, epochs30s);
+    final vitalsRecords = rawTelemetryRecords.isNotEmpty ? rawTelemetryRecords : processedRecords;
+    final double? deltaSkinTemp = _calculateDeltaSkinTemp(vitalsRecords, tempBaseline);
+    final double? spo2Pct = _calculateSpo2(vitalsRecords, epochs30s);
 
     // 6. Frequenza Respiratoria Notturna Matematica via RSA Dinamica
     final double? nocturnalRespRate = _calculateNocturnalRespRate(epochs30s, processedRecords);
@@ -892,14 +903,18 @@ class OvernightSleepEngine {
         nightlyStressPoints: nightlyStressPoints,
         windowStart: effectiveWindowStart ?? (epochs30s.isNotEmpty ? epochs30s.first.timestamp : null),
         windowEnd: effectiveWindowEnd ?? (epochs30s.isNotEmpty ? epochs30s.last.timestamp : null),
+        epochs: epochs30s,
       );
     }
 
     return {
       'has_data': true,
+      'manual_no_ble': false,
       'recovery_score': recoveryScore,
       'hrv_rmssd_ms': finalNightHrvRmssd,
+      'hrv_notte': finalNightHrvRmssd,
       'resting_hr_bpm': finalNightRhr,
+      'rhr_notte': finalNightRhr,
       'respiratory_rate': nocturnalRespRate,
       'skin_temperature_delta_c': deltaSkinTemp,
       'spo2_percentage': spo2Pct,
@@ -907,6 +922,7 @@ class OvernightSleepEngine {
       'sws_min': swsMin,
       'rem_min': remMin,
       'light_min': lightMin,
+      'missing_min': sleepDurations['missing_min'] ?? 0.0,
       'waso_min': wasoMinutes,
       'total_wake_min': totalWakeMin,
       'disturbances_count': disturbancesCount,
@@ -945,13 +961,13 @@ class OvernightSleepEngine {
       final effectiveStart = DateTime.now().subtract(Duration(seconds: records.length * 30));
       for (int i = 0; i < records.length; i++) {
         final r = records[i];
-        final motion = (r['motion_var'] ?? r['motion'] ?? r['enmo'] ?? 0.002).toDouble();
-        final hr = (r['hr'] ?? r['bpm'] ?? 55.0).toDouble();
-        final rmssd = (r['rmssd'] as num?)?.toDouble() ?? 68.0;
-        final respPower = (r['resp_power'] ?? 0.7).toDouble();
-        final respRate = (r['resp_rate'] ?? 0.0).toDouble();
-        final rmssdVar = (r['rmssd_var'] ?? 0.1).toDouble();
-        final hrFluc = (r['hr_fluc'] ?? 2) as int;
+        final motion = (r['motion_var'] ?? r['motion'] ?? r['accel_enmo'] ?? r['enmo'] as num?)?.toDouble() ?? 0.0;
+        final hr = (r['hr'] ?? r['bpm'] as num?)?.toDouble() ?? 0.0;
+        final rmssd = (r['rmssd'] as num?)?.toDouble() ?? (r['hrv_ms'] as num?)?.toDouble() ?? 0.0;
+        final respPower = (r['resp_power'] as num?)?.toDouble() ?? 0.0;
+        final respRate = (r['resp_rate'] as num?)?.toDouble() ?? 0.0;
+        final rmssdVar = (r['rmssd_var'] as num?)?.toDouble() ?? 0.0;
+        final hrFluc = (r['hr_fluc'] as num?)?.toInt() ?? 0;
         final List<double> pp = r['pp_intervals'] != null
             ? List<double>.from(r['pp_intervals'])
             : (r['rr_ms'] != null ? [(r['rr_ms'] as num).toDouble() / 1000.0] : []);
@@ -1002,8 +1018,8 @@ class OvernightSleepEngine {
     }
 
     final List<Epoch30s> list = [];
-    double lastHr = 55.0;
-    double lastRmssd = 65.0;
+    double? lastHr;
+    double? lastRmssd;
 
     for (int k = 0; k < numEpochs; k++) {
       final epochTime = effectiveStart.add(Duration(seconds: k * 30));
@@ -1011,8 +1027,10 @@ class OvernightSleepEngine {
 
       if (bin.isNotEmpty) {
         double hrSum = 0;
+        int hrCount = 0;
         double motionSum = 0;
         double rmssdSum = 0;
+        int rmssdCount = 0;
         double respPowerSum = 0;
         double respRateSum = 0;
         double rmssdVarSum = 0;
@@ -1021,21 +1039,27 @@ class OvernightSleepEngine {
         int count = bin.length;
 
         for (final r in bin) {
-          final hrVal = (r['hr'] ?? r['bpm'] ?? lastHr).toDouble();
-          final motionVal = (r['motion_var'] ?? r['motion'] ?? r['enmo'] ?? 0.002).toDouble();
-          // Se r['rmssd'] o r['hrv_ms'] è presente usa quello; se r['rr_ms'] è nell'intervallo rMSSD (<250ms), usa r['rr_ms']
+          final hrVal = (r['hr'] ?? r['bpm'] as num?)?.toDouble();
+          if (hrVal != null && hrVal > 0) {
+            hrSum += hrVal;
+            hrCount++;
+          }
+          final motionVal = (r['motion_var'] ?? r['motion'] ?? r['accel_enmo'] ?? r['enmo'] as num?)?.toDouble() ?? 0.0;
+          motionSum += motionVal;
+
           final rmssdVal = (r['rmssd'] as num?)?.toDouble() ??
               (r['hrv_ms'] as num?)?.toDouble() ??
-              ((r['rr_ms'] as num?) != null && (r['rr_ms'] as num) < 250.0 ? (r['rr_ms'] as num).toDouble() : null) ??
-              (lastRmssd <= 140.0 ? lastRmssd : 65.0);
-          final respP = (r['resp_power'] ?? 0.7).toDouble();
-          final respR = (r['resp_rate'] ?? 0.0).toDouble();
-          final rVar = (r['rmssd_var'] ?? 0.1).toDouble();
-          final hFluc = (r['hr_fluc'] ?? 2) as int;
+              ((r['rr_ms'] as num?) != null && (r['rr_ms'] as num) < 250.0 ? (r['rr_ms'] as num).toDouble() : null);
+          if (rmssdVal != null && rmssdVal > 0) {
+            rmssdSum += rmssdVal;
+            rmssdCount++;
+          }
 
-          hrSum += hrVal;
-          motionSum += motionVal;
-          rmssdSum += rmssdVal;
+          final respP = (r['resp_power'] as num?)?.toDouble() ?? 0.0;
+          final respR = (r['resp_rate'] as num?)?.toDouble() ?? 0.0;
+          final rVar = (r['rmssd_var'] as num?)?.toDouble() ?? 0.0;
+          final hFluc = (r['hr_fluc'] as num?)?.toInt() ?? 0;
+
           respPowerSum += respP;
           respRateSum += respR;
           rmssdVarSum += rVar;
@@ -1048,34 +1072,43 @@ class OvernightSleepEngine {
           }
         }
 
-        lastHr = hrSum / count;
-        lastRmssd = (rmssdSum / count).clamp(20.0, 120.0);
+        final double currentHr = hrCount > 0 ? (hrSum / hrCount) : (lastHr ?? 0.0);
+        if (hrCount > 0) lastHr = currentHr;
+
+        final double currentRmssd = rmssdCount > 0 ? (rmssdSum / rmssdCount).clamp(20.0, 140.0) : (lastRmssd ?? 0.0);
+        if (rmssdCount > 0) lastRmssd = currentRmssd;
 
         list.add(Epoch30s(
           index: k,
           timestamp: epochTime,
           motionVar: motionSum / count,
-          hr: lastHr,
-          rmssd: lastRmssd,
+          hr: currentHr,
+          rmssd: currentRmssd,
           respPower: respPowerSum / count,
           respRate: respRateSum / count,
           rmssdVarInWindow: rmssdVarSum / count,
           hrFluctuations: (hrFlucSum / count).round(),
           ppIntervals: ppList,
+          sampleCount: count,
+          quality: count >= 10 ? EpochQuality.valid : EpochQuality.lowConfidence,
+          stage: 'LIGHT',
         ));
       } else {
-        // Epoca senza campioni BLE (gap temporale): classifica come sonno leggero ordinario (LIGHT), NON SWS!
+        // Epoca senza campioni BLE (gap temporale): contrassegna esplicitamente come MISSING
         list.add(Epoch30s(
           index: k,
           timestamp: epochTime,
-          motionVar: 0.015,
-          hr: lastHr,
-          rmssd: lastRmssd.clamp(20.0, 100.0),
-          respPower: 0.40,
+          motionVar: 0.0,
+          hr: lastHr ?? 0.0,
+          rmssd: lastRmssd ?? 0.0,
+          respPower: 0.0,
           respRate: 0.0,
-          rmssdVarInWindow: 0.1,
-          hrFluctuations: 1,
+          rmssdVarInWindow: 0.0,
+          hrFluctuations: 0,
           ppIntervals: [],
+          sampleCount: 0,
+          quality: EpochQuality.missing,
+          stage: 'MISSING',
         ));
       }
     }
@@ -1092,10 +1125,19 @@ class OvernightSleepEngine {
 
     for (int k = 0; k < totalEpochs; k++) {
       final ep = epochs[k];
+
+      // Se l'epoca è priva di campioni o marcata MISSING, preserva lo stato MISSING
+      if (ep.quality == EpochQuality.missing || ep.sampleCount == 0 || ep.stage == 'MISSING') {
+        rawStages.add(SleepStage.missing);
+        continue;
+      }
+
       final double enmo = ep.motionVar;
       final double hrRatio = rhrBaseline > 0 ? (ep.hr / rhrBaseline) : 1.0;
       final double hrvNorm = hrvBaseline > 0 ? (ep.rmssd / hrvBaseline) : 1.0;
-      final double respVar = double.parse(((1.0 - ep.respPower) * 0.5).clamp(0.0, 1.0).toStringAsFixed(3));
+      final double respVar = ep.respPower > 0.0
+          ? double.parse(((1.0 - ep.respPower) * 0.5).clamp(0.0, 1.0).toStringAsFixed(3))
+          : 0.0;
 
       var stage = classifyEpoch(
         enmo: enmo,
@@ -1122,6 +1164,11 @@ class OvernightSleepEngine {
       final prev = smoothedStages[i - 1];
       final curr = smoothedStages[i];
       final next = rawStages[i + 1];
+
+      // Non applicare smoothing su epoche MISSING (i buchi di dati rimangono buchi autentici)
+      if (curr == SleepStage.missing || prev == SleepStage.missing || next == SleepStage.missing) {
+        continue;
+      }
 
       // Se l'epoca corrente è isolata tra due epoche dello stesso stadio, uniforma (a meno di forte spike motorio di veglia)
       if (prev == next && curr != prev) {
@@ -1164,9 +1211,10 @@ class OvernightSleepEngine {
       }
       evalSws = epochs.sublist(startIdx, lastSwsIdx + 1);
     } else {
-      // 2. Fallback: Finestra di minima varianza accelerometrica (motionVar < 0.020g)
-      final quietEpochs = epochs.where((e) => e.motionVar < 0.020).toList();
-      evalSws = quietEpochs.isNotEmpty ? quietEpochs : epochs;
+      // 2. Fallback: Finestra di minima varianza accelerometrica (motionVar < 0.020g) escludendo epoche MISSING
+      final validEpochs = epochs.where((e) => e.stage != 'MISSING' && e.stage != 'UNKNOWN' && e.sampleCount > 0).toList();
+      final quietEpochs = validEpochs.where((e) => e.motionVar < 0.020).toList();
+      evalSws = quietEpochs.isNotEmpty ? quietEpochs : validEpochs;
     }
 
     if (evalSws.isEmpty) {
@@ -1251,6 +1299,7 @@ class OvernightSleepEngine {
     double lightCount = 0;
     double swsCount = 0;
     double remCount = 0;
+    double missingCount = 0;
     int disturbancesCount = 0;
     bool inWakeCluster = false;
 
@@ -1258,7 +1307,8 @@ class OvernightSleepEngine {
     int sleepEnd = -1;
 
     for (int i = 0; i < epochs.length; i++) {
-      if (epochs[i].stage != 'WAKE') {
+      final s = epochs[i].stage;
+      if (s == 'SWS' || s == 'REM' || s == 'LIGHT') {
         if (sleepStart == -1) sleepStart = i;
         sleepEnd = i;
       }
@@ -1276,6 +1326,9 @@ class OvernightSleepEngine {
             inWakeCluster = true;
           }
         }
+      } else if (stage == 'MISSING' || stage == 'UNKNOWN') {
+        inWakeCluster = false;
+        missingCount++;
       } else {
         inWakeCluster = false;
         switch (stage) {
@@ -1285,6 +1338,7 @@ class OvernightSleepEngine {
           case 'REM':
             remCount++;
             break;
+          case 'LIGHT':
           default:
             lightCount++;
             break;
@@ -1297,8 +1351,9 @@ class OvernightSleepEngine {
     final lightMin = lightCount * 0.5;
     final wasoMin = wasoCount * 0.5;
     final totalWakeMin = totalWakeCount * 0.5;
+    final missingMin = missingCount * 0.5;
 
-    // totalSleepMin = lightMinutes + deepMinutes + remMinutes (tempo effettivo di sonno, escludendo ogni veglia)
+    // totalSleepMin = lightMinutes + deepMinutes + remMinutes (tempo effettivo di sonno, escludendo ogni veglia o gap mancante)
     final totalSleepMin = lightMin + swsMin + remMin;
 
     return {
@@ -1308,13 +1363,14 @@ class OvernightSleepEngine {
       'sws_min': swsMin,
       'rem_min': remMin,
       'light_min': lightMin,
+      'missing_min': missingMin,
       'disturbances_count': disturbancesCount.toDouble(),
     };
   }
 
   /// Calcolo Delta Temperatura Cutanea (°C) reale rispetto alla baseline
-  double? _calculateDeltaSkinTemp(List<Map<String, dynamic>> records, double baseTemp) {
-    if (records.isEmpty) return null;
+  double? _calculateDeltaSkinTemp(List<Map<String, dynamic>> records, double? baseTemp) {
+    if (records.isEmpty || baseTemp == null) return null;
     final List<double> celsiusList = [];
 
     for (final r in records) {
@@ -1569,7 +1625,59 @@ class OvernightSleepEngine {
     return double.parse(baseRecovery.clamp(1.0, 99.0).toStringAsFixed(1));
   }
 
-  /// Persistenza Transazionale su Database SQLite (`cicli_fisiologici` & `sonno`)
+  /// Raggruppa le epoche da 30s in segmenti contigui di stadio omogeneo (STG-07)
+  static List<Map<String, dynamic>> buildSegmentsFromEpochs(List<Epoch30s> epochs) {
+    if (epochs.isEmpty) return [];
+    final List<Map<String, dynamic>> segments = [];
+
+    DateTime? segStart;
+    DateTime? segEnd;
+    String? currentStage;
+    double confidenceSum = 0;
+    int epochCount = 0;
+
+    void flushSegment() {
+      if (segStart != null && segEnd != null && currentStage != null) {
+        segments.add({
+          'start_utc_ms': segStart!.toUtc().millisecondsSinceEpoch,
+          'end_utc_ms': segEnd!.toUtc().millisecondsSinceEpoch,
+          'stage': currentStage,
+          'confidence': epochCount > 0 ? double.parse((confidenceSum / epochCount).toStringAsFixed(2)) : 1.0,
+        });
+      }
+    }
+
+    for (final ep in epochs) {
+      final epStart = ep.timestamp.toUtc();
+      final epEnd = epStart.add(const Duration(seconds: 30));
+      final double epConf = ep.quality == EpochQuality.valid
+          ? 1.0
+          : (ep.quality == EpochQuality.lowConfidence ? 0.6 : 0.0);
+
+      if (currentStage == null) {
+        currentStage = ep.stage;
+        segStart = epStart;
+        segEnd = epEnd;
+        confidenceSum = epConf;
+        epochCount = 1;
+      } else if (ep.stage == currentStage && epStart.difference(segEnd!).inSeconds.abs() <= 1) {
+        segEnd = epEnd;
+        confidenceSum += epConf;
+        epochCount++;
+      } else {
+        flushSegment();
+        currentStage = ep.stage;
+        segStart = epStart;
+        segEnd = epEnd;
+        confidenceSum = epConf;
+        epochCount = 1;
+      }
+    }
+    flushSegment();
+    return segments;
+  }
+
+  /// Persistenza Transazionale su Database SQLite (`cicli_fisiologici`, `sonno` & `sleep_stage_segments`)
   Future<void> _persistOvernightResults({
     required String dateIso,
     double? recoveryScore,
@@ -1588,6 +1696,7 @@ class OvernightSleepEngine {
     List<Map<String, dynamic>> nightlyStressPoints = const [],
     DateTime? windowStart,
     DateTime? windowEnd,
+    List<Epoch30s> epochs = const [],
     bool isManual = false,
   }) async {
     try {
@@ -1616,7 +1725,7 @@ class OvernightSleepEngine {
             'fc_media_bpm': existingMap['fc_media_bpm'],
             'calorie_tot': existingMap['calorie_tot'],
             'valore_stress_notte': sleepStress ?? existingMap['valore_stress_notte'],
-            'provenance': isManual ? 'MANUAL' : (existingMap['provenance'] ?? 'REAL'),
+            'provenance': isManual ? 'USER_ENTERED' : (existingMap['provenance'] ?? 'REAL'),
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
@@ -1646,7 +1755,24 @@ class OvernightSleepEngine {
           }
         }
 
-        // 3. Upsert Sonno
+        // 3. Upsert Sonno e pulizia vecchi segmenti ipnogramma per questa data
+        final existingSonnoRows = await txn.query(
+          DatabaseHelper.tableSonno,
+          columns: ['id'],
+          where: 'data_iso = ?',
+          whereArgs: [dateIso],
+        );
+        for (final oldRow in existingSonnoRows) {
+          final oldId = oldRow['id'] as int?;
+          if (oldId != null) {
+            await txn.delete(
+              DatabaseHelper.tableSleepStageSegments,
+              where: 'sonno_id = ?',
+              whereArgs: [oldId],
+            );
+          }
+        }
+
         final denominator = totalSleepMin + wasoMin > 0 ? totalSleepMin + wasoMin : 1;
         final double? effPct = isManual ? null : (((totalSleepMin / denominator) * 100).clamp(0.0, 100.0));
         final perfPct = sleepPerformancePct ?? (((totalSleepMin / 480.0) * 100).clamp(0.0, 100.0));
@@ -1658,7 +1784,7 @@ class OvernightSleepEngine {
           whereArgs: [dateIso],
         );
 
-        await txn.insert(
+        final sonnoId = await txn.insert(
           DatabaseHelper.tableSonno,
           {
             'data_iso': dateIso,
@@ -1669,10 +1795,27 @@ class OvernightSleepEngine {
             'sonno_rem_min': isManual ? 0 : remMin,
             'efficienza_pct': effPct,
             'sleep_performance_pct': perfPct,
-            'provenance': isManual ? 'MANUAL' : 'REAL',
+            'provenance': isManual ? 'USER_ENTERED' : 'REAL',
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
+
+        // 4. Persistenza dei Segmenti dell'Ipnogramma (STG-07)
+        if (epochs.isNotEmpty && sonnoId > 0) {
+          final segments = buildSegmentsFromEpochs(epochs);
+          for (final seg in segments) {
+            await txn.insert(
+              DatabaseHelper.tableSleepStageSegments,
+              {
+                'sonno_id': sonnoId,
+                'start_utc_ms': seg['start_utc_ms'],
+                'end_utc_ms': seg['end_utc_ms'],
+                'stage': seg['stage'],
+                'confidence': seg['confidence'],
+              },
+            );
+          }
+        }
       });
       debugPrint('OvernightSleepEngine: Salvo sonno e recovery notturno su SQLite ($dateIso, Rec: ${recoveryScore?.toInt()}%)');
     } catch (e) {

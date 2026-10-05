@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
 import '../models/allenamento.dart';
 import '../models/ciclo_fisiologico.dart';
@@ -120,7 +121,8 @@ class WorkoutRepository {
       } else {
         await _db.insertAllenamento(allenamento.toMap());
       }
-    } catch (_) {
+    } catch (e, stack) {
+      debugPrint('[WorkoutRepository] Deduplication update failed, falling back to insert: $e\n$stack');
       await _db.insertAllenamento(allenamento.toMap());
     }
 

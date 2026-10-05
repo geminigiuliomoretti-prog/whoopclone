@@ -48,17 +48,17 @@ class WhoopBiometricEngine {
   }
 
   /// 3. Recovery Engine: Calcola il Punteggio di Recupero % con gestione del Cold Start
-  double calculateRecoveryScore({
-    required double currentRmssdMs,
+  double? calculateRecoveryScore({
+    required double? currentRmssdMs,
     required List<double> historicalLnRmssd,
-    required double currentFcrBpm,
+    required double? currentFcrBpm,
     required List<double> historicalRhr,
-    double currentRespRateRpm = 14.5,
-    double baselineRespRateRpm = 14.0,
-    double sleepEfficiencyPct = 90.0,
-    double sleepPerformancePct = 85.0,
-    double nightlyStress = 0.5,
-    double skinTempDeltaC = 0.0,
+    double? currentRespRateRpm,
+    double? baselineRespRateRpm,
+    double? sleepEfficiencyPct,
+    double? sleepPerformancePct,
+    double? nightlyStress,
+    double? skinTempDeltaC,
   }) {
     return RecoveryEngine.calculateRecoveryScore(
       currentRmssdMs: currentRmssdMs,

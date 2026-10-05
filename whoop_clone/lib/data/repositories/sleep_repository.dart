@@ -168,6 +168,29 @@ class SleepRepository {
     _notifySleepChange(dateKey, sleep);
   }
 
+  /// Recupera i segmenti dell'ipnogramma persistiti per [dateIso] (STG-07, CHT-02)
+  Future<List<Map<String, dynamic>>> getHypnogramSegments(String dateIso) async {
+    return await _db.getHypnogramSegments(dateIso);
+  }
+
+  /// Recupera i bucket aggregati di frequenza cardiaca intraday (CHT-02)
+  Future<List<Map<String, dynamic>?>> getIntradayHrBuckets(
+    DateTime start,
+    DateTime end, {
+    int bucketMinutes = 1,
+  }) async {
+    return await _db.getIntradayHrBuckets(start, end, bucketMinutes: bucketMinutes);
+  }
+
+  /// Calcola la distribuzione del tempo nelle 5 zone cardiache (CHT-02)
+  Future<Map<String, dynamic>> getHrZoneDistribution(
+    DateTime start,
+    DateTime end,
+    double maxHr,
+  ) async {
+    return await _db.getHrZoneDistribution(start, end, maxHr);
+  }
+
   void dispose() {
     _sleepUpdateBus.close();
     _sleepStreamController.close();
