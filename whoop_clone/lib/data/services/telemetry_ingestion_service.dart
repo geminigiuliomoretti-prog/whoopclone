@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import '../ble/ble_diagnostic_service.dart';
+import '../ble/hr_data_packet.dart';
 import '../ble/noop_protocol_decoder.dart';
 import '../ble/whoop_96byte_packet.dart';
 import '../database/database_helper.dart';
@@ -25,6 +28,7 @@ class IngestedTelemetry {
   final int? bpm;
   final double? rmssdMs;
   final double? rrMs;
+  final String? rrIntervalsJson;
   final double? accelEnmo;
   final double? motionVar;
   final double? skinTempCelsius;
@@ -44,6 +48,7 @@ class IngestedTelemetry {
     this.bpm,
     this.rmssdMs,
     this.rrMs,
+    this.rrIntervalsJson,
     this.accelEnmo,
     this.motionVar,
     this.skinTempCelsius,
@@ -139,6 +144,15 @@ class TelemetryIngestionService {
   int _packetsDuplicate = 0;
   int _packetsInvalid = 0;
   int _packetsMissing = 0;
+
+  static TelemetryIngestionService? _instance;
+  static TelemetryIngestionService get instance =>
+      _instance ??= TelemetryIngestionService();
+
+  static void setMockInstance(TelemetryIngestionService mock) {
+    _instance?.dispose();
+    _instance = mock;
+  }
 
   TelemetryIngestionService({DatabaseHelper? dbHelper})
       : _dbHelper = dbHelper ?? DatabaseHelper();
@@ -292,6 +306,7 @@ class TelemetryIngestionService {
     int? bpm;
     double? rmssdMs;
     double? rrMs;
+    String? rrIntervalsJson;
     double? accelEnmo;
     double? motionVar;
     double? skinTempC;
@@ -306,7 +321,7 @@ class TelemetryIngestionService {
       deviceTs = packet96.timestamp;
       bpm = packet96.heartRateBpm > 0 ? packet96.heartRateBpm : null;
       rmssdMs = packet96.hrvRmssdMs > 0 ? packet96.hrvRmssdMs : null;
-      rrMs = rmssdMs;
+      rrMs = null; // PRO-01 FIX: 96-byte packet does not provide discrete R-R intervals
       accelEnmo = packet96.enmo;
       motionVar = packet96.motionVariance;
       skinTempRaw = packet96.skinTempRaw;
@@ -319,11 +334,46 @@ class TelemetryIngestionService {
       }
       respRate = packet96.respiratoryRate > 0 ? packet96.respiratoryRate : null;
       respPower = packet96.respiratoryPower > 0 ? packet96.respiratoryPower : null;
+    } else if (isFramedCommand) {
+      if (rawBytes.length >= 7) {
+        final potentialBpm = rawBytes[6];
+        if (potentialBpm >= 30 && potentialBpm <= 250) {
+          bpm = potentialBpm;
+        }
+      }
+      if (bpm == null && rawBytes.length > 4 && rawBytes[4] >= 30 && rawBytes[4] <= 250) {
+        bpm = rawBytes[4];
+      }
     } else {
-      // Pacchetto compatto/standard
+      // Standard BLE Heart Rate (0x2A37) or compact frame
       if (rawBytes.length >= 2) {
-        bpm = rawBytes[rawBytes.length > 4 ? 4 : 1];
-        if (bpm <= 0) bpm = null;
+        final hrPacket = HrDataPacket.fromBytes(rawBytes);
+        bpm = hrPacket.bpm > 0 ? hrPacket.bpm : null;
+        if (hrPacket.rrIntervalsMs.isNotEmpty) {
+          rrIntervalsJson = jsonEncode(hrPacket.rrIntervalsMs);
+          final validRr = hrPacket.rrIntervalsMs.where((r) => r >= 300.0 && r <= 2000.0).toList();
+          if (validRr.isNotEmpty) {
+            rrMs = validRr.last;
+            if (validRr.length >= 2) {
+              double sumDiffSq = 0.0;
+              int count = 0;
+              for (int i = 0; i < validRr.length - 1; i++) {
+                final diff = (validRr[i + 1] - validRr[i]).abs();
+                if (diff <= 200.0) { // Ectopic rejection filter
+                  sumDiffSq += diff * diff;
+                  count++;
+                }
+              }
+              if (count > 0) {
+                rmssdMs = math.sqrt(sumDiffSq / count);
+              }
+            }
+          }
+        }
+        if (bpm == null || bpm <= 0) {
+          final fallbackBpm = rawBytes[rawBytes.length > 4 ? 4 : 1];
+          if (fallbackBpm >= 30 && fallbackBpm <= 250) bpm = fallbackBpm;
+        }
       }
     }
 
@@ -344,8 +394,12 @@ class TelemetryIngestionService {
     // Filtro rMSSD fisiologico [5..300 ms]
     if (rmssdMs != null && (rmssdMs < 5.0 || rmssdMs > 300.0)) {
       rmssdMs = null;
-      rrMs = null;
       quality = 'LOW_CONFIDENCE';
+    }
+
+    // Filtro R-R interval fisiologico [300..2000 ms]
+    if (rrMs != null && (rrMs < 300.0 || rrMs > 2000.0)) {
+      rrMs = null;
     }
 
     // Filtro SpO2 [70..100%]
@@ -374,6 +428,7 @@ class TelemetryIngestionService {
         bpm: bpm,
         rmssdMs: rmssdMs,
         rrMs: rrMs,
+        rrIntervalsJson: rrIntervalsJson,
         motionVar: motionVar,
         accelEnmo: accelEnmo,
         skinTempCelsius: skinTempC,
@@ -426,6 +481,7 @@ class TelemetryIngestionService {
       bpm: bpm,
       rmssdMs: rmssdMs,
       rrMs: rrMs,
+      rrIntervalsJson: rrIntervalsJson,
       accelEnmo: accelEnmo,
       motionVar: motionVar,
       skinTempCelsius: skinTempC,

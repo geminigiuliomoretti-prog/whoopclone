@@ -307,11 +307,53 @@ class _HypnogramChartState extends State<HypnogramChart> {
           ),
         ),
 
+        const SizedBox(height: 6),
+        _buildTimeAxis(widget.blocks),
+
         if (widget.showLegend) ...[
           const SizedBox(height: 10),
           _buildLegend(hasGaps),
         ],
       ],
+    );
+  }
+
+  Widget _buildTimeAxis(List<HypnogramBlock> blocks) {
+    if (blocks.isEmpty) return const SizedBox.shrink();
+    final start = blocks.first.startTime;
+    final end = blocks.last.endTime;
+    final spanMs = end.difference(start).inMilliseconds;
+    if (spanMs <= 0) return const SizedBox.shrink();
+
+    if (spanMs < 60000 * 30) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(_formatTime(start), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
+            Text(_formatTime(end), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      );
+    }
+
+    final t1 = DateTime.fromMillisecondsSinceEpoch(start.millisecondsSinceEpoch + (spanMs * 0.25).round());
+    final t2 = DateTime.fromMillisecondsSinceEpoch(start.millisecondsSinceEpoch + (spanMs * 0.50).round());
+    final t3 = DateTime.fromMillisecondsSinceEpoch(start.millisecondsSinceEpoch + (spanMs * 0.75).round());
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(_formatTime(start), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
+          Text(_formatTime(t1), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
+          Text(_formatTime(t2), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
+          Text(_formatTime(t3), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
+          Text(_formatTime(end), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
+        ],
+      ),
     );
   }
 

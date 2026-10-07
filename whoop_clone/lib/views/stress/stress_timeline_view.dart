@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 
 /// Punto di campionamento dello stress diurno
 class StressTimelineSample {
@@ -22,9 +23,9 @@ class StressTimelineSample {
   }
 
   Color get color {
-    if (stressScore < 1.0) return const Color(0xFF34C759); // Verde
-    if (stressScore <= 2.0) return const Color(0xFFFF9500); // Giallo/Arancio
-    return const Color(0xFFFF3B30); // Rosso
+    if (stressScore < 1.0) return NatureColors.sage;
+    if (stressScore <= 2.0) return NatureColors.amber;
+    return NatureColors.terracotta;
   }
 }
 
@@ -60,11 +61,7 @@ class _StressTimelineViewState extends State<StressTimelineView> {
 
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF141920),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: WhoopTheme.cardBorder),
-      ),
+      decoration: NatureTheme.organicCardDecoration(elevated: true),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -83,11 +80,11 @@ class _StressTimelineViewState extends State<StressTimelineView> {
               ),
               Row(
                 children: [
-                  const Icon(Icons.timer_outlined, size: 13, color: Color(0xFFFF3B30)),
+                  const Icon(Icons.timer_outlined, size: 13, color: NatureColors.terracotta),
                   const SizedBox(width: 4),
                   Text(
                     'Elevato: ${highStressMinutes}m',
-                    style: const TextStyle(color: Color(0xFFFF3B30), fontSize: 11, fontWeight: FontWeight.bold),
+                    style: const TextStyle(color: NatureColors.terracotta, fontSize: 11, fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
@@ -100,7 +97,7 @@ class _StressTimelineViewState extends State<StressTimelineView> {
             SizedBox(
               height: widget.height - 70,
               child: const Center(
-                child: Text('Nessun dato di stress registrato per oggi', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 11)),
+                child: Text('Nessun dato di stress registrato per oggi', style: TextStyle(color: NatureColors.textMuted, fontSize: 11)),
               ),
             )
           else ...[
@@ -124,11 +121,11 @@ class _StressTimelineViewState extends State<StressTimelineView> {
             const Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('06:00', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-                Text('10:00', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-                Text('14:00', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-                Text('18:00', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-                Text('22:00', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
+                Text('06:00', style: TextStyle(color: NatureColors.textMuted, fontSize: 9)),
+                Text('10:00', style: TextStyle(color: NatureColors.textMuted, fontSize: 9)),
+                Text('14:00', style: TextStyle(color: NatureColors.textMuted, fontSize: 9)),
+                Text('18:00', style: TextStyle(color: NatureColors.textMuted, fontSize: 9)),
+                Text('22:00', style: TextStyle(color: NatureColors.textMuted, fontSize: 9)),
               ],
             ),
           ],
@@ -138,9 +135,9 @@ class _StressTimelineViewState extends State<StressTimelineView> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildFasciaBadge('Riposo (0-1)', '${lowStressMinutes}m', const Color(0xFF34C759)),
-              _buildFasciaBadge('Medio (1-2)', '${(widget.samples.length - highStressCount - lowStressCount).clamp(0, 999) * 5}m', const Color(0xFFFF9500)),
-              _buildFasciaBadge('Elevato (2-3)', '${highStressMinutes}m', const Color(0xFFFF3B30)),
+              _buildFasciaBadge('Riposo (0-1)', '${lowStressMinutes}m', NatureColors.sage),
+              _buildFasciaBadge('Medio (1-2)', '${(widget.samples.length - highStressCount - lowStressCount).clamp(0, 999) * 5}m', NatureColors.amber),
+              _buildFasciaBadge('Elevato (2-3)', '${highStressMinutes}m', NatureColors.terracotta),
             ],
           ),
         ],
@@ -164,7 +161,7 @@ class _StressTimelineViewState extends State<StressTimelineView> {
       children: [
         Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const SizedBox(width: 5),
-        Text('$label: ', style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 9.5)),
+        Text('$label: ', style: const TextStyle(color: NatureColors.textMuted, fontSize: 9.5)),
         Text(time, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
       ],
     );
@@ -189,7 +186,7 @@ class _StressTimelinePainter extends CustomPainter {
     final y2 = size.height - (2.0 / 3.0) * size.height;
 
     final gridPaint = Paint()
-      ..color = WhoopTheme.cardBorder.withValues(alpha: 0.5)
+      ..color = NatureColors.borderSubtle.withValues(alpha: 0.5)
       ..strokeWidth = 0.8
       ..style = PaintingStyle.stroke;
 
@@ -223,14 +220,14 @@ class _StressTimelinePainter extends CustomPainter {
     fillPath.lineTo(size.width, size.height);
     fillPath.close();
 
-    // Sfumatura gradiente verticale per lo stress
+    // Sfumatura gradiente serena per lo stress (Lavender -> Sage)
     final fillGradient = LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
       colors: [
-        const Color(0xFFFF3B30).withValues(alpha: 0.35),
-        const Color(0xFFFF9500).withValues(alpha: 0.15),
-        const Color(0xFF34C759).withValues(alpha: 0.0),
+        NatureColors.lavender.withValues(alpha: 0.30),
+        NatureColors.amber.withValues(alpha: 0.12),
+        NatureColors.sage.withValues(alpha: 0.0),
       ],
     );
 
@@ -239,10 +236,10 @@ class _StressTimelinePainter extends CustomPainter {
       ..style = PaintingStyle.fill;
     canvas.drawPath(fillPath, fillPaint);
 
-    // Linea principale dello Stress
+    // Linea principale dello Stress in Lavender organico
     final strokePaint = Paint()
-      ..color = const Color(0xFFFF9500)
-      ..strokeWidth = 2.0
+      ..color = NatureColors.lavender
+      ..strokeWidth = 2.2
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
     canvas.drawPath(path, strokePaint);

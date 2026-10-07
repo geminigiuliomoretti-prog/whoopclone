@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 import 'app_colors.dart';
+import '../theme/nature_theme.dart';
 
 /// WhoopTheme definisce la palette Hex e le specifiche visive UFFICIALI WHOOP
 class WhoopTheme {
   // Canvas & Surfaces
   static const Color background = AppColors.background;
+  static const Color backgroundDark = AppColors.backgroundDark;
   static const Color cardSurface = AppColors.surface;
+  static const Color cardSurfaceDark = AppColors.surfaceDark;
   static const Color surfaceRaised = AppColors.surfaceLight;
-  static const Color surfaceOverlay = Color(0xFF283339);
+  static const Color surfaceOverlay = Color(0xFFEFE9DE);
 
   // Borders & Hairlines
   static const Color cardBorder = AppColors.cardBorder;
-  static const Color hairlineStrong = Color(0xFF384750);
+  static const Color cardBorderDark = AppColors.cardBorderDark;
+  static const Color hairlineStrong = Color(0xFFC8BFB0);
 
   // Official WHOOP Brand Colors
   static const Color brandBlack = Color(0xFF000000);
@@ -58,55 +62,73 @@ class WhoopTheme {
 
   static BoxDecoration officialCardDecoration({
     Color? tint,
-    double borderRadius = 16.0,
+    double borderRadius = 20.0,
     bool elevated = false,
+    bool isDark = false,
   }) {
+    if (isDark) {
+      return BoxDecoration(
+        color: const Color(0xFF161E24),
+        borderRadius: BorderRadius.circular(borderRadius),
+        border: Border.all(
+          color: tint?.withValues(alpha: 0.35) ?? const Color(0xFF26323D),
+          width: 1.0,
+        ),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF1B242C),
+            Color(0xFF141A20),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: elevated ? 0.30 : 0.15),
+            blurRadius: elevated ? 16 : 8,
+            offset: const Offset(0, 4),
+          )
+        ],
+      );
+    }
     return BoxDecoration(
-      color: const Color(0xFF161D22),
+      color: Colors.white,
       borderRadius: BorderRadius.circular(borderRadius),
       border: Border.all(
-        color: tint?.withValues(alpha: 0.45) ?? const Color(0xFF242E35),
-        width: 1.0,
-      ),
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Color(0xFF1A2228),
-          Color(0xFF12171B),
-        ],
+        color: tint?.withValues(alpha: 0.25) ?? NatureColors.sandBorder,
+        width: 0.85,
       ),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: elevated ? 0.45 : 0.25),
-          blurRadius: elevated ? 12 : 8,
+          color: const Color(0xFF1E2832).withValues(alpha: elevated ? 0.05 : 0.025),
+          blurRadius: elevated ? 14 : 8,
           offset: const Offset(0, 3),
-        )
+        ),
       ],
     );
   }
 
   static TextStyle cardTitleStyle({
-    double fontSize = 11.0,
-    Color color = textPrimary,
-  }) {
-    return TextStyle(
-      color: color,
-      fontSize: fontSize,
-      fontWeight: FontWeight.w900,
-      letterSpacing: 1.0,
-    );
-  }
-
-  static TextStyle headlineStyle({
-    double fontSize = 12.0,
+    double fontSize = 11.5,
     Color color = textSecondary,
   }) {
     return TextStyle(
       color: color,
       fontSize: fontSize,
-      fontWeight: FontWeight.bold,
+      fontWeight: FontWeight.w700,
       letterSpacing: 0.8,
+    );
+  }
+
+  static TextStyle headlineStyle({
+    double fontSize = 13.0,
+    Color color = textPrimary,
+  }) {
+    return TextStyle(
+      color: color,
+      fontSize: fontSize,
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.2,
     );
   }
 
@@ -117,33 +139,36 @@ class WhoopTheme {
     return TextStyle(
       color: color,
       fontSize: fontSize,
-      fontWeight: FontWeight.w900,
+      fontWeight: FontWeight.w800,
+      letterSpacing: -0.5,
       fontFeatures: const [FontFeature.tabularFigures()],
     );
   }
+
+  static ThemeData get lightTheme => NatureTheme.lightTheme;
 
   static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      scaffoldBackgroundColor: background,
+      scaffoldBackgroundColor: NatureColors.darkCanvas,
       colorScheme: const ColorScheme.dark(
-        surface: cardSurface,
+        surface: NatureColors.darkSurface,
         primary: strainBlue,
         secondary: recoveryGreen,
         tertiary: brandTeal,
-        onSurface: textPrimary,
+        onSurface: NatureColors.textDarkPrimary,
       ),
       cardTheme: CardThemeData(
-        color: cardSurface,
+        color: NatureColors.darkSurface,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: cardBorder, width: 1),
+          side: const BorderSide(color: NatureColors.darkBorder, width: 0.85),
         ),
       ),
       appBarTheme: const AppBarTheme(
-        backgroundColor: background,
+        backgroundColor: NatureColors.darkCanvas,
         elevation: 0,
         centerTitle: true,
       ),

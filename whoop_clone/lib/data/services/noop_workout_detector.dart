@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
+import '../biometrics/strain_engine.dart';
+import '../../domain/analytics/whoop_analytics_engine.dart';
 import '../database/database_helper.dart';
 import '../models/allenamento.dart';
 
@@ -147,6 +149,28 @@ class AutoWorkoutDetector {
         if (durationMin >= minDurationMinutes) {
           final avgBpm = (_legacyBpmHistory.reduce((a, b) => a + b) / _legacyBpmHistory.length).round();
           final maxBpm = _legacyBpmHistory.reduce((a, b) => a > b ? a : b);
+          final strain = StrainEngine.calculateStrain(
+            durationMinutes: durationMin.toDouble(),
+            hrMean: avgBpm.toDouble(),
+            hrRest: restHr.toDouble(),
+            age: 30,
+          );
+          final calories = math.max(
+            durationMin * 2,
+            (((-55.0969 + (0.6309 * avgBpm) + (0.1988 * 75.0) + (0.2017 * 30)) / 4.184) * durationMin).round(),
+          );
+
+          int z1Count = 0, z2Count = 0, z3Count = 0, z4Count = 0, z5Count = 0;
+          final hrMaxCalc = StrainEngine.calculateTanakaHrMax(30);
+          for (final bpm in _legacyBpmHistory) {
+            final wz = WhoopAnalyticsEngine.getZoneMultiplier(bpm.toDouble(), hrMaxCalc, restHr.toDouble());
+            if (wz == 1.0) z1Count++;
+            else if (wz == 2.0) z2Count++;
+            else if (wz == 3.0) z3Count++;
+            else if (wz == 4.0) z4Count++;
+            else if (wz == 5.0) z5Count++;
+          }
+          final totalSamples = _legacyBpmHistory.isNotEmpty ? _legacyBpmHistory.length.toDouble() : 1.0;
 
           final autoWorkout = Allenamento(
             dataIso: _legacyStartTime!.toIso8601String().substring(0, 10),
@@ -156,8 +180,13 @@ class AutoWorkoutDetector {
             durataMin: durationMin,
             hrMedia: avgBpm,
             hrMax: maxBpm,
-            strainAttivita: (durationMin * 0.12).clamp(4.0, 20.5),
-            calorie: durationMin * 8,
+            strainAttivita: strain,
+            calorie: calories,
+            zoneZ1Pct: z1Count / totalSamples,
+            zoneZ2Pct: z2Count / totalSamples,
+            zoneZ3Pct: z3Count / totalSamples,
+            zoneZ4Pct: z4Count / totalSamples,
+            zoneZ5Pct: z5Count / totalSamples,
           );
 
           _persistAndNotify(autoWorkout);
@@ -264,8 +293,28 @@ class AutoWorkoutDetector {
     final maxHr = framesToUse.map((f) => f.hr).reduce(math.max);
     final durationSec = endTimestamp.difference(startTimestamp).inSeconds;
     final durationMin = math.max(1, (durationSec / 60).round());
-    final strain = (durationMin * 0.12).clamp(4.0, 20.5);
-    final calories = durationMin * 8;
+    final strain = StrainEngine.calculateStrain(
+      durationMinutes: durationMin.toDouble(),
+      hrMean: avgHr.toDouble(),
+      hrRest: restHr.toDouble(),
+      age: 30,
+    );
+    final calories = math.max(
+      durationMin * 2,
+      (((-55.0969 + (0.6309 * avgHr) + (0.1988 * 75.0) + (0.2017 * 30)) / 4.184) * durationMin).round(),
+    );
+
+    int z1Count = 0, z2Count = 0, z3Count = 0, z4Count = 0, z5Count = 0;
+    final hrMaxCalc = StrainEngine.calculateTanakaHrMax(30);
+    for (final f in framesToUse) {
+      final wz = WhoopAnalyticsEngine.getZoneMultiplier(f.hr.toDouble(), hrMaxCalc, restHr.toDouble());
+      if (wz == 1.0) z1Count++;
+      else if (wz == 2.0) z2Count++;
+      else if (wz == 3.0) z3Count++;
+      else if (wz == 4.0) z4Count++;
+      else if (wz == 5.0) z5Count++;
+    }
+    final totalSamples = framesToUse.isNotEmpty ? framesToUse.length.toDouble() : 1.0;
 
     final autoWorkout = Allenamento(
       dataIso: startTimestamp.toIso8601String().substring(0, 10),
@@ -277,6 +326,11 @@ class AutoWorkoutDetector {
       hrMax: maxHr,
       strainAttivita: strain,
       calorie: calories,
+      zoneZ1Pct: z1Count / totalSamples,
+      zoneZ2Pct: z2Count / totalSamples,
+      zoneZ3Pct: z3Count / totalSamples,
+      zoneZ4Pct: z4Count / totalSamples,
+      zoneZ5Pct: z5Count / totalSamples,
     );
 
     await _persistAndNotify(autoWorkout);

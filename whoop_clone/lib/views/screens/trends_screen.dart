@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 import '../../data/models/ciclo_fisiologico.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 
@@ -110,21 +111,40 @@ class _TrendsScreenState extends State<TrendsScreen> {
       dayCiclo = null;
     }
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: isDark ? NatureColors.darkCanvas : NatureColors.canvas,
       appBar: AppBar(
-        backgroundColor: WhoopTheme.background,
+        backgroundColor: isDark ? NatureColors.darkCanvas : NatureColors.canvas,
         elevation: 0,
+        leading: IconButton(
+          icon: Icon(
+            Icons.chevron_left,
+            color: isDark ? Colors.white : NatureColors.textPrimary,
+            size: 28,
+          ),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
             value: _selectedMetric,
-            dropdownColor: WhoopTheme.cardSurface,
-            icon: const Icon(Icons.arrow_drop_down, color: WhoopTheme.strainBlue),
-            style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900),
+            dropdownColor: isDark ? NatureColors.darkCard : Colors.white,
+            icon: const Icon(Icons.arrow_drop_down, color: NatureColors.tealLight),
+            style: TextStyle(
+              color: isDark ? Colors.white : NatureColors.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
             items: _allMetrics.map((m) {
               return DropdownMenuItem<String>(
                 value: m,
-                child: Text(m.toUpperCase()),
+                child: Text(
+                  m.toUpperCase(),
+                  style: TextStyle(
+                    color: isDark ? Colors.white : NatureColors.textPrimary,
+                  ),
+                ),
               );
             }).toList(),
             onChanged: (val) {
@@ -147,10 +167,14 @@ class _TrendsScreenState extends State<TrendsScreen> {
                 return ChoiceChip(
                   label: Text(range),
                   selected: isSelected,
-                  selectedColor: WhoopTheme.strainBlue,
-                  backgroundColor: WhoopTheme.cardSurface,
+                  selectedColor: NatureColors.tealLight,
+                  backgroundColor: NatureColors.card,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(color: isSelected ? NatureColors.tealLight : NatureColors.borderSubtle),
+                  ),
                   labelStyle: TextStyle(
-                    color: isSelected ? Colors.black : WhoopTheme.textPrimary,
+                    color: isSelected ? NatureColors.canvas : NatureColors.textPrimary,
                     fontWeight: FontWeight.bold,
                   ),
                   onSelected: (selected) {
@@ -185,7 +209,7 @@ class _TrendsScreenState extends State<TrendsScreen> {
               averageLabel: hasData
                   ? 'Media Sforzo: ${avgStrain.toStringAsFixed(1)} / 21.0 (${cicli.length} cicli)'
                   : 'Nessun ciclo fisiologico registrato nel DB',
-              color: WhoopTheme.strainBlue,
+              color: NatureColors.amber,
               chartHeight: 110,
               values: strainValues,
               fixedMax: 21.0,
@@ -200,7 +224,7 @@ class _TrendsScreenState extends State<TrendsScreen> {
               averageLabel: hasData
                   ? 'Media Recupero: ${avgRecovery.toInt()}% (${cicli.length} cicli)'
                   : 'Dati Recupero non disponibili',
-              color: WhoopTheme.recoveryGreen,
+              color: NatureColors.sage,
               chartHeight: 110,
               values: recoveryValues,
               fixedMax: 100.0,
@@ -215,7 +239,7 @@ class _TrendsScreenState extends State<TrendsScreen> {
               averageLabel: hasData
                   ? 'Media VFC: ${avgHrv.toStringAsFixed(1)} ms'
                   : 'Dati VFC non disponibili in SQLite',
-              color: WhoopTheme.recoveryGreen,
+              color: NatureColors.sage,
               chartHeight: 110,
               values: hrvValues,
             ),
@@ -228,7 +252,7 @@ class _TrendsScreenState extends State<TrendsScreen> {
               averageLabel: hasData
                   ? 'Media Sonno: ${avgSleep.toInt()}%'
                   : 'Dati Sonno non disponibili in SQLite',
-              color: WhoopTheme.strainBlue,
+              color: NatureColors.tealLight,
               chartHeight: 110,
               values: sleepValues,
               fixedMax: 100.0,
@@ -236,7 +260,7 @@ class _TrendsScreenState extends State<TrendsScreen> {
             ),
 
             const SizedBox(height: 24),
-            const Divider(),
+            Divider(color: NatureColors.borderSubtle),
             const SizedBox(height: 16),
 
             // Navigatore Storico a Calendario
@@ -251,90 +275,94 @@ class _TrendsScreenState extends State<TrendsScreen> {
             ),
             const SizedBox(height: 12),
 
-            Card(
-              color: WhoopTheme.cardSurface,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Data Selezionata: ${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
-                          style: const TextStyle(color: WhoopTheme.textPrimary, fontWeight: FontWeight.bold),
+            Container(
+              decoration: NatureTheme.organicCardDecoration(elevated: true),
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Data Selezionata: ${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                        style: TextStyle(
+                          color: isDark ? Colors.white : NatureColors.textPrimary,
+                          fontWeight: FontWeight.bold,
                         ),
-                        ElevatedButton.icon(
-                          onPressed: () async {
-                            final picked = await showDatePicker(
-                              context: context,
-                              initialDate: _selectedDate,
-                              firstDate: DateTime(2025),
-                              lastDate: DateTime.now(),
-                            );
-                            if (picked != null) {
-                              setState(() {
-                                _selectedDate = picked;
-                              });
-                            }
-                          },
-                          icon: const Icon(Icons.calendar_month, size: 16),
-                          label: const Text('Cambia Data'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: WhoopTheme.strainBlue,
-                            foregroundColor: Colors.black,
-                          ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _selectedDate,
+                            firstDate: DateTime(2025),
+                            lastDate: DateTime.now(),
+                          );
+                          if (picked != null) {
+                            setState(() {
+                              _selectedDate = picked;
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_month, size: 16),
+                        label: const Text('Cambia Data'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: NatureColors.tealLight,
+                          foregroundColor: NatureColors.canvas,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: NatureColors.card,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: NatureColors.borderSubtle),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        Column(
+                          children: [
+                            const Text('Recupero', style: TextStyle(color: NatureColors.textMuted, fontSize: 11)),
+                            Text(
+                              dayCiclo?.punteggioRecuperoPct != null
+                                  ? '${dayCiclo!.punteggioRecuperoPct!.toInt()}%'
+                                  : '--%',
+                              style: const TextStyle(color: NatureColors.sage, fontWeight: FontWeight.bold, fontSize: 18),
+                            ),
+                          ],
+                        ),
+                        Column(
+                          children: [
+                            const Text('Sforzo', style: TextStyle(color: NatureColors.textMuted, fontSize: 11)),
+                            Text(
+                              dayCiclo?.sforzoGiornaliero != null
+                                  ? dayCiclo!.sforzoGiornaliero!.toStringAsFixed(1)
+                                  : '--',
+                              style: const TextStyle(color: NatureColors.amber, fontWeight: FontWeight.bold, fontSize: 18),
+                            ),
+                          ],
+                        ),
+                        Column(
+                          children: [
+                            const Text('Sonno', style: TextStyle(color: NatureColors.textMuted, fontSize: 11)),
+                            Text(
+                              dayCiclo?.andamentoSonnoPct != null
+                                  ? '${dayCiclo!.andamentoSonnoPct!.toInt()}%'
+                                  : '--%',
+                              style: const TextStyle(color: NatureColors.tealLight, fontWeight: FontWeight.bold, fontSize: 18),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: WhoopTheme.background,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          Column(
-                            children: [
-                              const Text('Recupero', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 11)),
-                              Text(
-                                dayCiclo?.punteggioRecuperoPct != null
-                                    ? '${dayCiclo!.punteggioRecuperoPct!.toInt()}%'
-                                    : '--%',
-                                style: const TextStyle(color: WhoopTheme.recoveryGreen, fontWeight: FontWeight.bold, fontSize: 18),
-                              ),
-                            ],
-                          ),
-                          Column(
-                            children: [
-                              const Text('Sforzo', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 11)),
-                              Text(
-                                dayCiclo?.sforzoGiornaliero != null
-                                    ? dayCiclo!.sforzoGiornaliero!.toStringAsFixed(1)
-                                    : '--',
-                                style: const TextStyle(color: WhoopTheme.strainBlue, fontWeight: FontWeight.bold, fontSize: 18),
-                              ),
-                            ],
-                          ),
-                          Column(
-                            children: [
-                              const Text('Sonno', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 11)),
-                              Text(
-                                dayCiclo?.andamentoSonnoPct != null
-                                    ? '${dayCiclo!.andamentoSonnoPct!.toInt()}%'
-                                    : '--%',
-                                style: const TextStyle(color: WhoopTheme.strainBlue, fontWeight: FontWeight.bold, fontSize: 18),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -345,43 +373,43 @@ class _TrendsScreenState extends State<TrendsScreen> {
 
   MetricData _extractMetricData(String metric, List<CicloFisiologico> cicli) {
     if (cicli.isEmpty) {
-      return MetricData(title: metric, values: [], unit: '', color: WhoopTheme.strainBlue);
+      return MetricData(title: metric, values: [], unit: '', color: NatureColors.tealLight);
     }
 
     switch (metric) {
       case 'Variabilità FC (VFC)':
         final vals = cicli.map((c) => c.vfcMs).whereType<double>().toList();
-        return MetricData(title: metric, values: vals, unit: 'ms', color: WhoopTheme.recoveryGreen);
+        return MetricData(title: metric, values: vals, unit: 'ms', color: NatureColors.sage);
 
       case 'FC a Riposo (FCR)':
         final vals = cicli.map((c) => c.frequenzaCardiacaRiposoBpm?.toDouble()).whereType<double>().toList();
-        return MetricData(title: metric, values: vals, unit: 'bpm', color: WhoopTheme.recoveryGreen);
+        return MetricData(title: metric, values: vals, unit: 'bpm', color: NatureColors.sage);
 
       case 'Passi Giornalieri':
-        return MetricData(title: metric, values: [], unit: 'passi', color: WhoopTheme.strainBlue);
+        return MetricData(title: metric, values: [], unit: 'passi', color: NatureColors.mist);
 
       case 'Sforzo Giornaliero':
         final vals = cicli.map((c) => c.sforzoGiornaliero).whereType<double>().toList();
-        return MetricData(title: metric, values: vals, unit: '', color: WhoopTheme.strainBlue);
+        return MetricData(title: metric, values: vals, unit: '', color: NatureColors.amber);
 
       case 'Frequenza Respiratoria':
         final vals = cicli.map((c) => c.frequenzaRespiratoriaRpm).whereType<double>().toList();
-        return MetricData(title: metric, values: vals, unit: 'rpm', color: WhoopTheme.recoveryGreen);
+        return MetricData(title: metric, values: vals, unit: 'rpm', color: NatureColors.sage);
 
       case 'Temperatura Cutanea':
         final vals = cicli.map((c) => c.temperaturaPelleCelsius).whereType<double>().toList();
-        return MetricData(title: metric, values: vals, unit: '°C', color: WhoopTheme.recoveryGreen);
+        return MetricData(title: metric, values: vals, unit: '°C', color: NatureColors.amber);
 
       case 'VO₂ Max Stimato':
-        return MetricData(title: metric, values: [], unit: 'ml/kg/min', color: WhoopTheme.strainBlue);
+        return MetricData(title: metric, values: [], unit: 'ml/kg/min', color: NatureColors.tealLight);
 
       case 'Dispendio Energetico':
         final vals = cicli.map((c) => c.calorieTot?.toDouble()).whereType<double>().toList();
-        return MetricData(title: metric, values: vals, unit: 'kcal', color: WhoopTheme.strainBlue);
+        return MetricData(title: metric, values: vals, unit: 'kcal', color: NatureColors.terracotta);
 
       default:
         final vals = cicli.map((c) => c.sforzoGiornaliero).whereType<double>().toList();
-        return MetricData(title: metric, values: vals, unit: '', color: WhoopTheme.strainBlue);
+        return MetricData(title: metric, values: vals, unit: '', color: NatureColors.amber);
     }
   }
 
@@ -394,46 +422,44 @@ class _TrendsScreenState extends State<TrendsScreen> {
     double? fixedMin,
     double? fixedMax,
   }) {
-    return Card(
-      color: WhoopTheme.cardSurface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                color: WhoopTheme.textPrimary,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.8,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      decoration: NatureTheme.organicCardDecoration(elevated: true, isDark: isDark),
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: isDark ? Colors.white : NatureColors.textPrimary,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            averageLabel,
+            style: const TextStyle(
+              color: NatureColors.textMuted,
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: chartHeight,
+            width: double.infinity,
+            child: CustomPaint(
+              painter: _TrendChartPainter(
+                lineColor: color,
+                values: values,
+                fixedMin: fixedMin,
+                fixedMax: fixedMax,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              averageLabel,
-              style: const TextStyle(
-                color: WhoopTheme.textSecondary,
-                fontSize: 11,
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: chartHeight,
-              width: double.infinity,
-              child: CustomPaint(
-                painter: _TrendChartPainter(
-                  lineColor: color,
-                  values: values,
-                  fixedMin: fixedMin,
-                  fixedMax: fixedMax,
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -488,7 +514,7 @@ class _TrendChartPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (values.isEmpty) {
       final dashPaint = Paint()
-        ..color = WhoopTheme.cardBorder
+        ..color = NatureColors.borderSubtle
         ..strokeWidth = 1.5
         ..style = PaintingStyle.stroke;
 
@@ -537,7 +563,7 @@ class _TrendChartPainter extends CustomPainter {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          lineColor.withValues(alpha: 0.25),
+          lineColor.withValues(alpha: 0.28),
           lineColor.withValues(alpha: 0.0),
         ],
       ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
@@ -546,7 +572,7 @@ class _TrendChartPainter extends CustomPainter {
 
     final strokePaint = Paint()
       ..color = lineColor
-      ..strokeWidth = 2.0
+      ..strokeWidth = 2.2
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
     canvas.drawPath(path, strokePaint);
@@ -557,7 +583,7 @@ class _TrendChartPainter extends CustomPainter {
     for (int i = 0; i < values.length; i++) {
       final p = getOffset(i);
       canvas.drawCircle(p, 3.5, dotPaint);
-      canvas.drawCircle(p, 1.5, Paint()..color = Colors.black);
+      canvas.drawCircle(p, 1.5, Paint()..color = NatureColors.canvas);
     }
   }
 

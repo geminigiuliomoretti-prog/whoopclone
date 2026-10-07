@@ -33,12 +33,6 @@ class _SmartAlarmModalState extends State<SmartAlarmModal> {
   int _hapticIntensity = 1;
   bool _isAlarmEnabled = true;
 
-  final List<Map<String, String>> _sleepGoals = [
-    {'title': 'PEAK', 'pct': '100%', 'hours': '8h 15m', 'sub': 'Massimo rendimento'},
-    {'title': 'PERFORM', 'pct': '85%', 'hours': '7h 00m', 'sub': 'Prestazione ottimale'},
-    {'title': 'GET BY', 'pct': '70%', 'hours': '5h 45m', 'sub': 'Recupero minimo'},
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -52,6 +46,42 @@ class _SmartAlarmModalState extends State<SmartAlarmModal> {
 
   @override
   Widget build(BuildContext context) {
+    final vm = Provider.of<WhoopViewModel>(context);
+    final double baseNeedMin = (vm.ultimoCiclo?.sonnoRichiestoMin != null && vm.ultimoCiclo!.sonnoRichiestoMin! > 0)
+        ? vm.ultimoCiclo!.sonnoRichiestoMin!
+        : (vm.userProfile.sleepBaselineMin > 0 ? vm.userProfile.sleepBaselineMin.toDouble() : 480.0);
+
+    String formatHours(double min) {
+      final h = min.toInt() ~/ 60;
+      final m = min.toInt() % 60;
+      return '${h}h ${m.toString().padLeft(2, '0')}m';
+    }
+
+    final sleepGoalsDynamic = [
+      {'title': 'PEAK', 'pct': '100%', 'hours': formatHours(baseNeedMin * 1.0), 'sub': 'Massimo rendimento'},
+      {'title': 'PERFORM', 'pct': '85%', 'hours': formatHours(baseNeedMin * 0.85), 'sub': 'Prestazione ottimale'},
+      {'title': 'GET BY', 'pct': '70%', 'hours': formatHours(baseNeedMin * 0.70), 'sub': 'Recupero minimo'},
+    ];
+
+    final goalMultipliers = [1.0, 0.85, 0.70];
+    final selectedMult = goalMultipliers[_targetGoalIdx.clamp(0, 2)];
+    final targetSleepMin = (baseNeedMin * selectedMult).round();
+
+    final now = DateTime.now();
+    DateTime alarmDateTime = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      _alarmTime.hour,
+      _alarmTime.minute,
+    );
+    if (alarmDateTime.isBefore(now)) {
+      alarmDateTime = alarmDateTime.add(const Duration(days: 1));
+    }
+    final bedtime = alarmDateTime.subtract(Duration(minutes: targetSleepMin + 15));
+    final bedtimeStr = '${bedtime.hour.toString().padLeft(2, '0')}:${bedtime.minute.toString().padLeft(2, '0')}';
+    final targetSleepStr = formatHours(targetSleepMin.toDouble());
+
     return Container(
       decoration: const BoxDecoration(
         color: WhoopTheme.cardSurface,
@@ -198,8 +228,8 @@ class _SmartAlarmModalState extends State<SmartAlarmModal> {
               ),
               const SizedBox(height: 10),
               Row(
-                children: List.generate(_sleepGoals.length, (i) {
-                  final goal = _sleepGoals[i];
+                children: List.generate(sleepGoalsDynamic.length, (i) {
+                  final goal = sleepGoalsDynamic[i];
                   final isSelected = _targetGoalIdx == i;
                   return Expanded(
                     child: GestureDetector(
@@ -268,12 +298,12 @@ class _SmartAlarmModalState extends State<SmartAlarmModal> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('ORARIO CONSIGLIATO BEDTIME', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
-                      SizedBox(height: 4),
-                      Text('Coricati entro le 22:45', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                      const Text('ORARIO CONSIGLIATO BEDTIME', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 4),
+                      Text('Coricati entro le $bedtimeStr', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
                     ],
                   ),
                   Container(
@@ -282,7 +312,7 @@ class _SmartAlarmModalState extends State<SmartAlarmModal> {
                       color: WhoopTheme.strainBlue.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text('Fabbisogno 8h 15m', style: TextStyle(color: WhoopTheme.strainBlue, fontSize: 11, fontWeight: FontWeight.bold)),
+                    child: Text('Fabbisogno $targetSleepStr', style: const TextStyle(color: WhoopTheme.strainBlue, fontSize: 11, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),

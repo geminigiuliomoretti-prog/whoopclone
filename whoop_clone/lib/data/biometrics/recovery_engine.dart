@@ -2,12 +2,21 @@ import 'dart:math';
 
 enum RecoveryZone { green, yellow, red }
 
+enum BaselineState {
+  coldStart,   // 0-3 giorni: dati insufficienti per calcolo affidabile (STG-06 gating)
+  calibrating, // 4-29 giorni: calibrazione progressiva
+  established, // 30+ giorni: baseline fisiologica consolidata a regime
+}
+
 class RecoveryBaselineResult {
   final double meanLnRmssd;
   final double stdDevLnRmssd;
   final double meanRhr;
   final double stdDevRhr;
   final int daysCount;
+  final BaselineState state;
+  final double confidence; // 0.0 - 1.0 basato sui giorni e qualità
+  final String source; // 'HISTORICAL_MEASURED' | 'CALIBRATION' | 'USER_PROFILE'
   final bool isCalibrating;
   final String statusMessage;
 
@@ -17,6 +26,9 @@ class RecoveryBaselineResult {
     required this.meanRhr,
     required this.stdDevRhr,
     required this.daysCount,
+    required this.state,
+    required this.confidence,
+    required this.source,
     required this.isCalibrating,
     required this.statusMessage,
   });
@@ -45,23 +57,32 @@ class RecoveryEngine {
   }
 
   /// Calcolo progressivo della Baseline 30 giorni (μ, σ) con gestione Cold Start
-  static RecoveryBaselineResult calculateBaseline(List<double> historicalLnRmssd, List<double> historicalRhr) {
+  static RecoveryBaselineResult calculateBaseline(
+    List<double> historicalLnRmssd,
+    List<double> historicalRhr, {
+    double? profileLnRmssd,
+    double? profileRhr,
+  }) {
     final daysCount = historicalLnRmssd.length;
 
     if (daysCount < 4) {
       final meanLn = historicalLnRmssd.isNotEmpty
           ? historicalLnRmssd.reduce((a, b) => a + b) / daysCount
-          : log(65.0);
+          : (profileLnRmssd ?? log(65.0));
       final meanRhr = historicalRhr.isNotEmpty
           ? historicalRhr.reduce((a, b) => a + b) / historicalRhr.length
-          : 52.0;
+          : (profileRhr ?? 52.0);
 
+      final hasMeasured = historicalLnRmssd.isNotEmpty;
       return RecoveryBaselineResult(
         meanLnRmssd: meanLn,
         stdDevLnRmssd: 0.25,
         meanRhr: meanRhr,
         stdDevRhr: 3.0,
         daysCount: daysCount,
+        state: BaselineState.coldStart,
+        confidence: daysCount > 0 ? (daysCount / 4.0) * 0.4 : 0.0,
+        source: hasMeasured ? 'CALIBRATION' : 'USER_PROFILE',
         isCalibrating: true,
         statusMessage: 'Calibrazione Iniziale ($daysCount/4 giorni)',
       );
@@ -87,12 +108,20 @@ class RecoveryEngine {
     double stdDevRhr = sqrt(varRhrSum / windowRhr.length);
     if (stdDevRhr < 1.0) stdDevRhr = 1.0;
 
+    final isEstablished = windowLn.length >= 30;
+    final confidence = isEstablished
+        ? 1.0
+        : (0.4 + ((windowLn.length - 4) / 26.0) * 0.6).clamp(0.4, 0.99);
+
     return RecoveryBaselineResult(
       meanLnRmssd: meanLn,
       stdDevLnRmssd: stdDevLn,
       meanRhr: meanRhr,
       stdDevRhr: stdDevRhr,
       daysCount: windowLn.length,
+      state: isEstablished ? BaselineState.established : BaselineState.calibrating,
+      confidence: confidence,
+      source: 'HISTORICAL_MEASURED',
       isCalibrating: false,
       statusMessage: windowLn.length < 30 ? 'Baseline Progressiva (${windowLn.length}/30d)' : 'Baseline 30d a Regime',
     );

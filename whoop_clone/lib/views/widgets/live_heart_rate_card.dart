@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 
 /// Card Frequenza Cardiaca Live WHOOP 5.0
 /// Riproduce al 100% lo screenshot "Salute - Tab Salute Frequenza Cardiaca e 5 Parametri Vitali.jpeg":
 /// - Icona cuore blu elettrico (#00B0FF)
 /// - Cifra BPM in tabular figures (es. 70 BPM)
 /// - Indicatore "Zona 0" con 5 trattini orizzontali di zona
-/// - Griglia scura di sfondo con linea d'onda blu sfumata
-/// - Linea verticale tratteggiata e pallino bianco con alone blu
+/// - Griglia coordinata di sfondo con linea d'onda blu sfumata
+/// - Linea verticale tratteggiata e pallino live
 class LiveHeartRateCard extends StatelessWidget {
   final int liveBpm;
   final int maxHr;
@@ -34,12 +35,13 @@ class LiveHeartRateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final zone = _currentZone;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       width: double.infinity,
       height: 196,
       padding: const EdgeInsets.all(18.0),
-      decoration: WhoopTheme.officialCardDecoration(),
+      decoration: WhoopTheme.officialCardDecoration(isDark: isDark),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -72,7 +74,7 @@ class LiveHeartRateCard extends StatelessWidget {
                       Text(
                         liveBpm > 0 ? '$liveBpm' : '--',
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: WhoopTheme.textPrimary,
                           fontSize: 44,
                           fontWeight: FontWeight.w900,
                           height: 1.0,
@@ -110,7 +112,7 @@ class LiveHeartRateCard extends StatelessWidget {
                             decoration: BoxDecoration(
                               color: isActive
                                   ? WhoopTheme.strainBlue
-                                  : const Color(0xFF26323D),
+                                  : (isDark ? const Color(0xFF26323D) : NatureColors.sandPebble),
                               borderRadius: BorderRadius.circular(1.5),
                             ),
                           );
@@ -130,6 +132,7 @@ class LiveHeartRateCard extends StatelessWidget {
                       size: Size.infinite,
                       painter: _LiveHeartRateGridPainter(
                         liveBpm: liveBpm,
+                        isDark: isDark,
                       ),
                     ),
                   ),
@@ -145,13 +148,17 @@ class LiveHeartRateCard extends StatelessWidget {
 
 class _LiveHeartRateGridPainter extends CustomPainter {
   final int liveBpm;
+  final bool isDark;
 
-  _LiveHeartRateGridPainter({required this.liveBpm});
+  _LiveHeartRateGridPainter({
+    required this.liveBpm,
+    this.isDark = false,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final gridPaint = Paint()
-      ..color = const Color(0xFF1B242C)
+      ..color = isDark ? const Color(0xFF1B242C) : NatureColors.sandBorderSubtle
       ..strokeWidth = 1.0;
 
     // 1. Griglia orizzontale (4 linee)
@@ -171,7 +178,7 @@ class _LiveHeartRateGridPainter extends CustomPainter {
     // Se nessun battito live, disegna una linea di base neutra senza curva o punti mock
     if (liveBpm <= 0) {
       final neutralPaint = Paint()
-        ..color = const Color(0xFF26333D)
+        ..color = isDark ? const Color(0xFF26333D) : NatureColors.sandPebble
         ..strokeWidth = 1.5;
       canvas.drawLine(
         Offset(0, size.height * 0.5),

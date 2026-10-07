@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 import '../../data/database/database_helper.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 import '../widgets/behavior_selection_modal.dart';
@@ -70,30 +71,37 @@ class _JournalScreenState extends State<JournalScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
+
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        backgroundColor: WhoopTheme.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
-          backgroundColor: WhoopTheme.background,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           elevation: 0,
-          title: const Text(
-            'WHOOP JOURNAL & IMPACT',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.2,
-            ),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+            color: WhoopTheme.textPrimary,
+            onPressed: () => Navigator.maybePop(context),
+          ),
+          title: Text(
+            'DIARIO & ANALISI IMPATTO',
+            style: WhoopTheme.cardTitleStyle(
+              fontSize: 13,
+              color: WhoopTheme.textPrimary,
+            ).copyWith(fontWeight: FontWeight.w800),
           ),
           centerTitle: true,
-          bottom: const TabBar(
-            indicatorColor: WhoopTheme.strainBlue,
-            labelColor: Colors.white,
+          bottom: TabBar(
+            indicatorColor: isLight ? NatureColors.sage : WhoopTheme.strainBlue,
+            indicatorWeight: 2.5,
+            labelColor: WhoopTheme.textPrimary,
+            labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
             unselectedLabelColor: WhoopTheme.textSecondary,
-            tabs: [
+            tabs: const [
               Tab(text: 'Diario Mattutino'),
-              Tab(text: 'Impact Analytics (+/- %)'),
+              Tab(text: 'Analisi Impatto'),
             ],
           ),
         ),
@@ -147,8 +155,10 @@ class _JournalScreenState extends State<JournalScreen> {
               final key = _habits.keys.elementAt(index);
               final val = _habits[key]!;
 
+              final isLight = Theme.of(context).brightness == Brightness.light;
+
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: WhoopTheme.officialCardDecoration(),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -156,19 +166,34 @@ class _JournalScreenState extends State<JournalScreen> {
                     Expanded(
                       child: Text(
                         key,
-                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          color: WhoopTheme.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Row(
                       children: [
                         ChoiceChip(
                           label: const Text('NO'),
                           selected: !val,
-                          selectedColor: WhoopTheme.recoveryRed.withValues(alpha: 0.3),
-                          backgroundColor: WhoopTheme.cardSurface,
+                          selectedColor: isLight
+                              ? NatureColors.terracottaBackground
+                              : WhoopTheme.recoveryRed.withValues(alpha: 0.3),
+                          backgroundColor: isLight ? NatureColors.creamLight : NatureColors.darkSurface,
+                          side: BorderSide(
+                            color: !val
+                                ? (isLight ? NatureColors.terracotta.withOpacity(0.4) : WhoopTheme.recoveryRed)
+                                : (isLight ? NatureColors.sandBorder : WhoopTheme.cardBorder),
+                            width: 0.85,
+                          ),
                           labelStyle: TextStyle(
-                            color: !val ? WhoopTheme.recoveryRed : WhoopTheme.textMuted,
-                            fontWeight: FontWeight.bold,
+                            color: !val
+                                ? (isLight ? NatureColors.terracotta : WhoopTheme.recoveryRed)
+                                : WhoopTheme.textMuted,
+                            fontWeight: FontWeight.w700,
                             fontSize: 11,
                           ),
                           onSelected: (selected) {
@@ -179,11 +204,21 @@ class _JournalScreenState extends State<JournalScreen> {
                         ChoiceChip(
                           label: const Text('SÌ'),
                           selected: val,
-                          selectedColor: WhoopTheme.recoveryGreen.withValues(alpha: 0.3),
-                          backgroundColor: WhoopTheme.cardSurface,
+                          selectedColor: isLight
+                              ? NatureColors.sageBackground
+                              : WhoopTheme.recoveryGreen.withValues(alpha: 0.3),
+                          backgroundColor: isLight ? NatureColors.creamLight : NatureColors.darkSurface,
+                          side: BorderSide(
+                            color: val
+                                ? (isLight ? NatureColors.sage.withOpacity(0.4) : WhoopTheme.recoveryGreen)
+                                : (isLight ? NatureColors.sandBorder : WhoopTheme.cardBorder),
+                            width: 0.85,
+                          ),
                           labelStyle: TextStyle(
-                            color: val ? WhoopTheme.recoveryGreen : WhoopTheme.textMuted,
-                            fontWeight: FontWeight.bold,
+                            color: val
+                                ? (isLight ? NatureColors.sageDark : WhoopTheme.recoveryGreen)
+                                : WhoopTheme.textMuted,
+                            fontWeight: FontWeight.w700,
                             fontSize: 11,
                           ),
                           onSelected: (selected) {
@@ -206,37 +241,54 @@ class _JournalScreenState extends State<JournalScreen> {
             height: 44,
             child: OutlinedButton.icon(
               onPressed: () => _showAddCustomHabitDialog(context),
-              icon: const Icon(Icons.add, color: WhoopTheme.strainBlue, size: 18),
-              label: const Text('AGGIUNGI ABITUDINE PERSONALIZZATA', style: TextStyle(color: WhoopTheme.strainBlue, fontWeight: FontWeight.bold, fontSize: 11)),
+              icon: Icon(Icons.add, color: Theme.of(context).brightness == Brightness.light ? NatureColors.textLightPrimary : WhoopTheme.strainBlue, size: 16),
+              label: Text(
+                'AGGIUNGI ABITUDINE PERSONALIZZATA',
+                style: TextStyle(
+                  color: Theme.of(context).brightness == Brightness.light ? NatureColors.textLightPrimary : WhoopTheme.strainBlue,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11,
+                  letterSpacing: 0.6,
+                ),
+              ),
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: WhoopTheme.strainBlue),
+                side: BorderSide(
+                  color: Theme.of(context).brightness == Brightness.light ? NatureColors.sandBorder : WhoopTheme.strainBlue,
+                  width: 0.85,
+                ),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ),
 
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
 
           SizedBox(
             width: double.infinity,
-            height: 50,
+            height: 48,
             child: ElevatedButton.icon(
-              onPressed: () {
+              onPressed: () async {
+                final viewModel = Provider.of<WhoopViewModel>(context, listen: false);
+                final todayIso = DateTime.now().toIso8601String().substring(0, 10);
+                await viewModel.saveJournalEntries(dateIso: todayIso, habits: _habits);
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Voci del Diario salvate in SQLite!'),
-                    backgroundColor: WhoopTheme.recoveryGreen,
+                    content: Text('Voci del Diario salvate con successo!'),
+                    backgroundColor: NatureColors.sage,
                   ),
                 );
+                Navigator.of(context).pop();
               },
-              icon: const Icon(Icons.check, color: Colors.black),
+              icon: const Icon(Icons.check, color: Colors.white, size: 18),
               label: const Text(
                 'SALVA DIARIO',
-                style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900),
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 0.8),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: WhoopTheme.strainBlue,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                backgroundColor: Theme.of(context).brightness == Brightness.light ? NatureColors.forestDeep : NatureColors.sage,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
             ),
           ),
@@ -268,6 +320,8 @@ class _JournalScreenState extends State<JournalScreen> {
       }
     }
 
+    final isLight = Theme.of(context).brightness == Brightness.light;
+
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.all(16.0),
@@ -275,20 +329,31 @@ class _JournalScreenState extends State<JournalScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              color: WhoopTheme.strainBlue.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: WhoopTheme.strainBlue.withValues(alpha: 0.4)),
+              color: isLight ? NatureColors.tealBackground : WhoopTheme.strainBlue.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isLight ? NatureColors.teal.withOpacity(0.3) : WhoopTheme.strainBlue.withValues(alpha: 0.4),
+                width: 0.85,
+              ),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(Icons.query_stats, color: WhoopTheme.strainBlue, size: 20),
-                SizedBox(width: 10),
+                Icon(
+                  Icons.query_stats,
+                  color: isLight ? NatureColors.tealDark : WhoopTheme.strainBlue,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Regola di Validità Statistica: Gli impatti (+/- %) richiedono almeno 5 risposte "Sì" e 5 "No" registrate in SQLite.',
-                    style: TextStyle(color: WhoopTheme.strainBlue, fontSize: 11, fontWeight: FontWeight.w600),
+                    'Regola di Validità Statistica: Gli impatti (+/- %) richiedono almeno 5 risposte "Sì" e 5 "No" registrate.',
+                    style: TextStyle(
+                      color: isLight ? NatureColors.tealDark : WhoopTheme.strainBlue,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -395,7 +460,11 @@ class _JournalScreenState extends State<JournalScreen> {
                 Expanded(
                   child: Text(
                     habit,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                    style: const TextStyle(
+                      color: WhoopTheme.textPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),

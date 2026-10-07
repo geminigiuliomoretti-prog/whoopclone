@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 import 'smart_alarm_modal.dart';
 
@@ -15,6 +16,7 @@ class TonightSleepCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final viewModel = Provider.of<WhoopViewModel>(context);
     final isAlarmEnabled = viewModel.isAlarmEnabled;
     final alarmTime = viewModel.alarmTime;
@@ -26,7 +28,7 @@ class TonightSleepCard extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: WhoopTheme.officialCardDecoration(),
+      decoration: WhoopTheme.officialCardDecoration(isDark: isDark),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -61,19 +63,24 @@ class TonightSleepCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.wb_twilight, color: WhoopTheme.textSecondary, size: 16),
-                        const SizedBox(width: 6),
-                        Text(
-                          bedFormatted,
-                          style: const TextStyle(
-                            color: WhoopTheme.textPrimary,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w900,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.wb_twilight, color: WhoopTheme.textSecondary, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            bedFormatted,
+                            style: const TextStyle(
+                              color: WhoopTheme.textPrimary,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 4),
                     const Text(
@@ -98,20 +105,25 @@ class TonightSleepCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        const Icon(Icons.wb_sunny_outlined, color: WhoopTheme.textSecondary, size: 16),
-                        const SizedBox(width: 6),
-                        Text(
-                          alarmFormatted,
-                          style: const TextStyle(
-                            color: WhoopTheme.textPrimary,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w900,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          const Icon(Icons.wb_sunny_outlined, color: WhoopTheme.textSecondary, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            alarmFormatted,
+                            style: const TextStyle(
+                              color: WhoopTheme.textPrimary,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -141,18 +153,23 @@ class TonightSleepCard extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
-                color: const Color(0xFF263238),
+                color: isDark ? const Color(0xFF263238) : NatureColors.creamDark,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: WhoopTheme.cardBorder),
+                border: Border.all(color: isDark ? WhoopTheme.cardBorder : NatureColors.sandBorder),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Image.asset(
-                    WhoopTheme.puckWhite,
+                    isDark ? WhoopTheme.puckWhite : WhoopTheme.puckWhite,
                     height: 16,
+                    color: isDark ? Colors.white : NatureColors.textPrimary,
                     fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.vibration, color: Colors.white, size: 16),
+                    errorBuilder: (context, error, stackTrace) => Icon(
+                      Icons.vibration,
+                      color: isDark ? Colors.white : NatureColors.textPrimary,
+                      size: 16,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   const Text(

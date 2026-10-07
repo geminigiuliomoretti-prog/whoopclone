@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
+import '../widgets/nature/nature_scene.dart';
 import '../../data/database/database_helper.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 import '../widgets/stress_check_sheet.dart';
 import '../breathe/haptic_breathe_screen.dart';
 import '../stress/stress_timeline_view.dart';
 import 'trends_screen.dart';
+import '../widgets/nature/coach_emblem.dart';
 
 /// Schermata UFFICIALE MONITORAGGIO DELLO STRESS (WHOOP 5.0)
 /// Visualizza lo stress live, lo stress notturno calcolato e la timeline continua.
@@ -93,16 +95,16 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
     final Color categoryColor;
     if (effectiveStress <= 0) {
       categoryText = 'NESSUN DATO';
-      categoryColor = WhoopTheme.textMuted;
+      categoryColor = NatureColors.textMuted;
     } else if (effectiveStress < 1.0) {
       categoryText = 'BASSO';
-      categoryColor = WhoopTheme.strainBlue;
+      categoryColor = NatureColors.sage;
     } else if (effectiveStress < 2.0) {
       categoryText = 'MODERATO';
-      categoryColor = WhoopTheme.recoveryGreen;
+      categoryColor = NatureColors.amber;
     } else {
       categoryText = 'ELEVATO';
-      categoryColor = WhoopTheme.recoveryYellow;
+      categoryColor = NatureColors.lavender;
     }
 
     final String timeLabel = effectiveStress > 0
@@ -143,19 +145,25 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
         ? '${(sampleAltoCount * 5) ~/ 60}:${((sampleAltoCount * 5) % 60).toString().padLeft(2, '0')}'
         : (hasSonno ? sleepAltoTime : '--');
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: isDark ? NatureColors.darkCanvas : NatureColors.offWhite,
       appBar: AppBar(
-        backgroundColor: WhoopTheme.background,
+        backgroundColor: isDark ? NatureColors.darkCanvas : NatureColors.offWhite,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.chevron_left, color: Colors.white, size: 28),
+          icon: Icon(
+            Icons.chevron_left,
+            color: isDark ? Colors.white : NatureColors.textLightPrimary,
+            size: 28,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'MONITORAGGIO DELLO STRESS',
           style: TextStyle(
-            color: Colors.white,
+            color: isDark ? Colors.white : NatureColors.textLightPrimary,
             fontSize: 13,
             fontWeight: FontWeight.w900,
             letterSpacing: 1.1,
@@ -164,7 +172,11 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white, size: 22),
+            icon: Icon(
+              Icons.refresh,
+              color: isDark ? Colors.white : NatureColors.textLightPrimary,
+              size: 22,
+            ),
             onPressed: () {
               _loadSamples();
               viewModel.loadData();
@@ -186,7 +198,11 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
                 Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.chevron_left, color: WhoopTheme.textSecondary, size: 20),
+                      icon: Icon(
+                        Icons.chevron_left,
+                        color: isDark ? NatureColors.textMuted : NatureColors.textLightMuted,
+                        size: 20,
+                      ),
                       onPressed: () {
                         viewModel.setSelectedDate(selectedDate.subtract(const Duration(days: 1)));
                         _loadSamples();
@@ -194,15 +210,19 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
                     ),
                     Text(
                       dateLabel,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: isDark ? Colors.white : NatureColors.textLightPrimary,
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.2,
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.chevron_right, color: WhoopTheme.textSecondary, size: 20),
+                      icon: Icon(
+                        Icons.chevron_right,
+                        color: isDark ? NatureColors.textMuted : NatureColors.textLightMuted,
+                        size: 20,
+                      ),
                       onPressed: () {
                         viewModel.setSelectedDate(selectedDate.add(const Duration(days: 1)));
                         _loadSamples();
@@ -211,7 +231,11 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
                   ],
                 ),
                 IconButton(
-                  icon: const Icon(Icons.info_outline, color: WhoopTheme.textSecondary, size: 20),
+                  icon: Icon(
+                    Icons.info_outline,
+                    color: isDark ? NatureColors.textMuted : NatureColors.textLightMuted,
+                    size: 20,
+                  ),
                   onPressed: () {},
                 ),
               ],
@@ -219,49 +243,61 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
 
             const SizedBox(height: 8),
 
-            // ── 2. Arc Gauge Grande 0,0 - 3,0 ──────────────────────────────────
-            Center(
-              child: SizedBox(
-                width: 240,
-                height: 160,
-                child: CustomPaint(
-                  painter: _StressArcGaugePainter(stressValue: effectiveStress),
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 36.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          effectiveStress > 0
-                              ? effectiveStress.toStringAsFixed(1).replaceAll('.', ',')
-                              : '--',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 44,
-                            fontWeight: FontWeight.w900,
-                            height: 1.0,
+            // ── 2. Arc Gauge Grande 0,0 - 3,0 Immerso in NatureScene ───────────
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                NatureScene(
+                  mood: NatureMood.stress,
+                  height: 185,
+                  isDark: isDark,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                SizedBox(
+                  width: 240,
+                  height: 160,
+                  child: CustomPaint(
+                    painter: _StressArcGaugePainter(stressValue: effectiveStress),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 36.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            effectiveStress > 0
+                                ? effectiveStress.toStringAsFixed(1).replaceAll('.', ',')
+                                : '--',
+                            style: TextStyle(
+                              color: isDark ? Colors.white : NatureColors.textLightPrimary,
+                              fontSize: 44,
+                              fontWeight: FontWeight.w900,
+                              height: 1.0,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          categoryText,
-                          style: TextStyle(
-                            color: categoryColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.8,
+                          const SizedBox(height: 4),
+                          Text(
+                            categoryText,
+                            style: TextStyle(
+                              color: categoryColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.8,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          timeLabel,
-                          style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 10),
-                        ),
-                      ],
+                          const SizedBox(height: 2),
+                          Text(
+                            timeLabel,
+                            style: TextStyle(
+                              color: isDark ? NatureColors.textMuted : NatureColors.textLightMuted,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
 
             const SizedBox(height: 16),
@@ -277,15 +313,16 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
                     await Future.delayed(const Duration(seconds: 1));
                     _loadSamples();
                   },
-                  icon: const Icon(Icons.bolt, color: Colors.black, size: 20),
+                  icon: const Icon(Icons.bolt, color: Colors.white, size: 20),
                   label: const Text(
                     'AVVIA TEST STRESS (60S)',
-                    style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, letterSpacing: 0.8),
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 0.8),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: WhoopTheme.strainBlue,
+                    backgroundColor: NatureColors.terracotta,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 0,
                   ),
                 ),
               ),
@@ -305,7 +342,7 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
             // ── 4. Card Stato Attuale ─────────────────────────────────────────
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: WhoopTheme.officialCardDecoration(),
+              decoration: NatureTheme.organicCardDecoration(isDark: isDark, elevated: true),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -315,15 +352,19 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
                         padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
+                          color: categoryColor.withValues(alpha: 0.16),
                           border: Border.all(color: categoryColor),
                         ),
-                        child: Text('\\V/', style: TextStyle(color: categoryColor, fontSize: 8, fontWeight: FontWeight.w900)),
+                        child: CoachEmblem(
+                          size: 14,
+                          color: categoryColor,
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Text(
                         'STRESS $categoryText',
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: isDark ? Colors.white : NatureColors.textLightPrimary,
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 0.8,
@@ -340,7 +381,11 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
                                 ? 'Livello di stress moderato. Risposta fisiologica equilibrata alle normali attività quotidiane.'
                                 : 'Livello di stress elevato. Attivazione simpatica accentuata. Prova una sessione di respirazione per facilitare il recupero.'))
                         : 'Nessuna misurazione dello stress registrata per la data corrente. Connetti lo strap o avvia un test da 60s.',
-                    style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 11, height: 1.4),
+                    style: TextStyle(
+                      color: isDark ? NatureColors.textMuted : NatureColors.textLightSecondary,
+                      fontSize: 11.5,
+                      height: 1.4,
+                    ),
                   ),
                 ],
               ),
@@ -358,6 +403,7 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
               medioTime: totMedioTime, medioPct: hasSamples ? '' : '--',
               altoTime: totAltoTime, altoPct: hasSamples ? '' : '--',
               description: 'Lo stress sperimentato durante il giorno, inclusi i periodi di sonno e veglia.',
+              isDark: isDark,
             ),
 
             const SizedBox(height: 16),
@@ -372,6 +418,7 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
               medioTime: hasSamples ? totMedioTime : '--', medioPct: '',
               altoTime: hasSamples ? totAltoTime : '--', altoPct: '',
               description: 'Lo stress rilevato durante la veglia al di fuori di allenamenti intensi.',
+              isDark: isDark,
             ),
 
             const SizedBox(height: 16),
@@ -388,15 +435,16 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
               description: hasSonno
                   ? 'Distribuzione dello stress autonomico registrato durante le fasi del sonno.'
                   : 'Nessun dato di sonno disponibile per questa data.',
+              isDark: isDark,
             ),
 
             const SizedBox(height: 20),
 
             // ── 8. SESSIONI (Respirazione Guidata & Biofeedback) ──────────────
-            const Text(
+            Text(
               'SESSIONI RESPIRAZIONE & BIOFEEDBACK',
               style: TextStyle(
-                color: WhoopTheme.textSecondary,
+                color: isDark ? NatureColors.textMuted : NatureColors.textLightMuted,
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.2,
@@ -412,7 +460,10 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
                     child: _buildSessionCard(
                       title: 'AUMENTARE IL\nRILASSAMENTO',
                       subtitle: 'Respirazione aptica 4-6',
-                      gradientColors: [const Color(0xFF1E3A40), const Color(0xFF0F1E22)],
+                      gradientColors: isDark
+                          ? [const Color(0xFF1E2F35), const Color(0xFF142025)]
+                          : [Colors.white, NatureColors.creamLight],
+                      isDark: isDark,
                     ),
                   ),
                 ),
@@ -423,7 +474,10 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
                     child: _buildSessionCard(
                       title: 'COERENZA\nCARDIACA',
                       subtitle: '0.1 Hz Risonanza vagale',
-                      gradientColors: [const Color(0xFF1B2A4A), const Color(0xFF0D1525)],
+                      gradientColors: isDark
+                          ? [const Color(0xFF262338), const Color(0xFF181525)]
+                          : [Colors.white, const Color(0xFFF0ECF8)],
+                      isDark: isDark,
                     ),
                   ),
                 ),
@@ -446,21 +500,22 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
     required String medioTime, required String medioPct,
     required String altoTime, required String altoPct,
     required String description,
+    required bool isDark,
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: WhoopTheme.officialCardDecoration(),
+      decoration: NatureTheme.organicCardDecoration(isDark: isDark, elevated: true),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, color: WhoopTheme.textSecondary, size: 16),
+              Icon(icon, color: isDark ? NatureColors.textMuted : NatureColors.textLightMuted, size: 16),
               const SizedBox(width: 8),
               Text(
                 title,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: isDark ? Colors.white : NatureColors.textLightPrimary,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.0,
@@ -471,7 +526,11 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
           const SizedBox(height: 8),
           Text(
             subtitle,
-            style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 10, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: isDark ? NatureColors.textMuted : NatureColors.textLightMuted,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 12),
 
@@ -481,39 +540,100 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
             children: [
               Column(
                 children: [
-                  Text(bassoTime, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
-                  if (bassoPct.isNotEmpty) Text(bassoPct, style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 10)),
-                  const Text('BASSO', style: TextStyle(color: WhoopTheme.strainBlue, fontSize: 9, fontWeight: FontWeight.bold)),
+                  Text(
+                    bassoTime,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : NatureColors.textLightPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (bassoPct.isNotEmpty)
+                    Text(
+                      bassoPct,
+                      style: TextStyle(
+                        color: isDark ? NatureColors.textMuted : NatureColors.textLightMuted,
+                        fontSize: 10,
+                      ),
+                    ),
+                  const Text('BASSO', style: TextStyle(color: NatureColors.sage, fontSize: 9, fontWeight: FontWeight.bold)),
                 ],
               ),
               Column(
                 children: [
-                  Text(medioTime, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
-                  if (medioPct.isNotEmpty) Text(medioPct, style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 10)),
-                  const Text('MEDIO', style: TextStyle(color: WhoopTheme.recoveryGreen, fontSize: 9, fontWeight: FontWeight.bold)),
+                  Text(
+                    medioTime,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : NatureColors.textLightPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (medioPct.isNotEmpty)
+                    Text(
+                      medioPct,
+                      style: TextStyle(
+                        color: isDark ? NatureColors.textMuted : NatureColors.textLightMuted,
+                        fontSize: 10,
+                      ),
+                    ),
+                  const Text('MEDIO', style: TextStyle(color: NatureColors.amber, fontSize: 9, fontWeight: FontWeight.bold)),
                 ],
               ),
               Column(
                 children: [
-                  Text(altoTime, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
-                  if (altoPct.isNotEmpty) Text(altoPct, style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 10)),
-                  const Text('ALTO', style: TextStyle(color: WhoopTheme.recoveryYellow, fontSize: 9, fontWeight: FontWeight.bold)),
+                  Text(
+                    altoTime,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : NatureColors.textLightPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (altoPct.isNotEmpty)
+                    Text(
+                      altoPct,
+                      style: TextStyle(
+                        color: isDark ? NatureColors.textMuted : NatureColors.textLightMuted,
+                        fontSize: 10,
+                      ),
+                    ),
+                  const Text('ALTO', style: TextStyle(color: NatureColors.lavender, fontSize: 9, fontWeight: FontWeight.bold)),
                 ],
               ),
             ],
           ),
 
           const SizedBox(height: 12),
-          Text(description, style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 11, height: 1.3)),
+          Text(
+            description,
+            style: TextStyle(
+              color: isDark ? NatureColors.textMuted : NatureColors.textLightSecondary,
+              fontSize: 11,
+              height: 1.3,
+            ),
+          ),
 
           const SizedBox(height: 10),
           GestureDetector(
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TrendsScreen())),
-            child: const Row(
+            child: Row(
               children: [
-                Text('VEDI LE TENDENZE', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.8)),
-                SizedBox(width: 6),
-                Icon(Icons.arrow_forward, color: Colors.white, size: 14),
+                Text(
+                  'VEDI LE TENDENZE',
+                  style: TextStyle(
+                    color: isDark ? Colors.white : NatureColors.textLightPrimary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  Icons.arrow_forward,
+                  color: isDark ? Colors.white : NatureColors.textLightPrimary,
+                  size: 14,
+                ),
               ],
             ),
           ),
@@ -526,26 +646,58 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
     required String title,
     required String subtitle,
     required List<Color> gradientColors,
+    required bool isDark,
   }) {
     return Container(
       height: 140,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: gradientColors),
-        border: Border.all(color: WhoopTheme.cardBorder),
+        border: Border.all(
+          color: isDark ? NatureColors.borderSubtle : NatureColors.sandBorder,
+        ),
+        boxShadow: [
+          if (!isDark)
+            BoxShadow(
+              color: const Color(0xFF2C3E50).withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Align(alignment: Alignment.topRight, child: Icon(Icons.sync, color: Colors.white, size: 16)),
+          Align(
+            alignment: Alignment.topRight,
+            child: Icon(
+              Icons.sync,
+              color: isDark ? Colors.white : NatureColors.textLightPrimary,
+              size: 16,
+            ),
+          ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900, height: 1.2)),
+              Text(
+                title,
+                style: TextStyle(
+                  color: isDark ? Colors.white : NatureColors.textLightPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  height: 1.2,
+                ),
+              ),
               const SizedBox(height: 4),
-              Text(subtitle, style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 10)),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: isDark ? NatureColors.textMuted : NatureColors.textLightMuted,
+                  fontSize: 10,
+                ),
+              ),
             ],
           ),
         ],
@@ -566,8 +718,8 @@ class _StressArcGaugePainter extends CustomPainter {
     final radius = size.width * 0.44;
 
     final bgPaint = Paint()
-      ..color = WhoopTheme.cardBorder
-      ..strokeWidth = 8.0
+      ..color = NatureColors.borderSubtle
+      ..strokeWidth = 9.0
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
@@ -582,9 +734,9 @@ class _StressArcGaugePainter extends CustomPainter {
     if (stressValue > 0) {
       final activePaint = Paint()
         ..shader = const LinearGradient(
-          colors: [WhoopTheme.strainBlue, WhoopTheme.recoveryGreen, WhoopTheme.recoveryYellow],
+          colors: [NatureColors.sage, NatureColors.amber, NatureColors.lavender],
         ).createShader(Rect.fromCircle(center: center, radius: radius))
-        ..strokeWidth = 8.0
+        ..strokeWidth = 9.0
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round;
 

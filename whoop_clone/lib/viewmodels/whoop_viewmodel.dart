@@ -28,6 +28,7 @@ import '../data/services/overnight_sleep_engine.dart';
 import '../data/services/posterior_sleep_detector.dart';
 import '../data/services/raw_capture_service.dart';
 import '../data/services/battery_optimization_service.dart';
+import '../data/services/telemetry_ingestion_service.dart';
 
 /// ViewModel Reattivo WHOOP 5.0 (Single Source of Truth)
 /// Gestisce lo stato dell'applicazione leggendo esclusivamente dal DB SQLite.
@@ -61,6 +62,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   List<Allenamento> _allenamentiList = [];
   List<VoceDiario> _vociDiarioList = [];
   List<Sonno> _sonnoList = [];
+  Set<String> _completedDiaryDates = {};
 
   // Profile Baseline User Settings (Popolate da DB utente_profilo)
   UtenteProfilo _userProfile = const UtenteProfilo(
@@ -102,6 +104,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _bleThrottleTimer;
   static const int _bleThrottleIntervalMs = 600;
 
+  StreamSubscription<IngestedTelemetry>? _telemetrySubscription;
   StreamSubscription<HrDataPacket>? _hrSubscription;
   StreamSubscription<Whoop96BytePacket>? _packet96Subscription;
   StreamSubscription<BleState>? _bleStateSubscription;
@@ -225,6 +228,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   List<CicloFisiologico> get storicoCicli => _cicliList;
   List<Allenamento> get allenamentiList => _allenamentiList;
   List<VoceDiario> get vociDiarioList => _vociDiarioList;
+  Set<String> get completedDiaryDates => _completedDiaryDates;
   List<Sonno> get sonnoList => _sonnoList;
   Sonno? get ultimoSonno => _sonnoList.isNotEmpty ? _sonnoList.first : null;
   WhoopBiometricEngine get biometricEngine => _biometricEngine;
@@ -266,6 +270,8 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   double get liveHrvRmssd => _liveHrvRmssd;
   double get liveStressIndex => _liveStressIndex;
   BleState get bleState => _bleState;
+  bool get isBleConnected => _bleState == BleState.connected;
+  String get selectedDateIso => _selectedDate.toIso8601String().substring(0, 10);
   String? get bleStatusMessage => _bleStatusMessage;
   bool get isFallbackMode => _isFallbackMode;
   Whoop96BytePacket? get last96BytePacket => _last96BytePacket;
@@ -426,26 +432,28 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _initBleListeners() {
-    _hrSubscription = _bleManager.hrStream.listen((hrPacket) {
-      _liveBpm = hrPacket.bpm;
-      final now = DateTime.now();
-      _autoWorkoutDetector.processBpmSample(_liveBpm, now);
-      
-      // Passa i dati di movimento (ENMO) all'AutoSleepDetector se disponibili dal pacchetto 96 byte
-      final double? enmoVal = (_last96BytePacket != null && _last96BytePacket!.isValid)
-          ? _last96BytePacket!.motionVariance
-          : null;
-      
-      _autoSleepDetector.processBpmSample(
-        _liveBpm, 
-        now, 
-        enmo: enmoVal,
-        rmssd: _liveHrvRmssd > 0 ? _liveHrvRmssd : null,
-      );
+    _telemetrySubscription = _bleManager.ingestionService.telemetryStream.listen((t) {
+      if (t.bpm != null && t.bpm! > 0) {
+        _liveBpm = t.bpm!;
+        final now = t.timestamp;
+        _autoWorkoutDetector.processBpmSample(_liveBpm, now);
+        _autoSleepDetector.processBpmSample(
+          _liveBpm,
+          now,
+          enmo: t.motionVar,
+          rmssd: (t.rmssdMs != null && t.rmssdMs! > 0) ? t.rmssdMs : null,
+        );
+      }
 
-      if (hrPacket.rrIntervalsMs.isNotEmpty) {
-        _rrBuffer.addAll(hrPacket.rrIntervalsMs);
-        _liveHrvRmssd = _rrBuffer.rmssdMs;
+      if (t.rmssdMs != null && t.rmssdMs! > 0 && t.rmssdMs! < 300) {
+        _liveHrvRmssd = t.rmssdMs!;
+      }
+
+      if (t.rrMs != null && t.rrMs! >= 300 && t.rrMs! <= 2000) {
+        _rrBuffer.add(t.rrMs!);
+        if (_liveHrvRmssd <= 0 && _rrBuffer.rmssdMs > 0) {
+          _liveHrvRmssd = _rrBuffer.rmssdMs;
+        }
       }
 
       if (_liveBpm > 0 && (_liveHrvRmssd > 0 || _ultimoCiclo?.vfcMs != null)) {
@@ -457,15 +465,14 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
             hrvLiveMs: effectiveHrv,
             baselineHrvMean: _userProfile.hrvBaselineMean,
             baselineHrvStd: _userProfile.hrvBaselineStd,
-            accMagnitude: 1.0 + (enmoVal ?? 0.0),
+            accMagnitude: 1.0 + (t.motionVar ?? 0.0),
           );
 
-          // Salvataggio periodico diurno ogni 60 secondi su misurazioni_stress
           if (_liveStressIndex > 0) {
-            final nowMs = now.millisecondsSinceEpoch;
+            final nowMs = t.timestamp.millisecondsSinceEpoch;
             if (_lastStressSampleSaveMs == 0 || nowMs - _lastStressSampleSaveMs >= 60000) {
               _lastStressSampleSaveMs = nowMs;
-              final dateIso = now.toIso8601String().substring(0, 10);
+              final dateIso = t.timestamp.toIso8601String().substring(0, 10);
               DatabaseHelper().insertMisurazioneStress(
                 dateIso,
                 _liveStressIndex,
@@ -476,52 +483,12 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
           }
         }
       }
+
       _throttledBleNotifyListeners();
     });
 
     _packet96Subscription = _bleManager.packet96ByteStream.listen((p96) {
       _last96BytePacket = p96;
-      
-      // Estrai dati biometrici avanzati dal pacchetto 96 byte
-      if (p96.isValid && p96.rawBytes.length >= 40) {
-        final enmo = p96.motionVariance;
-        final respPower = p96.respiratoryPower;
-        final respRate = p96.respiratoryRate;
-        final skinTemp = p96.skinTempRaw;
-        final spo2Ratio = p96.spo2Ratio;
-        final hrvRmssd = p96.hrvRmssdMs;
-
-        if (p96.heartRateBpm > 0) {
-          _liveBpm = p96.heartRateBpm;
-          final now = p96.timestamp;
-          _autoWorkoutDetector.processBpmSample(_liveBpm, now);
-          _autoSleepDetector.processBpmSample(
-            _liveBpm,
-            now,
-            enmo: enmo,
-            rmssd: hrvRmssd > 0 ? hrvRmssd : null,
-          );
-        }
-        
-        debugPrint('[BLE 96-Byte] ENMO: ${enmo.toStringAsFixed(4)}g, RespPower: ${respPower.toStringAsFixed(2)}, RespRate: ${respRate.toStringAsFixed(1)} rpm, HRV: ${hrvRmssd.toStringAsFixed(1)} ms, TempRaw: $skinTemp, SpO2Ratio: ${spo2Ratio.toStringAsFixed(2)}');
-        
-        // Aggiorna HRV live se disponibile dal pacchetto 96 byte
-        if (hrvRmssd > 0 && hrvRmssd < 200) {
-          _liveHrvRmssd = hrvRmssd;
-          if (_liveBpm > 0) {
-            _liveStressIndex = WhoopAnalyticsEngine.calculateStressScore(
-              hrLive: _liveBpm.toDouble(),
-              hrRest: (_ultimoCiclo?.fcrBpm ?? _userProfile.hrRestBaseline).toDouble(),
-              hrvLiveMs: _liveHrvRmssd,
-              baselineHrvMean: _userProfile.hrvBaselineMean,
-              baselineHrvStd: _userProfile.hrvBaselineStd,
-              accMagnitude: 1.0 + enmo,
-            );
-          }
-        }
-      }
-      
-      _throttledBleNotifyListeners();
     });
 
     _bleStateSubscription = _bleManager.stateStream.listen((state) {
@@ -610,8 +577,8 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     await _bleManager.connectToSpecificDevice(device);
   }
 
-  Future<void> disconnectBle() async {
-    await _bleManager.disconnect();
+  Future<void> disconnectBle({bool forgetDevice = false}) async {
+    await _bleManager.disconnectDevice(forget: forgetDevice);
     _liveBpm = 0;
     _liveHrvRmssd = 0.0;
     _liveStressIndex = 0.0;
@@ -669,6 +636,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
 
       final allDiario = await _repository.getVociDiario();
       _vociDiarioList = allDiario.where((v) => v.dataIso == dateKey).toList();
+      _completedDiaryDates = allDiario.map((v) => v.dataIso).toSet();
 
       final stressRows = await DatabaseHelper().getMisurazioniStressByDate(dateKey);
       if (stressRows.isNotEmpty) {
@@ -690,10 +658,16 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       // Carica dati grafici aggregati da SQLite per la data selezionata (CHT-01..04, STG-07)
       final dayStart = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, 0, 0, 0);
       final dayEnd = dayStart.add(const Duration(days: 1));
+
+      // Se è presente una sessione di sonno, estendi i confini del grafico per includere l'intero sonno (es. 23:15 ieri sera)
+      final matchingSonno = _sonnoList.isNotEmpty ? _sonnoList.first : null;
+      final chartStart = matchingSonno != null ? matchingSonno.inizioSonno.subtract(const Duration(minutes: 15)) : dayStart;
+      final chartEnd = matchingSonno != null ? matchingSonno.inizioRisveglio.add(const Duration(minutes: 15)) : dayEnd;
+
       _isChartsLoading = true;
       try {
         _currentHypnogramSegments = await DatabaseHelper().getHypnogramSegments(dateKey);
-        _currentIntradayHrBuckets = await DatabaseHelper().getIntradayHrBuckets(dayStart, dayEnd, bucketMinutes: 1);
+        _currentIntradayHrBuckets = await DatabaseHelper().getIntradayHrBuckets(chartStart, chartEnd, bucketMinutes: 1);
         _currentHrZones = await DatabaseHelper().getHrZoneDistribution(dayStart, dayEnd, _userProfile.hrMax.toDouble());
       } catch (err) {
         debugPrint('WhoopViewModel: Errore caricamento aggregazioni grafici: $err');
@@ -874,12 +848,42 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  double get accumulatedSleepDebtMinutes {
+    if (_sonnoList.isEmpty) return 0.0;
+    final baseline = _userProfile.sleepBaselineMin.toDouble();
+    final pastSonno = _sonnoList.take(7).toList().reversed.toList();
+    final pairs = pastSonno
+        .map((s) => (sleepNeedMin: baseline, actualSleepMin: s.durataTotMin.toDouble()))
+        .toList();
+    return WhoopAnalyticsEngine.calculateAccumulatedSleepDebt(historicalSleeps: pairs);
+  }
+
   double get currentSleepNeedMinutes {
     final strain = _ultimoCiclo?.sforzoGiornaliero ?? 0.0;
     return WhoopAnalyticsEngine.calculateSleepNeedMinutes(
       baselineNeedMin: _userProfile.sleepBaselineMin.toDouble(),
       dayStrain: strain,
+      sleepDebtMin: accumulatedSleepDebtMinutes,
     ).toDouble();
+  }
+
+  Future<void> saveJournalEntries({
+    required String dateIso,
+    required Map<String, bool> habits,
+    String? notes,
+  }) async {
+    final items = habits.entries.map((e) => {
+      'data_iso': dateIso,
+      'chiave_domanda': e.key,
+      'risposta_bool': e.value ? 1 : 0,
+      'note': notes,
+    }).toList();
+
+    await DatabaseHelper().saveVociDiarioBatch(dateIso, items);
+    _completedDiaryDates.add(dateIso);
+    final allDiario = await _repository.getVociDiario();
+    _vociDiarioList = allDiario.where((v) => v.dataIso == _selectedDate.toIso8601String().substring(0, 10)).toList();
+    notifyListeners();
   }
 
   HabitImpactResult getHabitImpact(String habitQuestion) {
@@ -908,6 +912,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('[WhoopViewModel] WidgetsBinding.removeObserver notice: $e');
     }
     _bleThrottleTimer?.cancel();
+    _telemetrySubscription?.cancel();
     _hrSubscription?.cancel();
     _packet96Subscription?.cancel();
     _bleStateSubscription?.cancel();

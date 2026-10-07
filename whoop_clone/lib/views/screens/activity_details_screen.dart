@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 
 /// Modulo 7: Activity Details Screen (Sezione 7 Roadmap)
 /// Analisi dettagliata della singola seduta di allenamento:
@@ -13,6 +14,12 @@ class ActivityDetailsScreen extends StatelessWidget {
   final int? caloriesBurned;
   final double? distanceKm;
   final List<Map<String, dynamic>> routePoints;
+  final double? zoneZ1Pct;
+  final double? zoneZ2Pct;
+  final double? zoneZ3Pct;
+  final double? zoneZ4Pct;
+  final double? zoneZ5Pct;
+  final int? durationMin;
 
   const ActivityDetailsScreen({
     super.key,
@@ -24,6 +31,12 @@ class ActivityDetailsScreen extends StatelessWidget {
     this.caloriesBurned,
     this.distanceKm,
     this.routePoints = const [],
+    this.zoneZ1Pct,
+    this.zoneZ2Pct,
+    this.zoneZ3Pct,
+    this.zoneZ4Pct,
+    this.zoneZ5Pct,
+    this.durationMin,
   });
 
   static void show(BuildContext context, {
@@ -35,6 +48,12 @@ class ActivityDetailsScreen extends StatelessWidget {
     int? caloriesBurned,
     double? distanceKm,
     List<Map<String, dynamic>> routePoints = const [],
+    double? zoneZ1Pct,
+    double? zoneZ2Pct,
+    double? zoneZ3Pct,
+    double? zoneZ4Pct,
+    double? zoneZ5Pct,
+    int? durationMin,
   }) {
     Navigator.push(
       context,
@@ -48,20 +67,51 @@ class ActivityDetailsScreen extends StatelessWidget {
           caloriesBurned: caloriesBurned,
           distanceKm: distanceKm,
           routePoints: routePoints,
+          zoneZ1Pct: zoneZ1Pct,
+          zoneZ2Pct: zoneZ2Pct,
+          zoneZ3Pct: zoneZ3Pct,
+          zoneZ4Pct: zoneZ4Pct,
+          zoneZ5Pct: zoneZ5Pct,
+          durationMin: durationMin,
         ),
       ),
     );
   }
 
+  int get _effectiveDurationMinutes {
+    if (durationMin != null && durationMin! > 0) return durationMin!;
+    final match = RegExp(r'\d+').firstMatch(durationText);
+    if (match != null) {
+      return int.tryParse(match.group(0) ?? '') ?? 0;
+    }
+    return 0;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final totalMin = _effectiveDurationMinutes;
+    final z1 = (zoneZ1Pct ?? 0.0).clamp(0.0, 1.0);
+    final z2 = (zoneZ2Pct ?? 0.0).clamp(0.0, 1.0);
+    final z3 = (zoneZ3Pct ?? 0.0).clamp(0.0, 1.0);
+    final z4 = (zoneZ4Pct ?? 0.0).clamp(0.0, 1.0);
+    final z5 = (zoneZ5Pct ?? 0.0).clamp(0.0, 1.0);
+
+    String formatZone(double pct) {
+      if (pct <= 0.0 || totalMin <= 0) return '0 min (0%)';
+      final m = (pct * totalMin).round();
+      final p = (pct * 100.0).round();
+      return '$m min ($p%)';
+    }
+
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: NatureColors.darkCanvas,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: Text(
           activityName.toUpperCase(),
           style: const TextStyle(
-            color: WhoopTheme.textPrimary,
+            color: NatureColors.textDarkPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w900,
             letterSpacing: 1.2,
@@ -69,19 +119,19 @@ class ActivityDetailsScreen extends StatelessWidget {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.download, color: WhoopTheme.strainBlue),
+            icon: const Icon(Icons.download, color: NatureColors.powderBlue),
             tooltip: 'Esporta Traccia GPX',
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Traccia GPX generata con successo ed esportata!'),
-                  backgroundColor: WhoopTheme.strainBlue,
+                  backgroundColor: NatureColors.powderBlue,
                 ),
               );
             },
           ),
           IconButton(
-            icon: const Icon(Icons.share, color: WhoopTheme.strainBlue),
+            icon: const Icon(Icons.share, color: NatureColors.powderBlue),
             tooltip: 'Condividi WHOOP Live',
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -98,59 +148,57 @@ class ActivityDetailsScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 1. Header Activity Strain & Summary Card
-            Card(
-              color: WhoopTheme.cardSurface,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        color: WhoopTheme.strainBlue.withOpacity(0.15),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: WhoopTheme.strainBlue, width: 2),
-                      ),
-                      child: Center(
-                        child: Text(
-                          activityStrain.toStringAsFixed(1),
-                          style: const TextStyle(
-                            color: WhoopTheme.strainBlue,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                          ),
+            Container(
+              decoration: NatureTheme.organicCardDecoration(accentTint: NatureColors.terracotta),
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: NatureColors.terracotta.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: NatureColors.terracotta, width: 2),
+                    ),
+                    child: Center(
+                      child: Text(
+                        activityStrain.toStringAsFixed(1),
+                        style: const TextStyle(
+                          color: NatureColors.coralLight,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            activityName,
-                            style: const TextStyle(
-                              color: WhoopTheme.textPrimary,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          activityName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Oggi • 10:30 AM • $durationText',
-                            style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 12),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Sforzo elevato in Zona 4 per 48 min',
-                            style: const TextStyle(color: WhoopTheme.strainHigh, fontSize: 11, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Oggi • 10:30 AM • $durationText',
+                          style: const TextStyle(color: NatureColors.textDarkSecondary, fontSize: 12),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Sforzo elevato in Zona 4 per 48 min',
+                          style: TextStyle(color: NatureColors.coralLight, fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
 
@@ -160,7 +208,7 @@ class ActivityDetailsScreen extends StatelessWidget {
             const Text(
               'TRACCIATO GPS OVERLAY OUTDOOR',
               style: TextStyle(
-                color: WhoopTheme.textSecondary,
+                color: NatureColors.textDarkSecondary,
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.2,
@@ -169,11 +217,11 @@ class ActivityDetailsScreen extends StatelessWidget {
             const SizedBox(height: 8),
 
             ClipRRect(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
               child: Container(
                 height: 180,
                 width: double.infinity,
-                color: WhoopTheme.cardSurface,
+                decoration: NatureTheme.organicCardDecoration(),
                 child: Stack(
                   children: [
                     CustomPaint(
@@ -186,17 +234,17 @@ class ActivityDetailsScreen extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: WhoopTheme.background.withOpacity(0.85),
+                          color: NatureColors.darkSurface.withValues(alpha: 0.85),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: WhoopTheme.cardBorder),
+                          border: Border.all(color: NatureColors.darkBorder),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.navigation, color: WhoopTheme.strainBlue, size: 14),
+                            const Icon(Icons.navigation, color: NatureColors.coralLight, size: 14),
                             const SizedBox(width: 6),
                             Text(
                               'Distanza: ${distanceKm != null ? "${distanceKm!.toStringAsFixed(1)} km" : "--"}',
-                              style: const TextStyle(color: WhoopTheme.textPrimary, fontSize: 11, fontWeight: FontWeight.bold),
+                              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
@@ -212,11 +260,11 @@ class ActivityDetailsScreen extends StatelessWidget {
             // 3. Statistiche Chiave (FC Media, FC Max, Calorie, Passo Medio)
             Row(
               children: [
-                Expanded(child: _buildStatTile('FC Media', fcMediaBpm != null ? '$fcMediaBpm bpm' : '--', Icons.favorite, WhoopTheme.strainBlue)),
+                Expanded(child: _buildStatTile('FC Media', fcMediaBpm != null ? '$fcMediaBpm bpm' : '--', Icons.favorite, NatureColors.powderBlue)),
                 const SizedBox(width: 10),
-                Expanded(child: _buildStatTile('FC Max', fcMaxBpm != null ? '$fcMaxBpm bpm' : '--', Icons.favorite_border, WhoopTheme.strainHigh)),
+                Expanded(child: _buildStatTile('FC Max', fcMaxBpm != null ? '$fcMaxBpm bpm' : '--', Icons.favorite_border, NatureColors.terracotta)),
                 const SizedBox(width: 10),
-                Expanded(child: _buildStatTile('Calorie', caloriesBurned != null ? '$caloriesBurned kcal' : '--', Icons.local_fire_department, WhoopTheme.recoveryYellow)),
+                Expanded(child: _buildStatTile('Calorie', caloriesBurned != null ? '$caloriesBurned kcal' : '--', Icons.local_fire_department, NatureColors.amberWarm)),
               ],
             ),
 
@@ -226,7 +274,7 @@ class ActivityDetailsScreen extends StatelessWidget {
             const Text(
               'ANDAMENTO BATTITO CARDIACO (LIVE HR TIMELINE)',
               style: TextStyle(
-                color: WhoopTheme.textSecondary,
+                color: NatureColors.textDarkSecondary,
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.2,
@@ -234,16 +282,14 @@ class ActivityDetailsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
 
-            Card(
-              color: WhoopTheme.cardSurface,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: SizedBox(
-                  height: 120,
-                  width: double.infinity,
-                  child: CustomPaint(
-                    painter: _HrTimelinePainter(),
-                  ),
+            Container(
+              decoration: NatureTheme.organicCardDecoration(),
+              padding: const EdgeInsets.all(16.0),
+              child: SizedBox(
+                height: 120,
+                width: double.infinity,
+                child: CustomPaint(
+                  painter: _HrTimelinePainter(),
                 ),
               ),
             ),
@@ -254,7 +300,7 @@ class ActivityDetailsScreen extends StatelessWidget {
             const Text(
               'RIPARTIZIONE DEL TEMPO NELLE 5 ZONE FC',
               style: TextStyle(
-                color: WhoopTheme.textSecondary,
+                color: NatureColors.textDarkSecondary,
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.2,
@@ -262,23 +308,21 @@ class ActivityDetailsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
 
-            Card(
-              color: WhoopTheme.cardSurface,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    _buildZoneItem('Zona 5 - Massimo (90-100% FCmax)', '12 min (11%)', WhoopTheme.strainHigh, 0.11),
-                    const SizedBox(height: 8),
-                    _buildZoneItem('Zona 4 - Soglia Anaerobica (80-90%)', '48 min (46%)', WhoopTheme.strainBlue, 0.46),
-                    const SizedBox(height: 8),
-                    _buildZoneItem('Zona 3 - Aerobica (70-80%)', '32 min (30%)', WhoopTheme.recoveryGreen, 0.30),
-                    const SizedBox(height: 8),
-                    _buildZoneItem('Zona 2 - Endurance / Brucia Grassi', '10 min (10%)', WhoopTheme.recoveryYellow, 0.10),
-                    const SizedBox(height: 8),
-                    _buildZoneItem('Zona 1 - Riscaldamento (50-60%)', '3 min (3%)', WhoopTheme.textSecondary, 0.03),
-                  ],
-                ),
+            Container(
+              decoration: NatureTheme.organicCardDecoration(),
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  _buildZoneItem('Zona 5 - Massimo (90-100% FCmax)', formatZone(z5), NatureColors.terracotta, z5),
+                  const SizedBox(height: 8),
+                  _buildZoneItem('Zona 4 - Soglia Anaerobica (80-90%)', formatZone(z4), NatureColors.amberWarm, z4),
+                  const SizedBox(height: 8),
+                  _buildZoneItem('Zona 3 - Aerobica (70-80%)', formatZone(z3), NatureColors.powderBlue, z3),
+                  const SizedBox(height: 8),
+                  _buildZoneItem('Zona 2 - Endurance / Brucia Grassi', formatZone(z2), NatureColors.sage, z2),
+                  const SizedBox(height: 8),
+                  _buildZoneItem('Zona 1 - Riscaldamento (50-60%)', formatZone(z1), NatureColors.textDarkMuted, z1),
+                ],
               ),
             ),
           ],
@@ -288,20 +332,18 @@ class ActivityDetailsScreen extends StatelessWidget {
   }
 
   Widget _buildStatTile(String label, String value, IconData icon, Color color) {
-    return Card(
-      color: WhoopTheme.cardSurface,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 18),
-            const SizedBox(height: 6),
-            Text(label, style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 10)),
-            const SizedBox(height: 2),
-            Text(value, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
-          ],
-        ),
+    return Container(
+      decoration: NatureTheme.organicCardDecoration(),
+      padding: const EdgeInsets.all(12.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(height: 6),
+          Text(label, style: const TextStyle(color: NatureColors.textDarkMuted, fontSize: 10)),
+          const SizedBox(height: 2),
+          Text(value, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
+        ],
       ),
     );
   }
@@ -313,7 +355,7 @@ class ActivityDetailsScreen extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label, style: const TextStyle(color: WhoopTheme.textPrimary, fontSize: 11)),
+            Text(label, style: const TextStyle(color: NatureColors.textDarkPrimary, fontSize: 11)),
             Text(timeText, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
           ],
         ),
@@ -322,7 +364,7 @@ class ActivityDetailsScreen extends StatelessWidget {
           borderRadius: BorderRadius.circular(4),
           child: LinearProgressIndicator(
             value: pct,
-            backgroundColor: WhoopTheme.cardBorder,
+            backgroundColor: NatureColors.darkBorder,
             valueColor: AlwaysStoppedAnimation<Color>(color),
             minHeight: 6,
           ),

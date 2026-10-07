@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
+import 'nature/nature_scene.dart';
 
 /// Modulo 6 — Strain Detail Screen (Full Page)
 /// Riproduce fedelmente lo screenshot ufficiale "Strain - Pagina Sforzo Day Strain e Zone FC.jpeg":
@@ -75,8 +77,6 @@ class StrainDetailModal extends StatelessWidget {
     );
   }
 
-  Color get _strainColor => WhoopTheme.strainBlue;
-
   String _formatNumber(int n) {
     return n.toString().replaceAllMapped(
           RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
@@ -84,33 +84,49 @@ class StrainDetailModal extends StatelessWidget {
         );
   }
 
+  String _getStrainStateLabel(double strain) {
+    if (strain <= 0) return 'A RIPOSO';
+    if (strain >= 14) return 'SFORZO INTENSO';
+    if (strain >= 8) return 'MODERATO';
+    return 'LEGGERO';
+  }
+
   @override
   Widget build(BuildContext context) {
     final bmrCal = (caloriesTotal * 0.65).round();
     final activeCal = caloriesTotal - bmrCal;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: isDark ? NatureColors.darkCanvas : NatureColors.canvas,
       appBar: AppBar(
-        backgroundColor: WhoopTheme.background,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.chevron_left, color: Colors.white, size: 28),
+          icon: Icon(
+            Icons.chevron_left,
+            color: isDark ? NatureColors.textDarkPrimary : NatureColors.textPrimary,
+            size: 28,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'OGGI',
           style: TextStyle(
-            color: Colors.white,
-            fontSize: 14,
+            color: isDark ? NatureColors.textDarkPrimary : NatureColors.textPrimary,
+            fontSize: 13,
             fontWeight: FontWeight.w900,
-            letterSpacing: 1.2,
+            letterSpacing: 1.5,
           ),
         ),
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.info_outline, color: WhoopTheme.textSecondary, size: 22),
+            icon: Icon(
+              Icons.info_outline,
+              color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+              size: 22,
+            ),
             onPressed: () {},
           ),
         ],
@@ -122,51 +138,76 @@ class StrainDetailModal extends StatelessWidget {
           children: [
             const SizedBox(height: 10),
 
-            // 1. Grande Cerchio Strain WHOOP con target zone arc e tacca
-            Center(
-              child: SizedBox(
-                width: 220,
-                height: 220,
-                child: CustomPaint(
-                  painter: _OfficialStrainArcPainter(
-                    percent: (dayStrain / 21.0).clamp(0.0, 1.0),
-                    activeColor: _strainColor,
-                  ),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text(
-                          'WHOOP',
-                          style: TextStyle(
-                            color: WhoopTheme.textSecondary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2.0,
-                          ),
+            // 1. Grande Cerchio Strain in NatureScene
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: NatureScene(
+                mood: NatureMood.strain,
+                intensity: (dayStrain / 21.0).clamp(0.0, 1.0),
+                height: 270,
+                isDark: isDark,
+                borderRadius: BorderRadius.circular(28),
+                child: Center(
+                  child: SizedBox(
+                    width: 220,
+                    height: 220,
+                    child: CustomPaint(
+                      painter: _OfficialStrainArcPainter(
+                        percent: (dayStrain / 21.0).clamp(0.0, 1.0),
+                        activeColor: NatureColors.terracotta,
+                        isDark: isDark,
+                      ),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? NatureColors.darkSurface.withOpacity(0.7)
+                                    : NatureColors.creamDark.withOpacity(0.85),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isDark
+                                      ? NatureColors.darkBorder.withOpacity(0.6)
+                                      : NatureColors.sandBorderSubtle,
+                                ),
+                              ),
+                              child: Text(
+                                _getStrainStateLabel(dayStrain),
+                                style: TextStyle(
+                                  color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.5,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              dayStrain.toStringAsFixed(1).replaceAll('.', ','),
+                              style: TextStyle(
+                                color: isDark ? Colors.white : NatureColors.textPrimary,
+                                fontSize: 52,
+                                fontWeight: FontWeight.w900,
+                                height: 1.0,
+                                fontFeatures: const [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'SFORZO',
+                              style: TextStyle(
+                                color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          dayStrain.toStringAsFixed(1).replaceAll('.', ','),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 54,
-                            fontWeight: FontWeight.w900,
-                            height: 1.0,
-                            fontFeatures: [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'SFORZO',
-                          style: TextStyle(
-                            color: WhoopTheme.textSecondary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.0,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -175,17 +216,11 @@ class StrainDetailModal extends StatelessWidget {
 
             const SizedBox(height: 16),
 
-            // 2. Card 4 Sub-metriche con triangolo Caret Notch
-            Center(
-              child: CustomPaint(
-                size: const Size(14, 7),
-                painter: const _StrainTriangleCaretPainter(),
-              ),
-            ),
+            // 2. Card 4 Sub-metriche
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
-                decoration: WhoopTheme.officialCardDecoration(),
+                decoration: NatureTheme.organicCardDecoration(),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 child: Column(
                   children: [
@@ -195,32 +230,36 @@ class StrainDetailModal extends StatelessWidget {
                       value: zone1to3Duration,
                       baseline: zone1to3Baseline,
                       indicatorType: _IndicatorType.downOrange,
+                      iconColor: NatureColors.tealLight,
                     ),
-                    const Divider(color: WhoopTheme.cardBorder, height: 22, thickness: 1),
+                    Divider(color: NatureColors.darkBorder.withOpacity(0.6), height: 20, thickness: 1),
                     _buildSubMetricRow(
                       icon: Icons.favorite_border,
                       title: 'ZONE DI FREQUENZA CARDIACA\n4-5',
                       value: zone4to5Duration,
                       baseline: zone4to5Baseline,
                       indicatorType: _IndicatorType.dotGrey,
+                      iconColor: NatureColors.terracotta,
                     ),
-                    const Divider(color: WhoopTheme.cardBorder, height: 22, thickness: 1),
+                    Divider(color: NatureColors.darkBorder.withOpacity(0.6), height: 20, thickness: 1),
                     _buildSubMetricRow(
                       icon: Icons.fitness_center,
                       title: 'TEMPO DI ATTIVITÀ DI FORZA',
                       value: strengthDuration,
                       baseline: strengthBaseline,
                       indicatorType: _IndicatorType.dotGrey,
+                      iconColor: NatureColors.powderBlue,
                     ),
-                    const Divider(color: WhoopTheme.cardBorder, height: 22, thickness: 1),
+                    Divider(color: NatureColors.darkBorder.withOpacity(0.6), height: 20, thickness: 1),
                     _buildSubMetricRow(
                       icon: Icons.directions_walk,
                       title: 'PASSI',
                       value: steps != null && steps! > 0 ? _formatNumber(steps!) : '--',
                       baseline: stepsBaseline != null && stepsBaseline! > 0 ? _formatNumber(stepsBaseline!) : '--',
                       indicatorType: steps != null && steps! > 0 ? _IndicatorType.downOrange : _IndicatorType.dotGrey,
+                      iconColor: NatureColors.sage,
                     ),
-                    const Divider(color: WhoopTheme.cardBorder, height: 20, thickness: 1),
+                    Divider(color: NatureColors.darkBorder.withOpacity(0.6), height: 20, thickness: 1),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Row(
@@ -228,20 +267,20 @@ class StrainDetailModal extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF141920),
+                              color: NatureColors.darkSurface,
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFF222B34)),
+                              border: Border.all(color: NatureColors.darkBorder),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: const [
-                                Icon(Icons.arrow_drop_up, color: WhoopTheme.recoveryGreen, size: 15),
-                                Icon(Icons.arrow_drop_down, color: Color(0xFFFF9800), size: 15),
+                                Icon(Icons.arrow_drop_up, color: NatureColors.sage, size: 15),
+                                Icon(Icons.arrow_drop_down, color: NatureColors.amberWarm, size: 15),
                                 SizedBox(width: 6),
                                 Text(
                                   'Oggi vs. 30 giorni precedenti',
                                   style: TextStyle(
-                                    color: WhoopTheme.textMuted,
+                                    color: NatureColors.textDarkSecondary,
                                     fontSize: 10.5,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -264,14 +303,14 @@ class StrainDetailModal extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
                 padding: const EdgeInsets.all(16),
-                decoration: WhoopTheme.officialCardDecoration(tint: WhoopTheme.strainBlue),
+                decoration: NatureTheme.organicCardDecoration(accentTint: NatureColors.terracotta),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
                       'Il tuo corpo è in grado di sostenere uno sforzo moderato oggi. Per mantenere l\'equilibrio, oggi mantieni un livello di sforzo moderato tra 11,8 e 16,5.',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: NatureColors.textDarkPrimary,
                         fontSize: 13.5,
                         height: 1.45,
                         fontWeight: FontWeight.w400,
@@ -283,7 +322,7 @@ class StrainDetailModal extends StatelessWidget {
                       child: const Text(
                         'ESPLORA I TUOI APPROFONDIMENTI SULLO SFORZO',
                         style: TextStyle(
-                          color: WhoopTheme.strainBlue,
+                          color: NatureColors.coralLight,
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 0.8,
@@ -302,14 +341,14 @@ class StrainDetailModal extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
                 padding: const EdgeInsets.all(16),
-                decoration: WhoopTheme.officialCardDecoration(),
+                decoration: NatureTheme.organicCardDecoration(),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
                       'DISPENDIO ENERGETICO',
                       style: TextStyle(
-                        color: WhoopTheme.textSecondary,
+                        color: NatureColors.textDarkSecondary,
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.1,
@@ -319,10 +358,10 @@ class StrainDetailModal extends StatelessWidget {
                     Row(
                       children: [
                         Expanded(child: _buildCalTile('Totali', '$caloriesTotal kcal', Colors.white)),
-                        Container(width: 1, height: 40, color: const Color(0xFF222B34)),
-                        Expanded(child: _buildCalTile('BMR Basale', '$bmrCal kcal', WhoopTheme.textSecondary)),
-                        Container(width: 1, height: 40, color: const Color(0xFF222B34)),
-                        Expanded(child: _buildCalTile('Attive', '$activeCal kcal', WhoopTheme.strainBlue)),
+                        Container(width: 1, height: 40, color: NatureColors.darkBorder),
+                        Expanded(child: _buildCalTile('BMR Basale', '$bmrCal kcal', NatureColors.textDarkSecondary)),
+                        Container(width: 1, height: 40, color: NatureColors.darkBorder),
+                        Expanded(child: _buildCalTile('Attive', '$activeCal kcal', NatureColors.terracotta)),
                       ],
                     ),
                   ],
@@ -337,29 +376,29 @@ class StrainDetailModal extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
                 padding: const EdgeInsets.all(16),
-                decoration: WhoopTheme.officialCardDecoration(),
+                decoration: NatureTheme.organicCardDecoration(),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
                       'DISTRIBUZIONE NELLE 5 ZONE FC',
                       style: TextStyle(
-                        color: WhoopTheme.textSecondary,
+                        color: NatureColors.textDarkSecondary,
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.1,
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _buildZoneRow('Zona 5 — Max (90–100%)', '0 min', WhoopTheme.strainHigh, 0.0),
+                    _buildZoneRow('Zona 5 — Max (90–100%)', '0 min', NatureColors.terracotta, 0.0),
                     const SizedBox(height: 12),
-                    _buildZoneRow('Zona 4 — Anaerobica (80–90%)', '0 min', const Color(0xFFFF6D00), 0.0),
+                    _buildZoneRow('Zona 4 — Anaerobica (80–90%)', '0 min', NatureColors.amberWarm, 0.0),
                     const SizedBox(height: 12),
-                    _buildZoneRow('Zona 3 — Aerobica (70–80%)', '0 min', WhoopTheme.strainBlue, 0.0),
+                    _buildZoneRow('Zona 3 — Aerobica (70–80%)', '0 min', NatureColors.powderBlue, 0.0),
                     const SizedBox(height: 12),
-                    _buildZoneRow('Zona 2 — Endurance (60–70%)', '0 min', WhoopTheme.recoveryGreen, 0.0),
+                    _buildZoneRow('Zona 2 — Endurance (60–70%)', '0 min', NatureColors.sage, 0.0),
                     const SizedBox(height: 12),
-                    _buildZoneRow('Zona 1 — Riscaldamento (50–60%)', '0 min', WhoopTheme.textMuted, 0.0),
+                    _buildZoneRow('Zona 1 — Riscaldamento (50–60%)', '0 min', NatureColors.textDarkMuted, 0.0),
                   ],
                 ),
               ),
@@ -422,14 +461,15 @@ class StrainDetailModal extends StatelessWidget {
     required String value,
     required String baseline,
     required _IndicatorType indicatorType,
+    Color? iconColor,
   }) {
     Widget indicatorWidget;
     switch (indicatorType) {
       case _IndicatorType.downOrange:
-        indicatorWidget = const Icon(Icons.arrow_drop_down, color: Color(0xFFFF9800), size: 16);
+        indicatorWidget = const Icon(Icons.arrow_drop_down, color: NatureColors.amberWarm, size: 16);
         break;
       case _IndicatorType.upGreen:
-        indicatorWidget = const Icon(Icons.arrow_drop_up, color: WhoopTheme.recoveryGreen, size: 16);
+        indicatorWidget = const Icon(Icons.arrow_drop_up, color: NatureColors.sage, size: 16);
         break;
       case _IndicatorType.dotGrey:
         indicatorWidget = Container(
@@ -437,7 +477,7 @@ class StrainDetailModal extends StatelessWidget {
           height: 5,
           margin: const EdgeInsets.only(left: 4, right: 3),
           decoration: const BoxDecoration(
-            color: WhoopTheme.textMuted,
+            color: NatureColors.textDarkMuted,
             shape: BoxShape.circle,
           ),
         );
@@ -453,13 +493,22 @@ class StrainDetailModal extends StatelessWidget {
           Expanded(
             child: Row(
               children: [
-                Icon(icon, color: WhoopTheme.textSecondary, size: 20),
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: NatureColors.darkSurface,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: NatureColors.darkBorder.withOpacity(0.5)),
+                  ),
+                  child: Icon(icon, color: iconColor ?? NatureColors.terracotta, size: 16),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     title,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: NatureColors.textDarkPrimary,
                       fontSize: 10.5,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.5,
@@ -493,7 +542,7 @@ class StrainDetailModal extends StatelessWidget {
               Text(
                 baseline,
                 style: const TextStyle(
-                  color: WhoopTheme.textMuted,
+                  color: NatureColors.textDarkMuted,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   fontFeatures: [FontFeature.tabularFigures()],
@@ -518,10 +567,12 @@ enum _IndicatorType { downOrange, upGreen, dotGrey }
 class _OfficialStrainArcPainter extends CustomPainter {
   final double percent;
   final Color activeColor;
+  final bool isDark;
 
   _OfficialStrainArcPainter({
     required this.percent,
     required this.activeColor,
+    this.isDark = false,
   });
 
   @override
@@ -530,9 +581,9 @@ class _OfficialStrainArcPainter extends CustomPainter {
     final radius = (size.width / 2) - 10;
     const strokeWidth = 13.5;
 
-    // 1. Traccia scura di sfondo circolare completa
+    // 1. Traccia di sfondo circolare completa
     final trackPaint = Paint()
-      ..color = const Color(0xFF222B34)
+      ..color = isDark ? const Color(0xFF222B34) : NatureColors.sandBorderSubtle
       ..strokeWidth = strokeWidth
       ..style = PaintingStyle.stroke;
     canvas.drawCircle(center, radius, trackPaint);
@@ -613,33 +664,4 @@ class _OfficialStrainArcPainter extends CustomPainter {
   bool shouldRepaint(covariant _OfficialStrainArcPainter oldDelegate) {
     return oldDelegate.percent != percent || oldDelegate.activeColor != activeColor;
   }
-}
-
-class _StrainTriangleCaretPainter extends CustomPainter {
-  const _StrainTriangleCaretPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(0, size.height)
-      ..lineTo(size.width / 2, 0)
-      ..lineTo(size.width, size.height)
-      ..close();
-
-    final fillPaint = Paint()
-      ..color = const Color(0xFF12171B)
-      ..style = PaintingStyle.fill;
-
-    final borderPaint = Paint()
-      ..color = const Color(0xFF242E35)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-
-    canvas.drawPath(path, fillPaint);
-    canvas.drawLine(Offset(0, size.height), Offset(size.width / 2, 0), borderPaint);
-    canvas.drawLine(Offset(size.width / 2, 0), Offset(size.width, size.height), borderPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

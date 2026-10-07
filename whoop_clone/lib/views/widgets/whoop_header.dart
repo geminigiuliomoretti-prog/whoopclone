@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 
 class WhoopHeader extends StatelessWidget {
   final String currentDateLabel;
@@ -35,47 +36,77 @@ class WhoopHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
-      color: WhoopTheme.background,
-      padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 8.0, bottom: 12.0),
+      color: isDark ? WhoopTheme.background : NatureColors.offWhite,
+      padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 8.0, bottom: 8.0),
       child: Column(
         children: [
           // 1. Top Status Row: [Avatar + Streak]   [ <  OGGI  > ]   [ Battery Band Icon ]
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Avatar GM + Flame Streak (Cliccabile -> Profilo)
+              // Avatar + Streak (Cliccabile -> Profilo)
               GestureDetector(
                 onTap: onAvatarTap,
                 child: Row(
                   children: [
                     Container(
-                      width: 34,
-                      height: 34,
-                      decoration: const BoxDecoration(
-                        color: WhoopTheme.recoveryGreen,
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: (isDark
+                                ? WhoopTheme.recoveryGreen
+                                : NatureColors.sage)
+                            .withValues(alpha: 0.18),
                         shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isDark
+                              ? WhoopTheme.recoveryGreen.withValues(alpha: 0.60)
+                              : NatureColors.sage,
+                          width: 1.5,
+                        ),
                       ),
                       child: Center(
                         child: Text(
                           userInitials,
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontWeight: FontWeight.w900,
+                          style: TextStyle(
+                            color: isDark ? Colors.white : NatureColors.textLightPrimary,
+                            fontWeight: FontWeight.w800,
                             fontSize: 13,
                           ),
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    const Icon(Icons.local_fire_department, color: Color(0xFFFF5252), size: 18),
-                    const SizedBox(width: 3),
-                    Text(
-                      '$streakDays',
-                      style: const TextStyle(
-                        color: WhoopTheme.textPrimary,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 13,
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF281C16)
+                            : NatureColors.coralLight.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF4A2B1E)
+                              : NatureColors.coralLight.withValues(alpha: 0.50),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.local_fire_department, color: Color(0xFFE07A5F), size: 14),
+                          const SizedBox(width: 3),
+                          Text(
+                            '$streakDays',
+                            style: TextStyle(
+                              color: isDark ? Colors.white : NatureColors.textLightPrimary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -86,9 +117,19 @@ class WhoopHeader extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E262C),
+                  color: isDark ? const Color(0xFF182026) : Colors.white,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: WhoopTheme.cardBorder),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF26333D) : NatureColors.sandBorder,
+                  ),
+                  boxShadow: [
+                    if (!isDark)
+                      BoxShadow(
+                        color: const Color(0xFF2C3E50).withValues(alpha: 0.04),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                  ],
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -96,7 +137,11 @@ class WhoopHeader extends StatelessWidget {
                     IconButton(
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
-                      icon: const Icon(Icons.chevron_left, color: WhoopTheme.textSecondary, size: 18),
+                      icon: Icon(
+                        Icons.chevron_left,
+                        color: isDark ? WhoopTheme.textSecondary : NatureColors.textLightSecondary,
+                        size: 18,
+                      ),
                       onPressed: onPreviousDate,
                     ),
                     GestureDetector(
@@ -105,9 +150,9 @@ class WhoopHeader extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 4.0),
                         child: Text(
                           currentDateLabel.toUpperCase(),
-                          style: const TextStyle(
-                            color: WhoopTheme.textPrimary,
-                            fontWeight: FontWeight.w900,
+                          style: TextStyle(
+                            color: isDark ? Colors.white : NatureColors.textLightPrimary,
+                            fontWeight: FontWeight.w800,
                             fontSize: 11,
                             letterSpacing: 1.2,
                           ),
@@ -117,66 +162,72 @@ class WhoopHeader extends StatelessWidget {
                     IconButton(
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
-                      icon: Icon(Icons.chevron_right, color: onNextDate != null ? WhoopTheme.textSecondary : WhoopTheme.cardBorder, size: 18),
+                      icon: Icon(
+                        Icons.chevron_right,
+                        color: onNextDate != null
+                            ? (isDark ? WhoopTheme.textSecondary : NatureColors.textLightSecondary)
+                            : (isDark ? WhoopTheme.cardBorder : NatureColors.sandBorder),
+                        size: 18,
+                      ),
                       onPressed: onNextDate,
                     ),
                   ],
                 ),
               ),
 
-              // Battery Status & Whoop Band Icon (Cliccabile -> Gestione Dispositivo BLE)
+              // Battery Status & Wearable Capsule (Cliccabile -> Diagnostica BLE)
               GestureDetector(
                 onTap: onBatteryTap,
-                child: Row(
-                  children: [
-                    Text(
-                      batteryPct != null ? '$batteryPct%' : '--%',
-                      style: const TextStyle(
-                        color: WhoopTheme.textPrimary,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 13,
-                        fontFeatures: [FontFeature.tabularFigures()],
-                      ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF161F26) : Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: bleConnected
+                          ? (isDark ? WhoopTheme.recoveryGreen.withValues(alpha: 0.40) : NatureColors.sage)
+                          : (isDark ? const Color(0xFF26333D) : NatureColors.sandBorder),
+                      width: 0.8,
                     ),
-                    const SizedBox(width: 6),
-                    // Authentic WHOOP 5.0 Strap & Puck Battery Glyphs
-                    CustomPaint(
-                      size: const Size(20, 24),
-                      painter: _WhoopBatteryPuckPainter(
-                        batteryPct: batteryPct ?? 0,
-                        isConnected: bleConnected,
+                    boxShadow: [
+                      if (!isDark)
+                        BoxShadow(
+                          color: const Color(0xFF1E2832).withValues(alpha: 0.03),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: bleConnected
+                              ? (isDark ? WhoopTheme.recoveryGreen : NatureColors.sage)
+                              : const Color(0xFF8E9BA7),
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          // 2. Official WHOOP Brand Wordmark Center (\V/HOOP)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Image.asset(
-                WhoopTheme.logoWhite,
-                height: 20,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => const Text(
-                  '\\V/ H O O P',
-                  style: TextStyle(
-                    color: WhoopTheme.textPrimary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                    letterSpacing: 4.0,
+                      const SizedBox(width: 6),
+                      Text(
+                        batteryPct != null ? '$batteryPct%' : '--%',
+                        style: TextStyle(
+                          color: isDark ? Colors.white : NatureColors.textLightPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11.5,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ],
           ),
 
-          // 3. Top Metric Rings Row Selector (O SONNO, O RECUPERO, O SFORZO) - Visibile solo se richiesto (es. sticky scroll)
+          // 2. Top Metric Rings Row Selector (O SONNO, O RECUPERO, O SFORZO) - Visibile solo se richiesto (es. sticky scroll)
           if (showRingSelectors) ...[
             const SizedBox(height: 14),
             Row(
@@ -249,72 +300,5 @@ class WhoopHeader extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-/// Disegna il caratteristico indicatore di batteria WHOOP (Puck sagomato con arco di carica)
-class _WhoopBatteryPuckPainter extends CustomPainter {
-  final int batteryPct;
-  final bool isConnected;
-
-  const _WhoopBatteryPuckPainter({
-    required this.batteryPct,
-    required this.isConnected,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-
-    // Colore stato carica
-    Color levelColor;
-    if (!isConnected) {
-      levelColor = WhoopTheme.textMuted;
-    } else if (batteryPct >= 50) {
-      levelColor = WhoopTheme.recoveryGreen;
-    } else if (batteryPct >= 20) {
-      levelColor = WhoopTheme.recoveryYellow;
-    } else {
-      levelColor = WhoopTheme.recoveryRed;
-    }
-
-    // 1. Profilo Cinturino WHOOP (Puck a capsula verticale)
-    final puckRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(2, 2, w - 8, h - 4),
-      const Radius.circular(5),
-    );
-
-    final puckOutlinePaint = Paint()
-      ..color = const Color(0xFF435360)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-
-    canvas.drawRRect(puckRect, puckOutlinePaint);
-
-    // 2. Arco di Carica laterale (Stile Whoop 5.0)
-    final arcPaint = Paint()
-      ..color = levelColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..strokeCap = StrokeCap.round;
-
-    final sweep = ((batteryPct.clamp(0, 100) / 100.0) * (h - 6));
-    canvas.drawLine(
-      Offset(w - 2, h - 3),
-      Offset(w - 2, (h - 3) - sweep),
-      arcPaint,
-    );
-
-    // 3. Dot di Connessione BLE Attiva
-    if (isConnected) {
-      final dotPaint = Paint()..color = WhoopTheme.recoveryGreen;
-      canvas.drawCircle(Offset(w - 2, 3), 1.5, dotPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _WhoopBatteryPuckPainter oldDelegate) {
-    return oldDelegate.batteryPct != batteryPct || oldDelegate.isConnected != isConnected;
   }
 }

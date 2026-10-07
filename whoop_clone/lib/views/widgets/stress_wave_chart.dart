@@ -51,13 +51,15 @@ class StressWaveChart extends StatelessWidget {
           const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'MONITORAGGIO DELLO STRESS',
-                style: TextStyle(
-                  color: WhoopTheme.textPrimary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.0,
+              Expanded(
+                child: Text(
+                  'MONITORAGGIO DELLO STRESS',
+                  style: TextStyle(
+                    color: WhoopTheme.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.0,
+                  ),
                 ),
               ),
               Icon(Icons.chevron_right, color: WhoopTheme.textSecondary, size: 20),
@@ -70,12 +72,14 @@ class StressWaveChart extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Ultimo aggiornamento: $timeStr',
-                style: const TextStyle(
-                  color: WhoopTheme.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
+              Expanded(
+                child: Text(
+                  'Ultimo aggiornamento: $timeStr',
+                  style: const TextStyle(
+                    color: WhoopTheme.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
               Row(

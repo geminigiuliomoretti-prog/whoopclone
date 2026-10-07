@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/constants/whoop_theme.dart';
+import '../core/theme/nature_theme.dart';
 import '../data/ble/ble_connection_manager.dart';
 import '../data/biometrics/health_vitals_engine.dart';
 import '../viewmodels/whoop_viewmodel.dart';
 import 'widgets/whoop_header.dart';
 import 'widgets/tri_ring_dial.dart';
+import 'widgets/nature/nature_scene.dart';
 import 'widgets/stress_wave_chart.dart';
 import 'widgets/weekly_dual_axis_chart.dart';
 import 'widgets/tonight_sleep_card.dart';
@@ -13,6 +15,7 @@ import 'widgets/recovery_detail_modal.dart';
 import 'widgets/sleep_detail_modal.dart';
 import 'widgets/strain_detail_modal.dart';
 import 'widgets/whoop_fab_modal.dart';
+import 'widgets/recovery_calendar_modal.dart';
 import 'widgets/provenance_badge.dart';
 import 'screens/health_vitals_detail_screen.dart';
 import 'screens/activity_details_screen.dart';
@@ -23,7 +26,7 @@ import 'screens/coach_screen.dart';
 import 'screens/stress_monitor_screen.dart';
 import 'screens/trends_screen.dart';
 import 'screens/live_activity_tracker_screen.dart';
-import 'device/device_screen.dart';
+import 'screens/diagnostic_screen.dart';
 
 /// Schermata Home WHOOP 5.0 (Rispecchia al 100% gli screenshot e i collegamenti del video in reference_UI)
 class HomeScreen extends StatefulWidget {
@@ -35,28 +38,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedRingIndex = 1; // 0 = Sonno, 1 = Recupero, 2 = Sforzo
-
-  // Lista Notifiche/Insight sfogliabili e rimuovibili con Swipe
-  final List<Map<String, String>> _notifications = [
-    {
-      'id': '1',
-      'title': 'VFC elevata',
-      'badge': '1',
-      'body': 'La tua VFC è 6% più elevata del solito, il che indica un recupero massimo. Una VFC elevata indica che il tuo corpo è in equilibrio e il recupero completo.',
-    },
-    {
-      'id': '2',
-      'title': 'Prontezza Recupero 82%',
-      'badge': '2',
-      'body': 'Il tuo sistema nervoso autonomo è in condizioni ottimali. Il target di Sforzo consigliato per oggi è tra 15.0 e 17.5.',
-    },
-    {
-      'id': '3',
-      'title': 'Fabbisogno Sonno Ottimizzato',
-      'badge': '3',
-      'body': 'In base all\'attività recente hai 30 minuti di sonno arretrato. Ti consigliamo di coricarti entro le 22:28.',
-    },
-  ];
 
   String _formatDateLabel(DateTime date) {
     final now = DateTime.now();
@@ -73,6 +54,142 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isToday(DateTime date) {
     final now = DateTime.now();
     return date.year == now.year && date.month == now.month && date.day == now.day;
+  }
+
+  NatureMood _getNatureMoodForRing(int ringIndex, double recovery) {
+    if (ringIndex == 0) return NatureMood.sleep;
+    if (ringIndex == 2) return NatureMood.strain;
+    return NatureMood.recovery;
+  }
+
+  Widget _buildSunInsightCard(
+    double recovery,
+    double strain,
+    double sleep,
+    dynamic ciclo,
+    bool isDark,
+  ) {
+    Color accentColor;
+    IconData icon;
+    String badgeTitle;
+    String title;
+    String body;
+
+    if (ciclo != null && recovery > 0) {
+      if (recovery >= 67) {
+        accentColor = NatureColors.sage;
+        icon = Icons.wb_sunny_rounded;
+        badgeTitle = 'RECUPERO OTTIMALE';
+        title = 'Il tuo corpo è pronto per risplendere';
+        body =
+            'Sistema nervoso autonomo in perfetto equilibrio. Le riserve fisiologiche sono elevate e pronte per assorbire intensità.';
+      } else if (recovery >= 34) {
+        accentColor = NatureColors.amberWarm;
+        icon = Icons.wb_twilight_rounded;
+        badgeTitle = 'CAPACITÀ BILANCIATA';
+        title = 'Una giornata di ritmo controllato';
+        body =
+            'Capacità di sforzo equilibrata. Mantieni un\'intensità regolare per preservare energia e favorire il recupero stasera.';
+      } else {
+        accentColor = NatureColors.terracotta;
+        icon = Icons.spa_outlined;
+        badgeTitle = 'RIGENERAZIONE PRIORITARIA';
+        title = 'Dai priorità al riposo oggi';
+        body =
+            'Le riserve fisiologiche sono contenute. Concentrati su idratazione, mobilità dolce e un riposo ristoratore tempestivo.';
+      }
+    } else {
+      accentColor = NatureColors.powderBlue;
+      icon = Icons.cloud_queue_rounded;
+      badgeTitle = 'IN ATTESA DATI';
+      title = 'Inizia a raccogliere i tuoi dati';
+      body =
+          'Collega il dispositivo per sincronizzare il tuo sonno o inserisci i dati per sbloccare la tua analisi fisiologica.';
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: isDark ? NatureColors.darkSurface : Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: isDark
+              ? NatureColors.darkBorderSubtle
+              : accentColor.withValues(alpha: 0.18),
+          width: 0.85,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.20)
+                : const Color(0xFF1E2832).withValues(alpha: 0.03),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header compatto con icona sole e badge
+          Row(
+            children: [
+              Icon(icon, color: accentColor, size: 16),
+              const SizedBox(width: 7),
+              Text(
+                'SUN INSIGHT',
+                style: TextStyle(
+                  color: accentColor,
+                  fontSize: 10.0,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const Spacer(),
+              Flexible(
+                child: Text(
+                  badgeTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: isDark ? NatureColors.textDarkMuted : NatureColors.textLightMuted,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          // Titolo Editoriale
+          Text(
+            title,
+            style: TextStyle(
+              color: isDark ? NatureColors.textDarkPrimary : NatureColors.textLightPrimary,
+              fontSize: 16.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.3,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 5),
+          // Corpo Narrativo Calmo
+          Text(
+            body,
+            style: TextStyle(
+              color: isDark
+                  ? NatureColors.textDarkSecondary
+                  : NatureColors.textLightSecondary,
+              fontSize: 13.0,
+              height: 1.42,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -96,6 +213,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final ciclo = viewModel.ultimoCiclo;
     final sonno = viewModel.sonnoList.isNotEmpty ? viewModel.sonnoList.first : null;
     final strain = ciclo?.sforzoGiornaliero ?? 0.0;
@@ -113,7 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Official Header (GM avatar, flame 175, < OGGI >, 62% battery, \V/HOOP logo)
+            // 1. Official Header (GM avatar, flame 175, < OGGI >, 62% battery, WHOOP logo)
             WhoopHeader(
               currentDateLabel: _formatDateLabel(viewModel.selectedDate),
               selectedRingIndex: _selectedRingIndex,
@@ -139,92 +257,85 @@ class _HomeScreenState extends State<HomeScreen> {
                   : () {
                       viewModel.setSelectedDate(viewModel.selectedDate.add(const Duration(days: 1)));
                     },
-              onDateTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: viewModel.selectedDate,
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime.now().add(const Duration(days: 365)),
-                  builder: (context, child) => Theme(
-                    data: ThemeData.dark().copyWith(
-                      colorScheme: const ColorScheme.dark(
-                        primary: WhoopTheme.strainBlue,
-                        surface: WhoopTheme.cardSurface,
-                      ),
-                    ),
-                    child: child!,
-                  ),
-                );
-                if (picked != null) {
-                  viewModel.setSelectedDate(picked);
-                }
-              },
-              onBatteryTap: () => DeviceScreen.navigateTo(context),
+              onDateTap: () => RecoveryCalendarModal.show(context),
+              onBatteryTap: () => DiagnosticScreen.navigateTo(context),
             ),
 
             const SizedBox(height: 8),
 
-            // 2. Hero Metric Rings Display (3 Anelli Singoli Affiancati)
-            Center(
-              child: TriRingDial(
-                strainScore: strain,
-                recoveryPct: recovery,
-                sleepPct: sleep,
-                liveBpm: viewModel.liveBpm,
-                calories: ciclo?.energiaBruciataCal ?? 0,
-                onTapRecovery: () => RecoveryDetailModal.show(
-                  context,
-                  recoveryPct: recovery,
-                  hrvMs: (ciclo?.vfcMs != null && ciclo!.vfcMs! > 0) ? ciclo.vfcMs! : 0.0,
-                  fcrBpm: (ciclo?.fcrBpm != null && ciclo!.fcrBpm! > 0) ? ciclo.fcrBpm! : 0,
-                  respRateRpm: (ciclo?.frequenzaRespiratoriaRpm != null && ciclo!.frequenzaRespiratoriaRpm! > 0)
-                      ? ciclo.frequenzaRespiratoriaRpm!
-                      : 0.0,
-                  spo2Pct: ciclo?.spo2Pct ?? 0.0,
-                  tempDeltaC: ciclo?.tempCutaneaC ?? 0.0,
-                  hrvBaseline: (viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.hrvBaselineMean > 0)
-                      ? viewModel.userProfile.hrvBaselineMean.toDouble()
-                      : null,
-                  fcrBaseline: (viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.hrRestBaseline > 0)
-                      ? viewModel.userProfile.hrRestBaseline
-                      : null,
-                  respRateBaseline: viewModel.userProfile.baselineSampleCount >= 4 ? 13.6 : null,
-                  sleepPerformancePct: ciclo?.andamentoSonnoPct ?? (sleep > 0 ? sleep : null),
-                  sleepPerfBaseline: viewModel.userProfile.baselineSampleCount >= 4 ? 75.0 : null,
-                  historicalCicli: viewModel.cicliList,
-                  provenance: ciclo?.provenance ?? 'REAL',
-                ),
-                onTapSleep: () => SleepDetailModal.show(
-                  context,
-                  sleepPct: sleep > 0 ? sleep : (sonno?.sleepPerformancePct ?? 0.0),
-                  durationMin: (sonno?.durataTotMin != null && sonno!.durataTotMin > 0)
-                      ? sonno.durataTotMin.toDouble()
-                      : 0.0,
-                  sleepNeedMin: ciclo?.sonnoRichiestoMin ?? viewModel.currentSleepNeedMinutes,
-                  sleepDebtMin: ciclo?.sonnoArretratoMin ?? 0.0,
-                  lightSleepMin: sonno?.sonnoLeggeroMin ?? 0.0,
-                  deepSleepMin: sonno?.sonnoProfondoMinDouble ?? 0.0,
-                  remSleepMin: sonno?.sonnoRemMinDouble ?? 0.0,
-                  awakeMin: sonno?.vegliaMin ?? 0.0,
-                  efficiencyPct: sonno?.efficienzaPct ??
-                      ((sonno != null && sonno.tempoALettoMin > 0)
-                          ? ((sonno.durataTotMin / sonno.tempoALettoMin) * 100).clamp(0.0, 100.0)
-                          : 0.0),
-                  consistencyPct: sonno?.regolaritaSonnoPct ?? 0.0,
-                  baselineDurationMin: (viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.sleepBaselineMin > 0)
-                      ? viewModel.userProfile.sleepBaselineMin.toDouble()
-                      : null,
-                  baselinePerformancePct: viewModel.userProfile.baselineSampleCount >= 4 ? 80.0 : null,
-                  historicalSonno: viewModel.sonnoList,
-                  provenance: sonno?.provenance ?? (ciclo?.provenance ?? 'REAL'),
-                ),
-                onTapStrain: () => StrainDetailModal.show(
-                  context,
-                  dayStrain: strain,
-                  fcMaxBpm: ciclo?.fcMaxBpm ?? (viewModel.liveBpm > 0 ? viewModel.liveBpm : 0),
-                  fcMediaBpm: ciclo?.fcMediaBpm ?? (viewModel.liveBpm > 0 ? viewModel.liveBpm : 0),
-                  caloriesTotal: ciclo?.energiaBruciataCal ?? 0,
-                  steps: null,
+            // 2. Hero Nature Landscape & 3 Metric Rings Display (Ridotto del 10-15%)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: NatureScene(
+                mood: _getNatureMoodForRing(_selectedRingIndex, recovery),
+                intensity: (recovery > 0 ? (recovery / 100.0) : 0.70),
+                height: 235,
+                isDark: isDark,
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Center(
+                  child: TriRingDial(
+                    strainScore: strain,
+                    recoveryPct: recovery,
+                    sleepPct: sleep,
+                    liveBpm: viewModel.liveBpm,
+                    calories: ciclo?.energiaBruciataCal ?? 0,
+                    onTapRecovery: () => RecoveryDetailModal.show(
+                      context,
+                      recoveryPct: recovery,
+                      hrvMs: (ciclo?.vfcMs != null && ciclo!.vfcMs! > 0) ? ciclo.vfcMs! : 0.0,
+                      fcrBpm: (ciclo?.fcrBpm != null && ciclo!.fcrBpm! > 0) ? ciclo.fcrBpm! : 0,
+                      respRateRpm: (ciclo?.frequenzaRespiratoriaRpm != null && ciclo!.frequenzaRespiratoriaRpm! > 0)
+                          ? ciclo.frequenzaRespiratoriaRpm!
+                          : 0.0,
+                      spo2Pct: ciclo?.spo2Pct ?? 0.0,
+                      tempDeltaC: ciclo?.tempCutaneaC ?? 0.0,
+                      hrvBaseline: (viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.hrvBaselineMean > 0)
+                          ? viewModel.userProfile.hrvBaselineMean.toDouble()
+                          : null,
+                      fcrBaseline: (viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.hrRestBaseline > 0)
+                          ? viewModel.userProfile.hrRestBaseline
+                          : null,
+                      respRateBaseline: viewModel.userProfile.baselineSampleCount >= 4 ? 13.6 : null,
+                      sleepPerformancePct: ciclo?.andamentoSonnoPct ?? (sleep > 0 ? sleep : null),
+                      sleepPerfBaseline: viewModel.userProfile.baselineSampleCount >= 4 ? 75.0 : null,
+                      historicalCicli: viewModel.cicliList,
+                      provenance: ciclo?.provenance ?? 'REAL',
+                    ),
+                    onTapSleep: () => SleepDetailModal.show(
+                      context,
+                      startTime: sonno?.inizioSonno,
+                      endTime: sonno?.inizioRisveglio,
+                      sleepPct: sleep > 0 ? sleep : (sonno?.sleepPerformancePct ?? 0.0),
+                      durationMin: (sonno?.durataTotMin != null && sonno!.durataTotMin > 0)
+                          ? sonno.durataTotMin.toDouble()
+                          : 0.0,
+                      sleepNeedMin: ciclo?.sonnoRichiestoMin ?? viewModel.currentSleepNeedMinutes,
+                      sleepDebtMin: ciclo?.sonnoArretratoMin ?? viewModel.accumulatedSleepDebtMinutes,
+                      lightSleepMin: sonno?.sonnoLeggeroMin ?? 0.0,
+                      deepSleepMin: sonno?.sonnoProfondoMinDouble ?? 0.0,
+                      remSleepMin: sonno?.sonnoRemMinDouble ?? 0.0,
+                      awakeMin: sonno?.vegliaMin ?? 0.0,
+                      efficiencyPct: sonno?.efficienzaPct ??
+                          ((sonno != null && sonno.tempoALettoMin > 0)
+                              ? ((sonno.durataTotMin / sonno.tempoALettoMin) * 100).clamp(0.0, 100.0)
+                              : 0.0),
+                      consistencyPct: sonno?.regolaritaSonnoPct ?? 0.0,
+                      baselineDurationMin: (viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.sleepBaselineMin > 0)
+                          ? viewModel.userProfile.sleepBaselineMin.toDouble()
+                          : null,
+                      baselinePerformancePct: viewModel.userProfile.baselineSampleCount >= 4 ? 80.0 : null,
+                      historicalSonno: viewModel.sonnoList,
+                      provenance: sonno?.provenance ?? (ciclo?.provenance ?? 'REAL'),
+                    ),
+                    onTapStrain: () => StrainDetailModal.show(
+                      context,
+                      dayStrain: strain,
+                      fcMaxBpm: ciclo?.fcMaxBpm ?? (viewModel.liveBpm > 0 ? viewModel.liveBpm : 0),
+                      fcMediaBpm: ciclo?.fcMediaBpm ?? (viewModel.liveBpm > 0 ? viewModel.liveBpm : 0),
+                      caloriesTotal: ciclo?.energiaBruciataCal ?? 0,
+                      steps: null,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -250,6 +361,14 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
 
+            const SizedBox(height: 12),
+
+            // Sun Insights — L'UNICO Sistema di Insight nella Home (Dati Reali e Ottimismo Fisiologico)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: _buildSunInsightCard(recovery, strain, sleep, ciclo, isDark),
+            ),
+
             const SizedBox(height: 16),
 
             Padding(
@@ -257,11 +376,6 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 3. Card Notifiche/Insight Dismissibili (Swipe a destra per rimuovere)
-                  if (_notifications.isNotEmpty) _buildDismissibleNotificationCard(),
-
-                  const SizedBox(height: 12),
-
                   // 4. Due Card Affiancate con Navigazione Diretta alle Dashboard
                   Row(
                     children: [
@@ -311,15 +425,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               return _buildSquareStatusCard(
                                 title: 'MONITORAGGIO\nDELLA SALUTE',
                                 badgeWidget: Container(
-                                  width: 22,
-                                  height: 22,
+                                  width: 26,
+                                  height: 26,
                                   decoration: BoxDecoration(
-                                    color: sColor,
-                                    borderRadius: BorderRadius.circular(4),
+                                    color: sColor.withValues(alpha: isDark ? 0.22 : 0.14),
+                                    shape: BoxShape.circle,
                                   ),
                                   child: Icon(
                                     iconData,
-                                    color: sColor == WhoopTheme.textMuted ? Colors.white : Colors.black,
+                                    color: sColor,
                                     size: 15,
                                   ),
                                 ),
@@ -351,7 +465,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                               if (stressScore > 0) {
                                 sTitle = stressScore < 1.3 ? 'BASSO' : 'MEDIO';
-                                sColor = stressScore < 1.3 ? WhoopTheme.strainBlue : WhoopTheme.recoveryYellow;
+                                sColor = stressScore < 1.3 ? NatureColors.teal : NatureColors.amberWarm;
                               } else {
                                 sTitle = 'IN ATTESA';
                                 sColor = WhoopTheme.textMuted;
@@ -364,19 +478,19 @@ class _HomeScreenState extends State<HomeScreen> {
                               return _buildSquareStatusCard(
                                 title: 'MONITORAGGIO\nDELLO STRESS',
                                 badgeWidget: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF142434),
-                                    borderRadius: BorderRadius.circular(5),
-                                    border: Border.all(color: WhoopTheme.strainBlue, width: 1.2),
+                                    color: sColor.withValues(alpha: isDark ? 0.20 : 0.12),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: sColor.withValues(alpha: 0.35), width: 0.8),
                                   ),
                                   child: Text(
                                     scoreText,
-                                    style: const TextStyle(
-                                      color: Colors.white,
+                                    style: TextStyle(
+                                      color: sColor,
                                       fontSize: 12,
-                                      fontWeight: FontWeight.w900,
-                                      fontFeatures: [FontFeature.tabularFigures()],
+                                      fontWeight: FontWeight.w800,
+                                      fontFeatures: const [FontFeature.tabularFigures()],
                                     ),
                                   ),
                                 ),
@@ -391,30 +505,44 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
 
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 24),
 
-                  // 5. Sezione "La mia giornata" + Button (+) Bianco Rotondo con + Nero
+                  // 5. Sezione "La mia giornata" + Button (+)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'La mia giornata',
-                        style: TextStyle(
-                          color: WhoopTheme.textPrimary,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
+                      Expanded(
+                        child: Text(
+                          'La mia giornata',
+                          style: TextStyle(
+                            color: isDark ? NatureColors.textDarkPrimary : NatureColors.textLightPrimary,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.3,
+                          ),
                         ),
                       ),
                       GestureDetector(
                         onTap: () => WhoopFabModal.show(context),
                         child: Container(
-                          width: 30,
-                          height: 30,
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: isDark ? NatureColors.darkSurfaceRaised : Colors.white,
                             shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isDark ? NatureColors.darkBorderSubtle : NatureColors.sandBorder,
+                              width: 0.85,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF1E2832).withValues(alpha: isDark ? 0.20 : 0.04),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
-                          child: const Icon(Icons.add, color: Colors.black, size: 20),
+                          child: Icon(Icons.add, color: isDark ? Colors.white : NatureColors.textLightPrimary, size: 18),
                         ),
                       ),
                     ],
@@ -446,10 +574,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   const SizedBox(height: 16),
 
-                  // 7. Sezione "Il mio piano"
-                  _buildMyPlanCard(),
 
-                  const SizedBox(height: 16),
 
                   // 8. Card "CALORIE"
                   _buildCaloriesCard(ciclo?.energiaBruciataCal ?? 0),
@@ -479,91 +604,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   // 11. Sezione "La mia dashboard" PERSONALIZZA 🖊️
                   _buildDashboardSection(ciclo, viewModel),
                 ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Card Notifiche/Insight Dismissibili con Swipe a Destra
-  Widget _buildDismissibleNotificationCard() {
-    final item = _notifications.first;
-
-    return Dismissible(
-      key: Key(item['id']!),
-      direction: DismissDirection.startToEnd,
-      onDismissed: (direction) {
-        setState(() {
-          _notifications.removeAt(0);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Notifica "${item['title']}" archiviata.'),
-            backgroundColor: WhoopTheme.cardSurface,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
-      background: Container(
-        padding: const EdgeInsets.only(left: 20),
-        alignment: Alignment.centerLeft,
-        decoration: BoxDecoration(
-          color: WhoopTheme.recoveryRed.withOpacity(0.3),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: const Row(
-          children: [
-            Icon(Icons.delete_outline, color: Colors.white, size: 24),
-            SizedBox(width: 8),
-            Text('Rimuovi Notifica', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ],
-        ),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: WhoopTheme.officialCardDecoration(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  item['title']!,
-                  style: const TextStyle(
-                    color: WhoopTheme.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF263238),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.check, color: Colors.white, size: 12),
-                      const SizedBox(width: 4),
-                      Text(
-                        item['badge']!,
-                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              item['body']!,
-              style: const TextStyle(
-                color: WhoopTheme.textSecondary,
-                fontSize: 13,
-                height: 1.4,
               ),
             ),
           ],
@@ -645,6 +685,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Banner Prospettive Giornaliere — naviga a CoachScreen
   Widget _buildDailyProspectsBanner(dynamic ciclo) {
     final hasRecovery = ciclo?.punteggioRecuperoPct != null;
+    final isLight = Theme.of(context).brightness == Brightness.light;
 
     return GestureDetector(
       onTap: () => Navigator.push(
@@ -653,37 +694,80 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: const LinearGradient(
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-            colors: [Color(0xFF332B22), Color(0xFF1B2329)],
-          ),
-          border: Border.all(color: const Color(0xFF3D362E)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  hasRecovery ? Icons.wb_sunny_outlined : Icons.schedule,
-                  color: hasRecovery ? const Color(0xFFE5B17B) : WhoopTheme.textMuted,
-                  size: 20,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  hasRecovery ? 'Le tue prospettive giornaliere' : 'In attesa di calcolo del sonno',
-                  style: TextStyle(
-                    color: hasRecovery ? WhoopTheme.textPrimary : WhoopTheme.textMuted,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+        decoration: isLight
+            ? BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: NatureColors.sandBorder, width: 0.85),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x06182228),
+                    blurRadius: 10,
+                    offset: Offset(0, 2),
                   ),
-                ),
-              ],
+                ],
+              )
+            : BoxDecoration(
+                color: NatureColors.darkCard,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: WhoopTheme.cardBorder, width: 0.85),
+              ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: hasRecovery
+                    ? (isLight ? NatureColors.amberBackground : const Color(0xFF332B22))
+                    : (isLight ? NatureColors.creamLight : const Color(0xFF1B2329)),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                hasRecovery ? Icons.wb_sunny_outlined : Icons.schedule,
+                color: hasRecovery
+                    ? (isLight ? NatureColors.amberWarm : const Color(0xFFE5B17B))
+                    : WhoopTheme.textMuted,
+                size: 18,
+              ),
             ),
-            const Icon(Icons.chevron_right, color: Color(0xFFC7B39E), size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    hasRecovery ? 'PROSPETTIVE GIORNALIERE' : 'IN ATTESA DI CALCOLO',
+                    style: TextStyle(
+                      color: hasRecovery
+                          ? (isLight ? NatureColors.amberWarm : const Color(0xFFE5B17B))
+                          : WhoopTheme.textMuted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.9,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    hasRecovery ? 'Guida e previsioni per oggi' : 'In attesa di calcolo del sonno',
+                    style: const TextStyle(
+                      color: WhoopTheme.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.chevron_right,
+              color: isLight ? NatureColors.textLightMuted : const Color(0xFFC7B39E),
+              size: 20,
+            ),
           ],
         ),
       ),
@@ -692,22 +776,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Card Calorie Bruciate e Target Giornaliero (Stile Ufficiale Whoop 5.0)
   Widget _buildCaloriesCard(int calories, {int? targetCal}) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: WhoopTheme.officialCardDecoration(),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.local_fire_department_outlined, color: WhoopTheme.textSecondary, size: 20),
-              SizedBox(width: 8),
-              Text(
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: isLight ? NatureColors.terracottaBackground : const Color(0xFF261D1A),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.local_fire_department_outlined,
+                  color: isLight ? NatureColors.terracotta : WhoopTheme.textSecondary,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Text(
                 'CALORIE',
                 style: TextStyle(
                   color: WhoopTheme.textPrimary,
                   fontSize: 12,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   letterSpacing: 1.0,
                 ),
               ),
@@ -723,21 +820,21 @@ class _HomeScreenState extends State<HomeScreen> {
                     calories > 0 ? '$calories' : '--',
                     style: const TextStyle(
                       color: WhoopTheme.textPrimary,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
                       fontFeatures: [FontFeature.tabularFigures()],
                     ),
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 2),
                   const Icon(Icons.arrow_drop_down, color: WhoopTheme.textSecondary, size: 18),
                 ],
               ),
               Text(
-                (targetCal != null && targetCal > 0) ? '$targetCal' : '--',
+                (targetCal != null && targetCal > 0) ? 'Target $targetCal' : 'Target --',
                 style: const TextStyle(
                   color: WhoopTheme.textMuted,
                   fontSize: 11,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -750,6 +847,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Card Attività di Oggi (Stile Ufficiale Whoop 5.0)
   Widget _buildTodayActivitiesCard(BuildContext context, dynamic ciclo, double sleep, WhoopViewModel viewModel) {
     final allenamenti = viewModel.allenamentiList;
+    final isLight = Theme.of(context).brightness == Brightness.light;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -763,9 +861,9 @@ class _HomeScreenState extends State<HomeScreen> {
               const Text(
                 'ATTIVITÀ DI OGGI',
                 style: TextStyle(
-                  color: WhoopTheme.textPrimary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
+                  color: WhoopTheme.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
                   letterSpacing: 1.0,
                 ),
               ),
@@ -801,10 +899,12 @@ class _HomeScreenState extends State<HomeScreen> {
               return GestureDetector(
                 onTap: () => SleepDetailModal.show(
                   context,
+                  startTime: sonno?.inizioSonno,
+                  endTime: sonno?.inizioRisveglio,
                   sleepPct: sleepPct,
                   durationMin: sleepMin,
                   sleepNeedMin: ciclo?.sonnoRichiestoMin ?? viewModel.currentSleepNeedMinutes,
-                  sleepDebtMin: 0.0,
+                  sleepDebtMin: ciclo?.sonnoArretratoMin ?? viewModel.accumulatedSleepDebtMinutes,
                   lightSleepMin: sonno?.sonnoLeggeroMin ?? 0.0,
                   deepSleepMin: sonno?.sonnoProfondoMinDouble ?? 0.0,
                   remSleepMin: sonno?.sonnoRemMinDouble ?? 0.0,
@@ -824,9 +924,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF161E24),
+                    color: isLight ? NatureColors.creamLight : const Color(0xFF161E24),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF26333D)),
+                    border: Border.all(
+                      color: isLight ? NatureColors.sandBorderSubtle : const Color(0xFF26333D),
+                      width: 0.85,
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -834,46 +937,51 @@ class _HomeScreenState extends State<HomeScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF5D849E),
+                          color: isLight ? NatureColors.tealBackground : const Color(0xFF5D849E),
                           borderRadius: BorderRadius.circular(8),
+                          border: isLight ? Border.all(color: NatureColors.teal.withOpacity(0.3), width: 0.8) : null,
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.nightlight_round, color: Colors.white, size: 14),
+                            Icon(
+                              Icons.nightlight_round,
+                              color: isLight ? NatureColors.tealDark : Colors.white,
+                              size: 14,
+                            ),
                             const SizedBox(width: 5),
                             Text(
                               sleepFormattedText,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w900,
-                                fontFeatures: [FontFeature.tabularFigures()],
+                              style: TextStyle(
+                                color: isLight ? NatureColors.tealDark : Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                fontFeatures: const [FontFeature.tabularFigures()],
                               ),
                             ),
                           ],
                         ),
                       ),
                       const SizedBox(width: 14),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            'SONNO',
-                            style: TextStyle(
-                              color: WhoopTheme.textPrimary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.0,
+                      Expanded(
+                        child: Row(
+                          children: [
+                            const Text(
+                              'SONNO',
+                              style: TextStyle(
+                                color: WhoopTheme.textPrimary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.8,
+                              ),
                             ),
-                          ),
-                          if (sonno != null && sonno.provenance.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            ProvenanceBadge(provenance: sonno.provenance),
+                            if (sonno != null && sonno.provenance.isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              ProvenanceBadge(provenance: sonno.provenance),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                      const Spacer(),
                       // Orari Inizio e Fine (es. 0:52 | 10:32)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -884,14 +992,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             style: const TextStyle(
                               color: WhoopTheme.textSecondary,
                               fontSize: 11,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w600,
                               fontFeatures: [FontFeature.tabularFigures()],
                             ),
                           ),
                           Container(
                             width: 1,
                             height: 6,
-                            color: WhoopTheme.cardBorder,
+                            color: isLight ? NatureColors.sandBorder : WhoopTheme.cardBorder,
                             margin: const EdgeInsets.symmetric(vertical: 2),
                           ),
                           Text(
@@ -899,7 +1007,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             style: const TextStyle(
                               color: WhoopTheme.textSecondary,
                               fontSize: 11,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w600,
                               fontFeatures: [FontFeature.tabularFigures()],
                             ),
                           ),
@@ -926,28 +1034,41 @@ class _HomeScreenState extends State<HomeScreen> {
                   fcMaxBpm: a.hrMax ?? a.fcMaxBpm ?? 0,
                   fcMediaBpm: a.hrMedia ?? a.fcMediaBpm ?? 0,
                   caloriesBurned: a.calorie ?? a.energiaBruciataCal ?? 0,
+                  zoneZ1Pct: a.zoneZ1Pct,
+                  zoneZ2Pct: a.zoneZ2Pct,
+                  zoneZ3Pct: a.zoneZ3Pct,
+                  zoneZ4Pct: a.zoneZ4Pct,
+                  zoneZ5Pct: a.zoneZ5Pct,
+                  durationMin: a.durataMin,
                 ),
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF161E24),
+                    color: isLight ? NatureColors.creamLight : const Color(0xFF161E24),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: WhoopTheme.strainBlue.withOpacity(0.35)),
+                    border: Border.all(
+                      color: isLight ? NatureColors.sandBorderSubtle : WhoopTheme.strainBlue.withOpacity(0.35),
+                      width: 0.85,
+                    ),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.fitness_center, color: WhoopTheme.strainBlue, size: 18),
+                          Icon(
+                            Icons.fitness_center,
+                            color: isLight ? NatureColors.amberWarm : WhoopTheme.strainBlue,
+                            size: 18,
+                          ),
                           const SizedBox(width: 10),
                           Text(
                             a.nomeAttivita.toUpperCase(),
                             style: const TextStyle(
                               color: WhoopTheme.textPrimary,
                               fontSize: 12,
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w800,
                               letterSpacing: 0.8,
                             ),
                           ),
@@ -960,11 +1081,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       Text(
                         'Sforzo ${strainVal.toStringAsFixed(1)}',
-                        style: const TextStyle(
-                          color: WhoopTheme.strainBlue,
+                        style: TextStyle(
+                          color: isLight ? NatureColors.amberWarm : WhoopTheme.strainBlue,
                           fontSize: 13,
-                          fontWeight: FontWeight.w900,
-                          fontFeatures: [FontFeature.tabularFigures()],
+                          fontWeight: FontWeight.w800,
+                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
                     ],
@@ -976,35 +1097,53 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const SizedBox(height: 14),
 
-          // Tasti Azione: + AGGIUNGI ATTIVITÀ | ⏱ INIZIA ATTIVITÀ (Pulsanti Pieni Scuri Whoop 5.0)
+          // Tasti Azione: + AGGIUNGI ATTIVITÀ | ⏱ INIZIA ATTIVITÀ
           Row(
             children: [
               Expanded(
                 child: InkWell(
                   onTap: () => WhoopFabModal.show(context),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF222B32),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFF2E3842)),
+                      color: isLight ? Colors.white : const Color(0xFF222B32),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isLight ? NatureColors.sandBorder : const Color(0xFF2E3842),
+                        width: 0.85,
+                      ),
+                      boxShadow: isLight
+                          ? const [
+                              BoxShadow(
+                                color: Color(0x06182228),
+                                blurRadius: 4,
+                                offset: Offset(0, 1),
+                              ),
+                            ]
+                          : null,
                     ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.add, size: 14, color: WhoopTheme.textPrimary),
-                        SizedBox(width: 6),
-                        Text(
-                          'AGGIUNGI ATTIVITÀ',
-                          style: TextStyle(
-                            color: WhoopTheme.textPrimary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.8,
-                          ),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 4),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.add, size: 14, color: WhoopTheme.textPrimary),
+                            SizedBox(width: 6),
+                            Text(
+                              'AGGIUNGI ATTIVITÀ',
+                              style: TextStyle(
+                                color: WhoopTheme.textPrimary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -1013,29 +1152,47 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: InkWell(
                   onTap: () => LiveActivityTrackerScreen.start(context),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF222B32),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFF2E3842)),
+                      color: isLight ? Colors.white : const Color(0xFF222B32),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isLight ? NatureColors.sandBorder : const Color(0xFF2E3842),
+                        width: 0.85,
+                      ),
+                      boxShadow: isLight
+                          ? const [
+                              BoxShadow(
+                                color: Color(0x06182228),
+                                blurRadius: 4,
+                                offset: Offset(0, 1),
+                              ),
+                            ]
+                          : null,
                     ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.timer_outlined, size: 14, color: WhoopTheme.textPrimary),
-                        SizedBox(width: 6),
-                        Text(
-                          'INIZIA ATTIVITÀ',
-                          style: TextStyle(
-                            color: WhoopTheme.textPrimary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.8,
-                          ),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 4),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.timer_outlined, size: 14, color: WhoopTheme.textPrimary),
+                            SizedBox(width: 6),
+                            Text(
+                              'INIZIA ATTIVITÀ',
+                              style: TextStyle(
+                                color: WhoopTheme.textPrimary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -1049,7 +1206,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Sezione Diario — naviga a JournalScreen
   Widget _buildJournalSection() {
-    final days = ['GIO', 'VEN', 'SAB', 'SOLE', 'LUN', 'MAR', 'MER'];
+    final viewModel = Provider.of<WhoopViewModel>(context);
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final now = DateTime.now();
+    final todayIso = now.toIso8601String().substring(0, 10);
+
+    final italianDayNames = ['LUN', 'MAR', 'MER', 'GIO', 'VEN', 'SAB', 'DOM'];
+    final past7Days = List.generate(7, (i) {
+      final d = now.subtract(Duration(days: 6 - i));
+      final iso = d.toIso8601String().substring(0, 10);
+      final weekdayName = italianDayNames[(d.weekday - 1) % 7];
+      final isToday = iso == todayIso;
+      final isCompleted = viewModel.completedDiaryDates.contains(iso);
+      return (name: weekdayName, iso: iso, isToday: isToday, isCompleted: isCompleted);
+    });
 
     return GestureDetector(
       onTap: () => Navigator.push(
@@ -1068,9 +1238,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   'IL MIO DIARIO',
                   style: TextStyle(
-                    color: WhoopTheme.textPrimary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
+                    color: WhoopTheme.textSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
                     letterSpacing: 1.0,
                   ),
                 ),
@@ -1079,19 +1249,21 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 14),
 
-            // Giorni della settimana
+            // Giorni della settimana reali agganciati al database
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: days.map((day) {
-                final isToday = day == 'MER';
+              children: past7Days.map((day) {
+                final isToday = day.isToday;
+                final isCompleted = day.isCompleted;
+
                 return Column(
                   children: [
                     Text(
-                      day,
+                      day.name,
                       style: TextStyle(
                         color: isToday ? WhoopTheme.textPrimary : WhoopTheme.textMuted,
                         fontSize: 10,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: isToday ? FontWeight.w800 : FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -1100,11 +1272,36 @@ class _HomeScreenState extends State<HomeScreen> {
                       height: 24,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
+                        color: isCompleted
+                            ? (isLight ? NatureColors.sage : WhoopTheme.recoveryGreen)
+                            : (isToday
+                                ? (isLight ? NatureColors.creamLight : NatureColors.darkCard)
+                                : Colors.transparent),
                         border: Border.all(
-                          color: isToday ? WhoopTheme.textPrimary : WhoopTheme.cardBorder,
-                          width: isToday ? 2 : 1,
+                          color: isCompleted
+                              ? (isLight ? NatureColors.sageDark : WhoopTheme.recoveryGreen)
+                              : (isToday
+                                  ? WhoopTheme.textPrimary
+                                  : (isLight ? NatureColors.sandBorder : WhoopTheme.cardBorder)),
+                          width: isToday || isCompleted ? 1.5 : 1.0,
                         ),
                       ),
+                      child: isCompleted
+                          ? const Center(
+                              child: Icon(Icons.check, size: 14, color: Colors.white),
+                            )
+                          : (isToday
+                              ? Center(
+                                  child: Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: WhoopTheme.textPrimary,
+                                    ),
+                                  ),
+                                )
+                              : null),
                     ),
                   ],
                 );
@@ -1119,89 +1316,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 MaterialPageRoute(builder: (_) => const JournalScreen()),
               ),
               icon: const Icon(Icons.lightbulb_outline, size: 16, color: WhoopTheme.textPrimary),
-              label: const Text('APPROFONDIMENTI SUL COMPORTAMENTO', style: TextStyle(color: WhoopTheme.textPrimary, fontSize: 10, fontWeight: FontWeight.bold)),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: WhoopTheme.cardBorder),
-                minimumSize: const Size(double.infinity, 44),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Card Piano Personale — naviga a ProfilePlanScreen tab MyPlan
-  Widget _buildMyPlanCard() {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (_) => const ProfilePlanScreen(initialTab: 1)),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: WhoopTheme.officialCardDecoration(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Il mio piano',
-                  style: TextStyle(
-                    color: WhoopTheme.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+              label: const Text(
+                'APPROFONDIMENTI SUL COMPORTAMENTO',
+                style: TextStyle(
+                  color: WhoopTheme.textPrimary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
                 ),
-                const Icon(Icons.chevron_right, color: WhoopTheme.textSecondary, size: 20),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF101518),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: WhoopTheme.cardBorder),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'COMPLETATO',
-                        style: TextStyle(color: WhoopTheme.textPrimary, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.0),
-                      ),
-                      Icon(Icons.keyboard_arrow_down, color: WhoopTheme.textSecondary, size: 20),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    '5 giorni rimanenti',
-                    style: TextStyle(color: WhoopTheme.textSecondary, fontSize: 11),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    '14% PIANO PERSONALIZZATO',
-                    style: TextStyle(color: WhoopTheme.textPrimary, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.0),
-                  ),
-                  const SizedBox(height: 6),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: const LinearProgressIndicator(
-                      value: 0.14,
-                      minHeight: 6,
-                      backgroundColor: WhoopTheme.cardBorder,
-                      valueColor: AlwaysStoppedAnimation<Color>(WhoopTheme.recoveryGreen),
-                    ),
-                  ),
-                ],
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(
+                  color: isLight ? NatureColors.sandBorder : WhoopTheme.cardBorder,
+                  width: 0.85,
+                ),
+                minimumSize: const Size(double.infinity, 44),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ],
@@ -1210,7 +1340,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Sezione Dashboard Personalizzabile Metriche
   /// Sezione Dashboard Personalizzabile Metriche
   Widget _buildDashboardSection(dynamic ciclo, WhoopViewModel viewModel) {
     final double vfcMs = (ciclo?.vfcMs ?? 0.0).toDouble();
@@ -1252,9 +1381,9 @@ class _HomeScreenState extends State<HomeScreen> {
         'key': 'steps',
         'title': 'PASSI GIORNALIERI',
         'metricName': 'Passi Giornalieri',
-        'val': hasData && sforzoGiornaliero > 0 ? '${(sforzoGiornaliero * 650).round()}' : '--',
-        'base': 'Target 10.000',
-        'arrow': hasData && sforzoGiornaliero > 0 ? '▲' : '•',
+        'val': '--',
+        'base': 'Nessun pedometro hardware',
+        'arrow': '•',
         'color': WhoopTheme.textSecondary,
       },
       {
@@ -1385,9 +1514,11 @@ class _HomeScreenState extends State<HomeScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'La mia dashboard',
-              style: TextStyle(color: WhoopTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
+            Expanded(
+              child: Text(
+                'La mia dashboard',
+                style: WhoopTheme.cardTitleStyle(fontSize: 16, color: WhoopTheme.textPrimary),
+              ),
             ),
             TextButton.icon(
               onPressed: () => Navigator.push(
@@ -1396,7 +1527,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     builder: (_) => const CustomizableDashboardScreen()),
               ),
               icon: const Icon(Icons.edit_outlined, size: 14, color: WhoopTheme.textPrimary),
-              label: const Text('PERSONALIZZA', style: TextStyle(color: WhoopTheme.textPrimary, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.0)),
+              label: const Text('PERSONALIZZA', style: TextStyle(color: WhoopTheme.textPrimary, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
             ),
           ],
         ),
@@ -1420,9 +1551,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Text(
                         m['title'] as String,
                         style: const TextStyle(
-                          color: WhoopTheme.textPrimary,
+                          color: WhoopTheme.textSecondary,
                           fontSize: 11,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           letterSpacing: 0.8,
                         ),
                       ),
@@ -1436,8 +1567,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               m['val'] as String,
                               style: const TextStyle(
                                 color: WhoopTheme.textPrimary,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                fontFeatures: [FontFeature.tabularFigures()],
                               ),
                             ),
                             const SizedBox(width: 4),
@@ -1445,7 +1577,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               m['arrow'] as String,
                               style: TextStyle(
                                 color: m['color'] as Color,
-                                fontSize: 14,
+                                fontSize: 13,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -1456,6 +1588,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: const TextStyle(
                             color: WhoopTheme.textMuted,
                             fontSize: 11,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],

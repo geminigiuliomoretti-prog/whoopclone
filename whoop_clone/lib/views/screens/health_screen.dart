@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 import '../../data/biometrics/health_vitals_engine.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 import '../widgets/live_heart_rate_card.dart';
@@ -46,18 +47,16 @@ class _HealthScreenState extends State<HealthScreen> {
     final vitals = viewModel.vitalEvaluations;
 
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: WhoopTheme.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
-        title: const Text(
+        title: Text(
           'SALUTE',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.2,
-          ),
+          style: WhoopTheme.cardTitleStyle(
+            fontSize: 14,
+            color: WhoopTheme.textPrimary,
+          ).copyWith(fontWeight: FontWeight.w800),
         ),
         centerTitle: true,
       ),
@@ -97,6 +96,7 @@ class _HealthScreenState extends State<HealthScreen> {
     final inRangeCount = vitals.where((v) => v.status == VitalStatus.inRange).length;
     final calibrationCount = vitals.where((v) => v.status == VitalStatus.calibration).length;
     final noDataCount = vitals.where((v) => v.status == VitalStatus.noData).length;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     String pillText;
     Color pillColor;
@@ -133,7 +133,7 @@ class _HealthScreenState extends State<HealthScreen> {
       onTap: () => HealthVitalsDetailScreen.show(context),
       child: Container(
         padding: const EdgeInsets.all(18.0),
-        decoration: WhoopTheme.officialCardDecoration(),
+        decoration: WhoopTheme.officialCardDecoration(isDark: isDark),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -143,7 +143,7 @@ class _HealthScreenState extends State<HealthScreen> {
                 Text(
                   'MONITORAGGIO DELLA SALUTE',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: WhoopTheme.textPrimary,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.0,
@@ -158,29 +158,31 @@ class _HealthScreenState extends State<HealthScreen> {
             IntrinsicHeight(
               child: Row(
                 children: [
-                  Expanded(child: _buildVitalIconColumn('FR', Icons.air, getStatus('resp_rate', 0))),
-                  _buildVerticalDivider(),
-                  Expanded(child: _buildVitalIconColumn('SPO₂', Icons.water_drop_outlined, getStatus('spo2', 1))),
-                  _buildVerticalDivider(),
-                  Expanded(child: _buildVitalIconColumn('FCR', Icons.favorite_border, getStatus('fcr', 2))),
-                  _buildVerticalDivider(),
-                  Expanded(child: _buildVitalIconColumn('VFC', Icons.show_chart, getStatus('vfc', 3))),
-                  _buildVerticalDivider(),
-                  Expanded(child: _buildVitalIconColumn('TEMP', Icons.thermostat, getStatus('temp', 4))),
+                  Expanded(child: _buildVitalIconColumn('FR', Icons.air, getStatus('resp_rate', 0), isDark)),
+                  _buildVerticalDivider(isDark),
+                  Expanded(child: _buildVitalIconColumn('SPO₂', Icons.water_drop_outlined, getStatus('spo2', 1), isDark)),
+                  _buildVerticalDivider(isDark),
+                  Expanded(child: _buildVitalIconColumn('FCR', Icons.favorite_border, getStatus('fcr', 2), isDark)),
+                  _buildVerticalDivider(isDark),
+                  Expanded(child: _buildVitalIconColumn('VFC', Icons.show_chart, getStatus('vfc', 3), isDark)),
+                  _buildVerticalDivider(isDark),
+                  Expanded(child: _buildVitalIconColumn('TEMP', Icons.thermostat, getStatus('temp', 4), isDark)),
                 ],
               ),
             ),
 
             const SizedBox(height: 20),
 
-            // Pill Contenitore: Sfondo nero opaco, spunta verde quadrata e testo bianco
+            // Pill Contenitore: Adattivo per tema, spunta verde quadrata e testo leggibile
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
               decoration: BoxDecoration(
-                color: const Color(0xFF141D22),
+                color: isDark ? const Color(0xFF141D22) : NatureColors.creamLight,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFF222D35)),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF222D35) : NatureColors.sandBorderSubtle,
+                ),
               ),
               child: Row(
                 children: [
@@ -191,14 +193,14 @@ class _HealthScreenState extends State<HealthScreen> {
                       color: pillColor,
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: Icon(pillIcon, color: Colors.black, size: 14),
+                    child: Icon(pillIcon, color: Colors.white, size: 14),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       pillText,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: isDark ? Colors.white : NatureColors.textPrimary,
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 0.2,
@@ -214,33 +216,38 @@ class _HealthScreenState extends State<HealthScreen> {
     );
   }
 
-  Widget _buildVerticalDivider() {
+  Widget _buildVerticalDivider(bool isDark) {
     return Container(
       width: 1,
       margin: const EdgeInsets.symmetric(vertical: 4),
-      color: const Color(0xFF202A33),
+      color: isDark ? const Color(0xFF202A33) : NatureColors.sandBorderSubtle,
     );
   }
 
-  Widget _buildVitalIconColumn(String label, IconData icon, VitalStatus status) {
-    Color statusColor;
+  Widget _buildVitalIconColumn(String label, IconData icon, VitalStatus status, bool isDark) {
+    Color bgBadge;
+    Color fgBadge;
     IconData statusIcon;
 
     switch (status) {
       case VitalStatus.inRange:
-        statusColor = WhoopTheme.recoveryGreen;
+        bgBadge = !isDark ? NatureColors.sageBackground : WhoopTheme.recoveryGreen;
+        fgBadge = !isDark ? NatureColors.sageDark : Colors.black;
         statusIcon = Icons.check;
         break;
       case VitalStatus.outOfRange:
-        statusColor = WhoopTheme.recoveryRed;
+        bgBadge = !isDark ? NatureColors.terracottaBackground : WhoopTheme.recoveryRed;
+        fgBadge = !isDark ? NatureColors.terracotta : Colors.white;
         statusIcon = Icons.priority_high;
         break;
       case VitalStatus.calibration:
-        statusColor = WhoopTheme.strainBlue;
+        bgBadge = !isDark ? NatureColors.tealBackground : WhoopTheme.strainBlue;
+        fgBadge = !isDark ? NatureColors.tealDark : Colors.black;
         statusIcon = Icons.tune;
         break;
       case VitalStatus.noData:
-        statusColor = WhoopTheme.textMuted;
+        bgBadge = !isDark ? NatureColors.creamLight : NatureColors.darkSurfaceHighlight;
+        fgBadge = !isDark ? NatureColors.textLightMuted : WhoopTheme.textMuted;
         statusIcon = Icons.remove;
         break;
     }
@@ -248,14 +255,14 @@ class _HealthScreenState extends State<HealthScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: WhoopTheme.textSecondary, size: 22),
+        Icon(icon, color: WhoopTheme.textSecondary, size: 20),
         const SizedBox(height: 8),
         Text(
           label,
           style: const TextStyle(
-            color: Colors.white,
+            color: WhoopTheme.textPrimary,
             fontSize: 11,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w700,
             letterSpacing: 0.5,
           ),
         ),
@@ -264,10 +271,11 @@ class _HealthScreenState extends State<HealthScreen> {
           width: 22,
           height: 22,
           decoration: BoxDecoration(
-            color: statusColor,
-            borderRadius: BorderRadius.circular(4),
+            color: bgBadge,
+            borderRadius: BorderRadius.circular(6),
+            border: !isDark ? Border.all(color: fgBadge.withOpacity(0.25), width: 0.8) : null,
           ),
-          child: Icon(statusIcon, color: Colors.black, size: 14),
+          child: Icon(statusIcon, color: fgBadge, size: 13),
         ),
       ],
     );
@@ -275,6 +283,7 @@ class _HealthScreenState extends State<HealthScreen> {
 
   // Card 3: Monitoraggio dello Stress
   Widget _buildStressSummaryCard(BuildContext context, WhoopViewModel viewModel) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final stressScore = viewModel.liveStressIndex > 0
         ? viewModel.liveStressIndex
         : (viewModel.ultimoCiclo?.vfcMs != null ? (viewModel.ultimoCiclo!.vfcMs! < 50 ? 1.8 : 0.8) : 0.8);
@@ -285,7 +294,7 @@ class _HealthScreenState extends State<HealthScreen> {
       onTap: () => StressMonitorScreen.show(context, stressScore: stressScore),
       child: Container(
         padding: const EdgeInsets.all(18.0),
-        decoration: WhoopTheme.officialCardDecoration(),
+        decoration: WhoopTheme.officialCardDecoration(isDark: isDark),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -295,7 +304,7 @@ class _HealthScreenState extends State<HealthScreen> {
                 Text(
                   'MONITORAGGIO DELLO STRESS',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: WhoopTheme.textPrimary,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.0,
@@ -325,20 +334,20 @@ class _HealthScreenState extends State<HealthScreen> {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
+                      Text(
                         '0:00 h',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: WhoopTheme.textPrimary,
                           fontSize: 28,
                           fontWeight: FontWeight.w900,
-                          fontFeatures: [FontFeature.tabularFigures()],
+                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
                       const SizedBox(height: 10),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF132B25),
+                          color: isDark ? const Color(0xFF132B25) : NatureColors.sageLight.withOpacity(0.30),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Row(
@@ -352,8 +361,8 @@ class _HealthScreenState extends State<HealthScreen> {
                             const SizedBox(width: 4),
                             Text(
                               'rispetto a un tipico $weekdayName',
-                              style: const TextStyle(
-                                color: WhoopTheme.recoveryGreen,
+                              style: TextStyle(
+                                color: isDark ? WhoopTheme.recoveryGreen : NatureColors.sageDark,
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -385,75 +394,83 @@ class _HealthScreenState extends State<HealthScreen> {
 
   // Card 4: Healthspan
   Widget _buildHealthspanCard() {
-    return Container(
-      padding: const EdgeInsets.all(18.0),
-      decoration: WhoopTheme.officialCardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Builder(
+      builder: (context) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return Container(
+          padding: const EdgeInsets.all(18.0),
+          decoration: WhoopTheme.officialCardDecoration(isDark: isDark),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'HEALTHSPAN',
+                    style: TextStyle(
+                      color: WhoopTheme.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF2C3945) : NatureColors.sandBorder,
+                        width: 1.2,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.lock_outline,
+                      color: WhoopTheme.textSecondary,
+                      size: 15,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
               const Text(
-                'HEALTHSPAN',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.0,
-                ),
-              ),
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFF2C3945), width: 1.2),
-                ),
-                child: const Icon(
-                  Icons.lock_outline,
-                  color: WhoopTheme.textSecondary,
-                  size: 15,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Per sbloccare devi avere almeno 18 anni.',
-            style: TextStyle(
-              color: WhoopTheme.textMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 18),
-
-          Row(
-            children: const [
-              Text(
-                'LIFE',
-                style: TextStyle(
-                  color: WhoopTheme.textSecondary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.1,
-                ),
-              ),
-              SizedBox(width: 20),
-              Text(
-                'PEAK',
+                'Per sbloccare devi avere almeno 18 anni.',
                 style: TextStyle(
                   color: WhoopTheme.textMuted,
                   fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.1,
+                  fontWeight: FontWeight.w500,
                 ),
+              ),
+              const SizedBox(height: 18),
+
+              Row(
+                children: const [
+                  Text(
+                    'LIFE',
+                    style: TextStyle(
+                      color: WhoopTheme.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  SizedBox(width: 20),
+                  Text(
+                    'PEAK',
+                    style: TextStyle(
+                      color: WhoopTheme.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

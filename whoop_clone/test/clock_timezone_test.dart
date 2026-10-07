@@ -10,6 +10,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
+  DatabaseHelper.isTestMode = true;
 
   group('TIM-01: Clock and Timezone Tests', () {
     tearDown(() {

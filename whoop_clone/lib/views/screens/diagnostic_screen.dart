@@ -126,19 +126,20 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: isDark ? WhoopTheme.backgroundDark : WhoopTheme.background,
       appBar: AppBar(
-        backgroundColor: WhoopTheme.background,
+        backgroundColor: isDark ? WhoopTheme.backgroundDark : WhoopTheme.background,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 18),
+          icon: Icon(Icons.arrow_back_ios_new, color: isDark ? Colors.white : WhoopTheme.textPrimary, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'DIAGNOSTICA BLE & RAW CAPTURE',
           style: TextStyle(
-            color: Colors.white,
+            color: isDark ? Colors.white : WhoopTheme.textPrimary,
             fontSize: 13,
             fontWeight: FontWeight.w900,
             letterSpacing: 1.2,
@@ -147,7 +148,7 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white70),
+            icon: Icon(Icons.refresh, color: isDark ? Colors.white70 : WhoopTheme.textSecondary),
             tooltip: 'Aggiorna metriche',
             onPressed: () {
               setState(() {
@@ -267,53 +268,146 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
         ? WhoopTheme.recoveryGreen
         : (isConnected ? WhoopTheme.strainBlue : WhoopTheme.textMuted);
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            isStreaming
-                ? Icons.sensors
-                : (isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled),
-            color: color,
-            size: 26,
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: color.withValues(alpha: 0.4)),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          child: Row(
+            children: [
+              Icon(
+                isStreaming
+                    ? Icons.sensors
+                    : (isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled),
+                color: color,
+                size: 26,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'STATO BLE: ${lastState.name.toUpperCase()}',
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    Text(
+                      _snapshot.stateTimeline.isNotEmpty &&
+                              _snapshot.stateTimeline.first.message != null
+                          ? _snapshot.stateTimeline.first.message!
+                          : (isStreaming ? 'Streaming dati 1Hz attivo' : 'In attesa pacchetti...'),
+                      style: const TextStyle(color: Colors.white70, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              if (_snapshot.lastPacketTime != null)
                 Text(
-                  'STATO BLE: ${lastState.name.toUpperCase()}',
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 13,
-                    letterSpacing: 0.8,
+                  DateFormat('HH:mm:ss').format(_snapshot.lastPacketTime!),
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            if (isConnected) ...[
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    await BleConnectionManager().disconnectDevice();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Dispositivo WHOOP disconnesso.'),
+                          backgroundColor: WhoopTheme.recoveryRed,
+                        ),
+                      );
+                      setState(() {
+                        _snapshot = BleDiagnosticService.instance.currentSnapshot;
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.bluetooth_disabled, color: Colors.white, size: 16),
+                  label: const Text(
+                    'DISCONNETTI',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: WhoopTheme.recoveryRed,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
-                Text(
-                  _snapshot.stateTimeline.isNotEmpty &&
-                          _snapshot.stateTimeline.first.message != null
-                      ? _snapshot.stateTimeline.first.message!
-                      : (isStreaming ? 'Streaming dati 1Hz attivo' : 'In attesa pacchetti...'),
-                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await BleConnectionManager().forgetDevice();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Accoppiamento rimosso. Torna a discovery.'),
+                        ),
+                      );
+                      setState(() {
+                        _snapshot = BleDiagnosticService.instance.currentSnapshot;
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.link_off, color: WhoopTheme.textMuted, size: 16),
+                  label: const Text(
+                    'DIMENTICA',
+                    style: TextStyle(color: WhoopTheme.textMuted, fontWeight: FontWeight.bold, fontSize: 11),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: WhoopTheme.cardBorder),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
                 ),
-              ],
-            ),
-          ),
-          if (_snapshot.lastPacketTime != null)
-            Text(
-              DateFormat('HH:mm:ss').format(_snapshot.lastPacketTime!),
-              style: const TextStyle(color: Colors.white54, fontSize: 11),
-            ),
-        ],
-      ),
+              ),
+            ] else ...[
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    await BleConnectionManager().startScanAndConnect();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Avviata ricerca e connessione cinturino WHOOP...'),
+                          backgroundColor: WhoopTheme.strainBlue,
+                        ),
+                      );
+                      setState(() {
+                        _snapshot = BleDiagnosticService.instance.currentSnapshot;
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.bluetooth_searching, color: Colors.black, size: 16),
+                  label: const Text(
+                    'CERCA & CONNETTI WHOOP',
+                    style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 12),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: WhoopTheme.strainBlue,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
     );
   }
 

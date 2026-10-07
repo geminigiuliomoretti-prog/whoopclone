@@ -30,7 +30,8 @@ class WhoopApp extends StatelessWidget {
       child: MaterialApp(
         title: 'WHOOP 5.0 Clone',
         debugShowCheckedModeBanner: false,
-        theme: WhoopTheme.darkTheme,
+        theme: WhoopTheme.lightTheme,
+        darkTheme: WhoopTheme.darkTheme,
         home: const MainNavigationScreen(),
       ),
     );

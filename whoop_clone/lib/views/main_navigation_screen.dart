@@ -1,13 +1,14 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../core/constants/whoop_theme.dart';
+import '../core/theme/nature_theme.dart';
 import 'home_screen.dart';
 import 'screens/health_screen.dart';
-import 'screens/community_screen.dart';
 import 'screens/more_menu_screen.dart';
 import 'screens/coach_screen.dart';
+import 'widgets/nature/coach_emblem.dart';
 
 /// Navigation Screen Principale WHOOP 5.0
-/// Bottom Nav Pill: Home | Salute | Community | Altro | WHOOP Coach AI
+/// Floating Frosted Glass Capsule Bar: Home | Salute | Altro | Coach AI
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
@@ -21,15 +22,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final List<Widget> _screens = const [
     HomeScreen(),        // 0 — Dashboard Principale
     HealthScreen(),      // 1 — Monitoraggio Salute & Parametri Vitali
-    CommunityScreen(),   // 2 — Community & Classifiche Team
-    MoreMenuScreen(),    // 3 — Hub Menu Completo
-    CoachScreen(),       // 4 — Whoop Coach AI (Pulsante Orb)
+    MoreMenuScreen(),    // 2 — Hub Menu Completo
+    CoachScreen(),       // 3 — Coach AI (Pulsante Orb)
   ];
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: isDark ? NatureColors.darkCanvas : NatureColors.offWhite,
 
       // IndexedStack preserva lo stato di tutte le schermate
       body: IndexedStack(
@@ -37,116 +39,118 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         children: _screens,
       ),
 
-      // Floating Navigation Bar (Identica al 100% agli screenshot ufficiali di reference_UI)
+      // Floating Frosted Glass Navigation Bar (Bright Nature Capsule)
       bottomNavigationBar: SafeArea(
         child: Container(
-          height: 66,
+          height: 68,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          decoration: BoxDecoration(
-            color: const Color(0xFF14191E),
+          child: ClipRRect(
             borderRadius: BorderRadius.circular(36),
-            border: Border.all(color: const Color(0xFF222B32), width: 1.0),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.55),
-                blurRadius: 18,
-                offset: const Offset(0, 6),
-              )
-            ],
-          ),
-          child: Row(
-            children: [
-              // 1. Home
-              Expanded(
-                child: _buildNavItem(
-                  index: 0,
-                  icon: Icons.home_outlined,
-                  activeIcon: Icons.home_rounded,
-                  label: 'Home',
-                ),
-              ),
-              // 2. Salute
-              Expanded(
-                child: _buildNavItem(
-                  index: 1,
-                  icon: Icons.favorite_border_rounded,
-                  activeIcon: Icons.favorite_rounded,
-                  label: 'Salute',
-                ),
-              ),
-              // 3. Community (Ufficiale Whoop 5.0)
-              Expanded(
-                child: _buildNavItem(
-                  index: 2,
-                  icon: Icons.people_outline_rounded,
-                  activeIcon: Icons.people_rounded,
-                  label: 'Community',
-                ),
-              ),
-              // 4. Altro (Hub di Navigazione)
-              Expanded(
-                child: _buildNavItem(
-                  index: 3,
-                  icon: Icons.menu_rounded,
-                  activeIcon: Icons.menu_open_rounded,
-                  label: 'Altro',
-                ),
-              ),
-
-              const SizedBox(width: 4),
-
-              // 5. WHOOP Coach AI — Pulsante Circolare Orb (\V/ icon)
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _currentIndex = 4; // Coach AI screen
-                  });
-                },
-                child: Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFF121A22),
-                    border: Border.all(
-                      color: _currentIndex == 4
-                          ? WhoopTheme.brandTeal
-                          : WhoopTheme.strainBlue,
-                      width: 1.8,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (_currentIndex == 4
-                                ? WhoopTheme.brandTeal
-                                : WhoopTheme.strainBlue)
-                            .withOpacity(0.35),
-                        blurRadius: 10,
-                        spreadRadius: 1,
-                      ),
-                    ],
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 18.0, sigmaY: 18.0),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? NatureColors.darkSurface.withValues(alpha: 0.88)
+                      : Colors.white.withValues(alpha: 0.94),
+                  borderRadius: BorderRadius.circular(36),
+                  border: Border.all(
+                    color: isDark ? NatureColors.darkBorderSubtle : NatureColors.sandBorder,
+                    width: 1.0,
                   ),
-                  child: Center(
-                    child: Image.asset(
-                      WhoopTheme.circleWhite,
-                      height: 22,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) => Text(
-                        '\\V/',
-                        style: TextStyle(
-                          color: _currentIndex == 4
-                              ? WhoopTheme.brandTeal
-                              : WhoopTheme.strainBlue,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 15,
-                          letterSpacing: -1.0,
+                  boxShadow: [
+                    BoxShadow(
+                      color: isDark
+                          ? Colors.black.withValues(alpha: 0.40)
+                          : const Color(0xFF2C3E50).withValues(alpha: 0.08),
+                      blurRadius: 20,
+                      offset: const Offset(0, 6),
+                    )
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    // 1. Home
+                    Expanded(
+                      child: _buildNavItem(
+                        index: 0,
+                        icon: Icons.home_outlined,
+                        activeIcon: Icons.home_rounded,
+                        label: 'Home',
+                        isDark: isDark,
+                      ),
+                    ),
+                    // 2. Salute
+                    Expanded(
+                      child: _buildNavItem(
+                        index: 1,
+                        icon: Icons.favorite_border_rounded,
+                        activeIcon: Icons.favorite_rounded,
+                        label: 'Salute',
+                        isDark: isDark,
+                      ),
+                    ),
+                    // 3. Altro (Hub di Navigazione)
+                    Expanded(
+                      child: _buildNavItem(
+                        index: 2,
+                        icon: Icons.menu_rounded,
+                        activeIcon: Icons.menu_open_rounded,
+                        label: 'Altro',
+                        isDark: isDark,
+                      ),
+                    ),
+
+                    const SizedBox(width: 4),
+
+                    // 4. Coach AI — Pulsante Circolare Orb con Simbolo Originale CoachEmblem
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _currentIndex = 3; // Coach AI screen
+                        });
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _currentIndex == 3
+                              ? (isDark ? NatureColors.darkSurfaceRaised : NatureColors.creamLight)
+                              : (isDark ? NatureColors.darkSurface : Colors.white),
+                          border: Border.all(
+                            color: _currentIndex == 3
+                                ? (isDark ? NatureColors.tealLight : NatureColors.sage)
+                                : (isDark ? NatureColors.darkBorderSubtle : NatureColors.sandBorder),
+                            width: 1.8,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: (_currentIndex == 3
+                                      ? (isDark ? NatureColors.tealLight : NatureColors.sage)
+                                      : (isDark ? Colors.black : const Color(0xFF2C3E50)))
+                                  .withValues(alpha: _currentIndex == 3 ? 0.35 : 0.06),
+                              blurRadius: 10,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: CoachEmblem(
+                            size: 22,
+                            color: _currentIndex == 3
+                                ? (isDark ? NatureColors.tealLight : NatureColors.sageDark)
+                                : (isDark ? NatureColors.textDarkMuted : NatureColors.textLightMuted),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -158,9 +162,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     required IconData icon,
     required IconData activeIcon,
     required String label,
+    required bool isDark,
   }) {
     final isSelected = _currentIndex == index;
-    final itemColor = isSelected ? Colors.white : const Color(0xFF8896A2);
+    final activeColor = isDark ? NatureColors.tealLight : NatureColors.sageDark;
+    final itemColor = isSelected
+        ? activeColor
+        : (isDark ? NatureColors.textDarkMuted : NatureColors.textLightMuted);
 
     return InkWell(
       onTap: () {
@@ -172,24 +180,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Sfumatura di retroilluminazione soffusa per il tab attivo
+          // Morbida Pill attiva retroilluminata
           if (isSelected)
-            Positioned(
-              bottom: 2,
-              child: Container(
-                width: 28,
-                height: 3,
-                decoration: BoxDecoration(
-                  color: WhoopTheme.strainBlue,
-                  borderRadius: BorderRadius.circular(2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: WhoopTheme.strainBlue.withOpacity(0.8),
-                      blurRadius: 6,
-                      spreadRadius: 1,
-                    )
-                  ],
-                ),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              decoration: BoxDecoration(
+                color: (isDark ? NatureColors.tealLight : NatureColors.sage)
+                    .withValues(alpha: isDark ? 0.16 : 0.12),
+                borderRadius: BorderRadius.circular(18),
               ),
             ),
           Column(
@@ -205,8 +203,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 label,
                 style: TextStyle(
                   color: itemColor,
-                  fontSize: 10,
-                  fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+                  fontSize: 10.5,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                   letterSpacing: 0.2,
                 ),
               ),

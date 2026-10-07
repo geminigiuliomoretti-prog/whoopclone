@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
@@ -150,10 +151,13 @@ SleepStage classifyEpoch({
   }
 
   // 2. REGOLA SONNO PROFONDO (SWS):
-  // Assenza di moto, frequenza ai minimi, rMSSD stabile, respirazione ritmica
-  final isDeepCandidate = enmo < 0.008 && hrRatio <= 1.05 && respVar <= 0.151;
-  if (isDeepCandidate && (epochIndex < (totalEpochs * 0.70) || respVar <= 0.08)) {
-    // SWS favorito nella prima metà/due terzi della notte o con RSA eccezionalmente coerente
+  // Assenza di moto (enmo < 0.008), frequenza ai minimi (hrRatio <= 1.05 con RSA o <= 0.98 senza RSA),
+  // e respirazione regolare. Nota: in adulti sani, SWS si concentra nella prima metà/due terzi della notte.
+  final bool hasExplicitRsa = respVar <= 0.151 && respVar > 0.0;
+  final bool isDeepCandidate = enmo < 0.008 &&
+      ((hasExplicitRsa && hrRatio <= 1.05) || (enmo < 0.006 && hrRatio <= 0.98));
+
+  if (isDeepCandidate && (epochIndex < (totalEpochs * 0.70) || (hasExplicitRsa && respVar <= 0.08))) {
     return SleepStage.deepSws;
   }
 
@@ -359,18 +363,45 @@ class AutoSleepDetector {
   void _evaluateFsm(DateTime currentTime) {
     if (state == AutoSleepState.idleAwake || state == AutoSleepState.sleepCandidateBuffering) {
       // 1. RILEVAMENTO ADDORMENTAMENTO (SLEEP_START)
-      // Trigger: Quiescenza cinematica ENMO < 0.015g per >= 30 min, HR < Media Diurna - 15% o vicina a FCR, RSA >= 0.50
+      // Trigger: Quiescenza cinematica ENMO < 0.015g per >= 30 min, HR coerente con sonno fisiologico.
       final int requiredCount = math.min(_telemetryBuffer.length, tSleepSustainSec);
       if (requiredCount >= tSleepSustainSec) {
         final recentWindow = _telemetryBuffer.sublist(_telemetryBuffer.length - requiredCount);
         
+        // Verifica durata temporale effettiva della finestra (wall-clock seconds)
+        final int elapsedWallClockSec = recentWindow.isNotEmpty
+            ? recentWindow.last.timestamp.difference(recentWindow.first.timestamp).inSeconds.abs()
+            : 0;
+
+        // Se tSleepSustainSec è configurato per durata di produzione (>= 600s),
+        // esigiamo che la durata wall-clock sia effettivamente trascorsa (almeno 80% di tSleepSustainSec)
+        if (tSleepSustainSec >= 600 && elapsedWallClockSec < (tSleepSustainSec * 0.8).round()) {
+          return;
+        }
+
         final quietCount = recentWindow.where((s) => s.enmo <= enmoSleepThresh).length;
         final avgHr = recentWindow.map((s) => s.hr).reduce((a, b) => a + b) / requiredCount;
         final avgRespPower = recentWindow.map((s) => s.respPower).reduce((a, b) => a + b) / requiredCount;
 
         final bool isKinematicallyQuiet = (quietCount / requiredCount) >= 0.75;
-        final bool isHrDropped = (avgHr <= (daytimeMeanHr * 0.85)) || (avgHr <= restHr + 6.0);
-        final bool isRsaRegular = avgRespPower >= 0.50;
+
+        // Distinzione tra riposo passivo/divano e sonno effettivo:
+        // Finestra notturna (21:00 - 09:00): soglia basale più permissiva
+        final currentHour = currentTime.hour;
+        final bool isCircadianNight = currentHour >= 21 || currentHour < 9;
+
+        final bool isHrDropped;
+        if (isCircadianNight) {
+          isHrDropped = (avgHr <= (daytimeMeanHr * 0.85)) && (avgHr <= restHr + 6.0);
+        } else {
+          // Di giorno (veglia rilassata/divano a 60-70 bpm):
+          // Seduti sul divano la FC resta tipicamente > restHr + 4 bpm: NON deve innescare il sonno!
+          // Un pisolino diurno richiede caduta a FC basale profonda (<= restHr + 2) e regolarità RSA,
+          // oppure forte stabilità motoria (>90% quiete assoluta).
+          isHrDropped = (avgHr <= restHr + 2.0) && (avgRespPower >= 0.50 || (quietCount / requiredCount) >= 0.90);
+        }
+
+        final bool isRsaRegular = avgRespPower >= 0.50 && avgHr <= (daytimeMeanHr * 0.85);
 
         if (isKinematicallyQuiet && (isHrDropped || isRsaRegular)) {
           // Retrodata l'inizio del sonno al primo minuto di quiete
@@ -385,18 +416,19 @@ class AutoSleepDetector {
       }
     } else if (state == AutoSleepState.sleepInProgress) {
       // 2. RILEVAMENTO RISVEGLIO (SLEEP_END / WAKE_UP)
-      // Trigger: Attività motoria continuativa ENMO > 0.080g per oltre 15 min, oppure battito HR > FCR + 20 bpm continuativo
+      // Trigger: Attività motoria continuativa ENMO > 0.080g o FC elevata, o scarica motoria intensa
       final int requiredWakeCount = math.min(_telemetryBuffer.length, tWakeSustainSec);
-      if (requiredWakeCount >= math.min(tWakeSustainSec, 30)) {
+      if (requiredWakeCount >= math.min(tWakeSustainSec, 15)) {
         final recentWakeWindow = _telemetryBuffer.sublist(_telemetryBuffer.length - requiredWakeCount);
 
         final activeMotionCount = recentWakeWindow.where((s) => s.enmo >= enmoWakeThresh).length;
         final avgHr = recentWakeWindow.map((s) => s.hr).reduce((a, b) => a + b) / requiredWakeCount;
 
-        final bool isMotorActive = (activeMotionCount / requiredWakeCount) >= 0.70;
-        final bool isHrElevated = avgHr >= (restHr + 22.0);
+        final bool isMotorActive = (activeMotionCount / requiredWakeCount) >= 0.50;
+        final bool isHrElevated = avgHr >= (restHr + 14.0) || avgHr >= (daytimeMeanHr * 0.90);
+        final bool isHighMotionBurst = recentWakeWindow.where((s) => s.enmo >= 0.100).length >= 5;
 
-        if (isMotorActive && isHrElevated) {
+        if ((isMotorActive && isHrElevated) || isHighMotionBurst) {
           final wakeEndTime = _backdateSleepEnd();
           state = AutoSleepState.wakeCooldownPending;
           debugPrint('[AutoSleepDetector] SLEEP_END rilevato! Risveglio retrodatato a $wakeEndTime');
@@ -1047,7 +1079,8 @@ class OvernightSleepEngine {
           final motionVal = (r['motion_var'] ?? r['motion'] ?? r['accel_enmo'] ?? r['enmo'] as num?)?.toDouble() ?? 0.0;
           motionSum += motionVal;
 
-          final rmssdVal = (r['rmssd'] as num?)?.toDouble() ??
+          final rmssdVal = (r['rmssd_ms'] as num?)?.toDouble() ??
+              (r['rmssd'] as num?)?.toDouble() ??
               (r['hrv_ms'] as num?)?.toDouble() ??
               ((r['rr_ms'] as num?) != null && (r['rr_ms'] as num) < 250.0 ? (r['rr_ms'] as num).toDouble() : null);
           if (rmssdVal != null && rmssdVal > 0) {
@@ -1067,15 +1100,25 @@ class OvernightSleepEngine {
 
           if (r['pp_intervals'] != null) {
             ppList.addAll(List<double>.from(r['pp_intervals']));
+          } else if (r['rr_intervals_json'] != null) {
+            try {
+              final decoded = jsonDecode(r['rr_intervals_json'].toString());
+              if (decoded is List) {
+                ppList.addAll(decoded.map((e) => (e as num).toDouble() / 1000.0));
+              }
+            } catch (_) {}
           } else if (r['rr_ms'] != null) {
-            ppList.add((r['rr_ms'] as num).toDouble() / 1000.0);
+            final rr = (r['rr_ms'] as num).toDouble();
+            if (rr >= 300.0 && rr <= 2000.0) {
+              ppList.add(rr / 1000.0);
+            }
           }
         }
 
         final double currentHr = hrCount > 0 ? (hrSum / hrCount) : (lastHr ?? 0.0);
         if (hrCount > 0) lastHr = currentHr;
 
-        final double currentRmssd = rmssdCount > 0 ? (rmssdSum / rmssdCount).clamp(20.0, 140.0) : (lastRmssd ?? 0.0);
+        final double currentRmssd = rmssdCount > 0 ? (rmssdSum / rmssdCount).clamp(10.0, 250.0) : (lastRmssd ?? 0.0);
         if (rmssdCount > 0) lastRmssd = currentRmssd;
 
         list.add(Epoch30s(
@@ -1137,7 +1180,7 @@ class OvernightSleepEngine {
       final double hrvNorm = hrvBaseline > 0 ? (ep.rmssd / hrvBaseline) : 1.0;
       final double respVar = ep.respPower > 0.0
           ? double.parse(((1.0 - ep.respPower) * 0.5).clamp(0.0, 1.0).toStringAsFixed(3))
-          : 0.0;
+          : 0.50;
 
       var stage = classifyEpoch(
         enmo: enmo,
@@ -1213,6 +1256,13 @@ class OvernightSleepEngine {
     }
   }
 
+  /// Calcola la media quadratica (Root Mean Square) degli RMSSD delle epoche SWS (HRV-01)
+  static double? calculateSwsPooledRmssd(List<double> epochRmssdList) {
+    if (epochRmssdList.isEmpty) return null;
+    final sumSquares = epochRmssdList.map((x) => x * x).reduce((a, b) => a + b);
+    return math.sqrt(sumSquares / epochRmssdList.length);
+  }
+
   /// Estrazione di rMSSD ed RHR nell'Ultimo Ciclo SWS prima del risveglio finale (Brevetto US9750415B2)
   /// Calcolo matematico rigoroso:
   /// rMSSD = sqrt( 1/(N-1) * sum( (PP_{i+1} - PP_i)^2 ) )
@@ -1257,8 +1307,9 @@ class OvernightSleepEngine {
 
     // Calcolo VFC (rMSSD) esatto per epoca nel blocco SWS con filtraggio fisiologico ed ectopico
     final List<double> epochRmssdList = [];
+
     for (final ep in evalSws) {
-      if (ep.motionVar > 0.015) {
+      if (ep.motionVar > 0.025) {
         // Scarta epoche con rumore accelerometrico elevato
         continue;
       }
@@ -1268,7 +1319,7 @@ class OvernightSleepEngine {
         final validPp = <double>[];
         for (final p in ppList) {
           final ms = p < 5.0 ? p * 1000.0 : p;
-          if (ms >= 300.0 && ms <= 1500.0) {
+          if (ms >= 300.0 && ms <= 2000.0) {
             validPp.add(ms);
           }
         }
@@ -1286,24 +1337,25 @@ class OvernightSleepEngine {
           }
           if (count > 0) {
             final epochVal = math.sqrt(sumSq / count);
-            if (epochVal >= 20.0 && epochVal <= 140.0) {
+            if (epochVal >= 10.0 && epochVal <= 250.0) {
               epochRmssdList.add(epochVal);
             }
           }
         }
-      } else if (ep.rmssd > 0 && ep.rmssd <= 140.0) {
-        final clampedVal = ep.rmssd.clamp(20.0, 120.0);
-        epochRmssdList.add(clampedVal);
+      } else if (ep.rmssd > 0 && ep.rmssd <= 250.0) {
+        epochRmssdList.add(ep.rmssd.clamp(10.0, 250.0));
       }
     }
 
     double? computedRmssd;
+    // Jensen's inequality correction (HRV-01):
+    // Calcola la media quadratica (Root Mean Square) degli RMSSD delle epoche
     if (epochRmssdList.isNotEmpty) {
-      computedRmssd = epochRmssdList.reduce((a, b) => a + b) / epochRmssdList.length;
+      computedRmssd = calculateSwsPooledRmssd(epochRmssdList);
     }
 
     return {
-      'rmssd': computedRmssd != null ? double.parse(computedRmssd.clamp(20.0, 120.0).toStringAsFixed(1)) : null,
+      'rmssd': computedRmssd != null ? double.parse(computedRmssd.clamp(10.0, 250.0).toStringAsFixed(1)) : null,
       'rhr': avgRhr != null ? double.parse(avgRhr.clamp(30.0, 120.0).toStringAsFixed(1)) : null,
     };
   }
@@ -1470,7 +1522,63 @@ class OvernightSleepEngine {
     return double.parse(avgSpo2.clamp(80.0, 100.0).toStringAsFixed(1));
   }
 
-  /// Frequenza Respiratoria Notturna via RSA Dinamica (Bandpass & Peak Detection: 0.15 - 0.40 Hz)
+  /// Stima della Frequenza Respiratoria Notturna via Arritmia Sinusale Respiratoria (RSA)
+  /// Utilizza trasformata spettrale non-uniforme limitata rigorosamente
+  /// alla banda fisiologica respiratoria [0.15 Hz - 0.42 Hz] (9 - 25.2 RPM), rigettando
+  /// le onde vasomotorie di Mayer (LF ~0.05-0.12 Hz / ~6-7 cicli al minuto) che falsano lo zero-crossing.
+  static double? estimateRsaPeakFromIntervalsSec(List<double> intervalsSec) =>
+      _estimateRsaPeakFromIntervalsSec(intervalsSec);
+
+  static double? _estimateRsaPeakFromIntervalsSec(List<double> intervalsSec) {
+    if (intervalsSec.length < 8) return null;
+    final int n = intervalsSec.length;
+    final double meanVal = intervalsSec.reduce((a, b) => a + b) / n;
+
+    final List<double> t = List<double>.filled(n, 0.0);
+    double cum = 0.0;
+    for (int i = 0; i < n; i++) {
+      t[i] = cum;
+      cum += intervalsSec[i];
+    }
+    final double totalSec = cum;
+    if (totalSec < 4.0) return null;
+
+    const double minFreq = 0.15; // 9.0 RPM (esclude onde di Mayer < 0.15 Hz)
+    const double maxFreq = 0.42; // 25.2 RPM
+    const double step = 0.005;
+
+    double maxPower = 0.0;
+    double bestFreq = 0.0;
+
+    for (double f = minFreq; f <= maxFreq; f += step) {
+      double realSum = 0.0;
+      double imagSum = 0.0;
+      final double omega = 2.0 * math.pi * f;
+
+      for (int i = 0; i < n; i++) {
+        final double centered = intervalsSec[i] - meanVal;
+        final double angle = omega * t[i];
+        realSum += centered * math.cos(angle);
+        imagSum -= centered * math.sin(angle);
+      }
+
+      final double power = (realSum * realSum + imagSum * imagSum) / n;
+      if (power > maxPower) {
+        maxPower = power;
+        bestFreq = f;
+      }
+    }
+
+    if (bestFreq > 0.0 && maxPower > 1e-6) {
+      final double rpm = bestFreq * 60.0;
+      if (rpm >= 8.0 && rpm <= 25.0) {
+        return rpm;
+      }
+    }
+    return null;
+  }
+
+  /// Frequenza Respiratoria Notturna via RSA Dinamica Spettrale (0.15 - 0.40 Hz)
   /// RPM = f_peak * 60
   double? _calculateNocturnalRespRate(List<Epoch30s> epochs, List<Map<String, dynamic>> records) {
     // 1. Se nei record o nelle epoche sono presenti valori diretti di frequenza respiratoria
@@ -1492,29 +1600,12 @@ class OvernightSleepEngine {
 
     final List<double> calculatedRpmList = [];
 
-    // 2. Estrazione RSA per singola epoca di 30s da serie continua di picchi PP
+    // 2. Estrazione RSA per singola epoca di 30s da serie continua di picchi PP via picco spettrale RSA
     for (final ep in evalEpochs) {
       if (ep.ppIntervals.length >= 8) {
-        final ppList = ep.ppIntervals;
-        final meanPp = ppList.reduce((a, b) => a + b) / ppList.length;
-        
-        int zeroCrossings = 0;
-        for (int j = 1; j < ppList.length; j++) {
-          final prevDiff = ppList[j - 1] - meanPp;
-          final currDiff = ppList[j] - meanPp;
-          if ((prevDiff < 0 && currDiff >= 0) || (prevDiff >= 0 && currDiff < 0)) {
-            zeroCrossings++;
-          }
-        }
-        
-        final durationSec = ppList.reduce((a, b) => a + b);
-        if (durationSec > 2.0 && zeroCrossings >= 2) {
-          final cycles = zeroCrossings / 2.0;
-          final fPeak = cycles / durationSec;
-          final rpm = fPeak * 60.0;
-          if (rpm >= 7.0 && rpm <= 24.0) {
-            calculatedRpmList.add(rpm);
-          }
+        final rsaRpm = _estimateRsaPeakFromIntervalsSec(ep.ppIntervals);
+        if (rsaRpm != null) {
+          calculatedRpmList.add(rsaRpm);
         }
       } else if (ep.respRate > 0 && ep.respRate >= 7.0 && ep.respRate <= 24.0) {
         calculatedRpmList.add(ep.respRate);
@@ -1530,30 +1621,19 @@ class OvernightSleepEngine {
           .toList();
 
       if (validRrs.length >= 25) {
-        const windowSize = 30;
+        const windowSize = 35;
         for (int w = 0; w + windowSize <= validRrs.length; w += 15) {
           final window = validRrs.sublist(w, w + windowSize);
-          final meanRr = window.reduce((a, b) => a + b) / window.length;
-          int zc = 0;
-          for (int j = 1; j < window.length; j++) {
-            final p = window[j - 1] - meanRr;
-            final c = window[j] - meanRr;
-            if ((p < 0 && c >= 0) || (p >= 0 && c < 0)) {
-              zc++;
-            }
-          }
-          final durSec = (window.reduce((a, b) => a + b)) / 1000.0;
-          if (durSec > 4.0 && zc >= 2) {
-            final rpm = ((zc / 2.0) / durSec) * 60.0;
-            if (rpm >= 7.0 && rpm <= 24.0) {
-              calculatedRpmList.add(rpm);
-            }
+          final windowSec = window.map((rr) => rr / 1000.0).toList();
+          final rsaRpm = _estimateRsaPeakFromIntervalsSec(windowSec);
+          if (rsaRpm != null) {
+            calculatedRpmList.add(rsaRpm);
           }
         }
       }
     }
 
-    // 4. Fallback su oscillazione della frequenza cardiaca (BPM) con durata temporale reale
+    // 4. Fallback su oscillazione della frequenza cardiaca (BPM) con trasformata spettrale
     if (calculatedRpmList.isEmpty) {
       final bpms = records
           .map((r) => (r['hr'] ?? r['bpm']) as num?)
@@ -1561,36 +1641,11 @@ class OvernightSleepEngine {
           .map((b) => b!.toDouble())
           .toList();
 
-      if (bpms.length >= 60) {
-        final meanBpm = bpms.reduce((a, b) => a + b) / bpms.length;
-        int zeroCrossings = 0;
-        for (int j = 1; j < bpms.length; j++) {
-          final p = bpms[j - 1] - meanBpm;
-          final c = bpms[j] - meanBpm;
-          if ((p < 0 && c >= 0) || (p >= 0 && c < 0)) {
-            zeroCrossings++;
-          }
-        }
-
-        double durationSec = bpms.length.toDouble();
-        if (records.first['timestamp'] != null && records.last['timestamp'] != null) {
-          final t0 = DateTime.tryParse(records.first['timestamp'].toString());
-          final t1 = DateTime.tryParse(records.last['timestamp'].toString());
-          if (t0 != null && t1 != null && t1.isAfter(t0)) {
-            final diffSec = t1.difference(t0).inSeconds.toDouble();
-            if (diffSec > 0) {
-              final avgSampleSec = diffSec / bpms.length;
-              if (avgSampleSec <= 2.5) {
-                durationSec = diffSec;
-              }
-            }
-          }
-        }
-
-        final fPeak = (zeroCrossings / 2.0) / durationSec;
-        final rpm = fPeak * 60.0;
-        if (rpm >= 7.0 && rpm <= 24.0) {
-          calculatedRpmList.add(rpm);
+      if (bpms.length >= 45) {
+        final intervalsFromBpm = bpms.map((b) => 60.0 / b).toList();
+        final rsaRpm = _estimateRsaPeakFromIntervalsSec(intervalsFromBpm);
+        if (rsaRpm != null) {
+          calculatedRpmList.add(rsaRpm);
         }
       }
     }

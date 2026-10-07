@@ -807,6 +807,33 @@ class DatabaseHelper {
     );
   }
 
+  Future<void> saveVociDiarioBatch(String dataIso, List<Map<String, dynamic>> items) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete(tableVociDiario, where: 'data_iso = ?', whereArgs: [dataIso]);
+      for (final item in items) {
+        final row = <String, dynamic>{
+          'data_iso': dataIso,
+          'chiave_domanda': item['chiave_domanda'] ?? item['abitudine_chiave'] ?? '',
+          'risposta_bool': (item['risposta_bool'] ?? item['risposta_booleana']) == 1 || (item['risposta_bool'] ?? item['risposta_booleana']) == true ? 1 : 0,
+          if (item.containsKey('note')) 'note': item['note'],
+        };
+        await txn.insert(tableVociDiario, row);
+      }
+    });
+  }
+
+  Future<Set<String>> getCompletedDiaryDates(List<String> datesIso) async {
+    final db = await database;
+    if (datesIso.isEmpty) return {};
+    final placeholders = List.filled(datesIso.length, '?').join(',');
+    final result = await db.rawQuery(
+      'SELECT DISTINCT data_iso FROM $tableVociDiario WHERE data_iso IN ($placeholders)',
+      datesIso,
+    );
+    return result.map((r) => r['data_iso'] as String).toSet();
+  }
+
   // ─────────────────────────────────────────────────────────────
   // 6. Coach AI Messages CRUD
   // ─────────────────────────────────────────────────────────────
@@ -959,7 +986,7 @@ class DatabaseHelper {
     double? rmssdMs,
     double? rrMs,
     String? rrIntervalsJson,
-    double? motionVar = 0.0,
+    double? motionVar,
     double? accelEnmo,
     double? skinTempCelsius,
     int? skinTempRaw,
@@ -1006,7 +1033,7 @@ class DatabaseHelper {
       'source': source,
       'quality': quality,
       'bpm': bpm,
-      'rmssd_ms': rmssdMs ?? (rrMs != null && rrMs < 300 ? rrMs : null),
+      'rmssd_ms': rmssdMs,
       'rr_ms': rrMs,
       'rr_intervals_json': rrIntervalsJson,
       'accel_enmo': accelEnmo,

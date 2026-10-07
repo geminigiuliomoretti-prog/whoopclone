@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 import '../../data/biometrics/health_vitals_engine.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 import '../widgets/live_heart_rate_card.dart';
@@ -37,23 +38,24 @@ class HealthVitalsDetailScreen extends StatelessWidget {
     final vfc = getVital('vfc') ?? (vitals.length > 3 ? vitals[3] : null);
     final temp = getVital('temp') ?? (vitals.length > 4 ? vitals[4] : null);
 
+    final isLight = Theme.of(context).brightness == Brightness.light;
+
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: WhoopTheme.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.chevron_left, color: Colors.white, size: 28),
+          icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+          color: WhoopTheme.textPrimary,
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'MONITORAGGIO DELLA SALUTE',
-          style: TextStyle(
-            color: Colors.white,
+          style: WhoopTheme.cardTitleStyle(
             fontSize: 13,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.1,
-          ),
+            color: WhoopTheme.textPrimary,
+          ).copyWith(fontWeight: FontWeight.w800),
         ),
         centerTitle: true,
       ),
@@ -83,6 +85,7 @@ class HealthVitalsDetailScreen extends StatelessWidget {
                         : (resp?.currentVal != null ? 'vicino alla baseline' : 'Dati non disponibili'),
                     icon: Icons.air,
                     status: resp?.status ?? VitalStatus.noData,
+                    isLight: isLight,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -98,6 +101,7 @@ class HealthVitalsDetailScreen extends StatelessWidget {
                         : (spo2?.currentVal != null ? 'circa 95% - 100%' : 'Dati non disponibili'),
                     icon: Icons.water_drop_outlined,
                     status: spo2?.status ?? VitalStatus.noData,
+                    isLight: isLight,
                   ),
                 ),
               ],
@@ -118,6 +122,7 @@ class HealthVitalsDetailScreen extends StatelessWidget {
                         : (fcr?.currentVal != null ? 'entro baseline' : 'Dati non disponibili'),
                     icon: Icons.favorite_border,
                     status: fcr?.status ?? VitalStatus.noData,
+                    isLight: isLight,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -133,6 +138,7 @@ class HealthVitalsDetailScreen extends StatelessWidget {
                         : (vfc?.currentVal != null ? 'entro baseline' : 'Dati non disponibili'),
                     icon: Icons.show_chart,
                     status: vfc?.status ?? VitalStatus.noData,
+                    isLight: isLight,
                   ),
                 ),
               ],
@@ -153,6 +159,7 @@ class HealthVitalsDetailScreen extends StatelessWidget {
                         : (temp?.currentVal != null ? 'entro baseline' : 'Dati non disponibili'),
                     icon: Icons.thermostat,
                     status: temp?.status ?? VitalStatus.noData,
+                    isLight: isLight,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -165,7 +172,7 @@ class HealthVitalsDetailScreen extends StatelessWidget {
             // Pulsante In Basso: CONDIVIDI IL REPORT SUL TUO STATO DI SALUTE
             SizedBox(
               width: double.infinity,
-              height: 52,
+              height: 50,
               child: ElevatedButton(
                 onPressed: () {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -176,19 +183,22 @@ class HealthVitalsDetailScreen extends StatelessWidget {
                   );
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1C242C),
-                  elevation: 0,
-                  side: const BorderSide(color: Color(0xFF283440), width: 1.0),
+                  backgroundColor: isLight ? Colors.white : const Color(0xFF1C242C),
+                  elevation: isLight ? 1 : 0,
+                  side: BorderSide(
+                    color: isLight ? NatureColors.sandBorder : const Color(0xFF283440),
+                    width: 0.85,
+                  ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
                 child: const Text(
                   'CONDIVIDI IL REPORT SUL TUO STATO DI SALUTE',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
+                    color: WhoopTheme.textPrimary,
+                    fontWeight: FontWeight.w800,
                     fontSize: 11,
                     letterSpacing: 0.8,
                   ),
@@ -210,6 +220,7 @@ class HealthVitalsDetailScreen extends StatelessWidget {
     required String badgeText,
     required IconData icon,
     VitalStatus? status,
+    bool isLight = false,
   }) {
     Color badgeColor;
     IconData badgeIcon;
@@ -217,25 +228,25 @@ class HealthVitalsDetailScreen extends StatelessWidget {
 
     switch (status) {
       case VitalStatus.inRange:
-        badgeColor = WhoopTheme.recoveryGreen;
+        badgeColor = isLight ? NatureColors.sageDark : WhoopTheme.recoveryGreen;
         badgeIcon = Icons.check;
-        pillBgColor = const Color(0xFF132B25);
+        pillBgColor = isLight ? NatureColors.sageBackground : const Color(0xFF132B25);
         break;
       case VitalStatus.outOfRange:
-        badgeColor = WhoopTheme.recoveryRed;
+        badgeColor = isLight ? NatureColors.terracotta : WhoopTheme.recoveryRed;
         badgeIcon = Icons.priority_high;
-        pillBgColor = const Color(0xFF2E191C);
+        pillBgColor = isLight ? NatureColors.terracottaBackground : const Color(0xFF2E191C);
         break;
       case VitalStatus.calibration:
-        badgeColor = WhoopTheme.strainBlue;
+        badgeColor = isLight ? NatureColors.tealDark : WhoopTheme.strainBlue;
         badgeIcon = Icons.tune;
-        pillBgColor = const Color(0xFF132433);
+        pillBgColor = isLight ? NatureColors.tealBackground : const Color(0xFF132433);
         break;
       case VitalStatus.noData:
       default:
-        badgeColor = WhoopTheme.textMuted;
+        badgeColor = isLight ? NatureColors.textLightMuted : WhoopTheme.textMuted;
         badgeIcon = Icons.remove;
-        pillBgColor = const Color(0xFF1C242C);
+        pillBgColor = isLight ? NatureColors.creamLight : const Color(0xFF1C242C);
         break;
     }
 
@@ -278,7 +289,7 @@ class HealthVitalsDetailScreen extends StatelessWidget {
               Text(
                 value,
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: WhoopTheme.textPrimary,
                   fontSize: 28,
                   fontWeight: FontWeight.w900,
                   fontFeatures: [FontFeature.tabularFigures()],
@@ -302,6 +313,7 @@ class HealthVitalsDetailScreen extends StatelessWidget {
             decoration: BoxDecoration(
               color: pillBgColor,
               borderRadius: BorderRadius.circular(6),
+              border: isLight ? Border.all(color: badgeColor.withOpacity(0.25), width: 0.8) : null,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,

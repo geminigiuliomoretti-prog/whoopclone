@@ -377,10 +377,20 @@ class _CustomizableDashboardScreenState
             const SizedBox(width: 8),
             Text(
               'Dashboard salvata: ${activeKeys.length} metriche attive.',
+              style: const TextStyle(
+                color: WhoopTheme.textPrimary,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
             ),
           ],
         ),
         backgroundColor: WhoopTheme.cardSurface,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: WhoopTheme.cardBorder),
+        ),
         duration: const Duration(seconds: 2),
       ),
     );

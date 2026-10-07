@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 import '../../data/models/ciclo_fisiologico.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 
@@ -32,6 +33,7 @@ class _WeeklyDualAxisChartState extends State<WeeklyDualAxisChart> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final viewModel = Provider.of<WhoopViewModel>(context);
     final cicli = viewModel.cicliList;
 
@@ -68,7 +70,7 @@ class _WeeklyDualAxisChartState extends State<WeeklyDualAxisChart> {
 
     return Container(
       padding: const EdgeInsets.all(16.0),
-      decoration: WhoopTheme.officialCardDecoration(),
+      decoration: WhoopTheme.officialCardDecoration(isDark: isDark),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -102,8 +104,11 @@ class _WeeklyDualAxisChartState extends State<WeeklyDualAxisChart> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
-                color: const Color(0xFF222B32),
+                color: isDark ? const Color(0xFF222B32) : NatureColors.creamLight,
                 borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isDark ? Colors.transparent : NatureColors.sandBorderSubtle,
+                ),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -165,6 +170,7 @@ class _WeeklyDualAxisChartState extends State<WeeklyDualAxisChart> {
                 painter: _WhoopDualAxisPainter(
                   data: weeklyData,
                   selectedIndex: _selectedDayIndex,
+                  isDark: isDark,
                 ),
               ),
             ),
@@ -175,14 +181,22 @@ class _WeeklyDualAxisChartState extends State<WeeklyDualAxisChart> {
   }
 
   void _showInfoDialog(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: WhoopTheme.cardSurface,
-        title: const Text('Sforzo e Recupero Settimanale', style: TextStyle(color: Colors.white)),
-        content: const Text(
+        backgroundColor: isDark ? WhoopTheme.cardSurface : Colors.white,
+        title: Text(
+          'Sforzo e Recupero Settimanale',
+          style: TextStyle(color: isDark ? Colors.white : NatureColors.textPrimary, fontWeight: FontWeight.bold),
+        ),
+        content: Text(
           'Questo grafico correla l\'impatto dello Sforzo (Day Strain 0–21 in blu) con la tua capacità di Recupero (0–100% in verde/giallo/rosso) negli ultimi 7 giorni. Aiuta a bilanciare il carico di allenamento con il riposo rigenerativo.',
-          style: TextStyle(color: WhoopTheme.textSecondary, fontSize: 13, height: 1.4),
+          style: TextStyle(
+            color: isDark ? WhoopTheme.textSecondary : NatureColors.textSecondary,
+            fontSize: 13,
+            height: 1.4,
+          ),
         ),
         actions: [
           TextButton(
@@ -198,10 +212,12 @@ class _WeeklyDualAxisChartState extends State<WeeklyDualAxisChart> {
 class _WhoopDualAxisPainter extends CustomPainter {
   final List<DailyMetricPoint> data;
   final int? selectedIndex;
+  final bool isDark;
 
   _WhoopDualAxisPainter({
     required this.data,
     this.selectedIndex,
+    this.isDark = false,
   });
 
   @override
@@ -222,7 +238,7 @@ class _WhoopDualAxisPainter extends CustomPainter {
 
     // 1. Griglia Orizzontale a 3 Livelli (1/3, 2/3, 3/3)
     final gridPaint = Paint()
-      ..color = const Color(0xFF222B32)
+      ..color = isDark ? const Color(0xFF222B32) : NatureColors.sandBorderSubtle
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 
@@ -267,7 +283,7 @@ class _WhoopDualAxisPainter extends CustomPainter {
       tpRecov.paint(canvas, Offset(chartRect.right + 6, y - (tpRecov.height / 2)));
     }
 
-    // 2. Colonna "OGGI" Evidenziata con Pillola Sfumata Scura
+    // 2. Colonna "OGGI" Evidenziata con Pillola Sfumata
     final stepX = chartRect.width / (data.length - 1);
     final todayIndex = data.length - 1;
     final todayX = chartRect.left + (todayIndex * stepX);
@@ -281,7 +297,7 @@ class _WhoopDualAxisPainter extends CustomPainter {
       const Radius.circular(8),
     );
     final todayPillPaint = Paint()
-      ..color = const Color(0xFF1E2832).withOpacity(0.55)
+      ..color = isDark ? const Color(0xFF1E2832).withOpacity(0.55) : NatureColors.creamDark.withOpacity(0.65)
       ..style = PaintingStyle.fill;
     canvas.drawRRect(todayPillRect, todayPillPaint);
 
@@ -305,7 +321,7 @@ class _WhoopDualAxisPainter extends CustomPainter {
 
     // 4. Disegna Linea Grigia di Recupero
     final recoveryLinePaint = Paint()
-      ..color = const Color(0xFF6B7A88)
+      ..color = isDark ? const Color(0xFF6B7A88) : NatureColors.textMuted.withOpacity(0.8)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0
       ..strokeCap = StrokeCap.round;
@@ -346,9 +362,9 @@ class _WhoopDualAxisPainter extends CustomPainter {
       final val = data[i].recoveryPct;
       final ptColor = WhoopTheme.getRecoveryColor(val);
 
-      // Disegna punto circolare cavo con riempimento scuro
+      // Disegna punto circolare cavo con riempimento coerente
       final bgCirclePaint = Paint()
-        ..color = const Color(0xFF161D22)
+        ..color = isDark ? const Color(0xFF161D22) : Colors.white
         ..style = PaintingStyle.fill;
       canvas.drawCircle(pt, 5.0, bgCirclePaint);
 
@@ -387,7 +403,7 @@ class _WhoopDualAxisPainter extends CustomPainter {
       final val = data[i].strain;
 
       final bgCirclePaint = Paint()
-        ..color = const Color(0xFF161D22)
+        ..color = isDark ? const Color(0xFF161D22) : Colors.white
         ..style = PaintingStyle.fill;
       canvas.drawCircle(pt, 4.5, bgCirclePaint);
 
@@ -417,6 +433,6 @@ class _WhoopDualAxisPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _WhoopDualAxisPainter oldDelegate) {
-    return oldDelegate.data != data || oldDelegate.selectedIndex != selectedIndex;
+    return oldDelegate.data != data || oldDelegate.selectedIndex != selectedIndex || oldDelegate.isDark != isDark;
   }
 }

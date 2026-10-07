@@ -179,19 +179,45 @@ class _IntradayHrChartState extends State<IntradayHrChart> {
         ),
 
         const SizedBox(height: 6),
-        // Marcatori X-Axis (00:00 - 06:00 - 12:00 - 18:00 - 24:00)
-        const Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('00:00', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-            Text('06:00', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-            Text('12:00', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-            Text('18:00', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-            Text('24:00', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-          ],
-        ),
+        _buildTimeAxis(validPoints),
       ],
     );
+  }
+
+  Widget _buildTimeAxis(List<HrDataPoint> points) {
+    if (points.isEmpty) return const SizedBox.shrink();
+    final start = points.first.timestamp;
+    final end = points.last.timestamp;
+    final spanMs = end.difference(start).inMilliseconds;
+    if (spanMs <= 0) {
+      return Center(
+        child: Text(_formatTime(start), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
+      );
+    }
+
+    final t1 = DateTime.fromMillisecondsSinceEpoch(start.millisecondsSinceEpoch + (spanMs * 0.25).round());
+    final t2 = DateTime.fromMillisecondsSinceEpoch(start.millisecondsSinceEpoch + (spanMs * 0.50).round());
+    final t3 = DateTime.fromMillisecondsSinceEpoch(start.millisecondsSinceEpoch + (spanMs * 0.75).round());
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(_formatTime(start), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
+          Text(_formatTime(t1), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
+          Text(_formatTime(t2), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
+          Text(_formatTime(t3), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
+          Text(_formatTime(end), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
+        ],
+      ),
+    );
+  }
+
+  String _formatTime(DateTime dt) {
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    return '$h:$m';
   }
 
   void _selectedBlockNull() {

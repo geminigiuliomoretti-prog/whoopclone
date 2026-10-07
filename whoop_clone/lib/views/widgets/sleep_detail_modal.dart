@@ -2,6 +2,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
+import 'nature/nature_scene.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 import 'manual_activity_modal.dart';
 import 'charts/hypnogram_chart.dart';
@@ -31,6 +33,9 @@ class SleepDetailModal extends StatefulWidget {
   final Map<String, dynamic>? hrZonesMap;
   final String? provenance;
 
+  final DateTime? startTime;
+  final DateTime? endTime;
+
   const SleepDetailModal({
     super.key,
     required this.sleepPct,
@@ -43,6 +48,8 @@ class SleepDetailModal extends StatefulWidget {
     required this.awakeMin,
     required this.efficiencyPct,
     required this.consistencyPct,
+    this.startTime,
+    this.endTime,
     this.baselineDurationMin,
     this.baselinePerformancePct,
     this.historicalSonno,
@@ -64,6 +71,8 @@ class SleepDetailModal extends StatefulWidget {
     required double awakeMin,
     required double efficiencyPct,
     required double consistencyPct,
+    DateTime? startTime,
+    DateTime? endTime,
     double? baselineDurationMin,
     double? baselinePerformancePct,
     List<dynamic>? historicalSonno,
@@ -86,6 +95,8 @@ class SleepDetailModal extends StatefulWidget {
           awakeMin: awakeMin,
           efficiencyPct: efficiencyPct,
           consistencyPct: consistencyPct,
+          startTime: startTime,
+          endTime: endTime,
           baselineDurationMin: baselineDurationMin,
           baselinePerformancePct: baselinePerformancePct,
           historicalSonno: historicalSonno,
@@ -108,6 +119,12 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
     final h = min ~/ 60;
     final m = (min % 60).toInt();
     return '$h:${m.toString().padLeft(2, '0')}';
+  }
+
+  String _formatTimeOfDay(DateTime dt) {
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    return '$h:$m';
   }
 
   @override
@@ -141,29 +158,59 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
         (viewModel?.currentHrZones ?? <String, dynamic>{});
 
     final List<double?> history14dSleep = viewModel?.history14dSleep ?? const <double?>[];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    DateTime? effStart = widget.startTime;
+    DateTime? effEnd = widget.endTime;
+    if (effStart == null && widget.historicalSonno != null && widget.historicalSonno!.isNotEmpty) {
+      final s = widget.historicalSonno!.first;
+      if (s != null) {
+        try {
+          if (s.oraInizio is String && (s.oraInizio as String).isNotEmpty) {
+            effStart = s.inizioSonno;
+            effEnd = s.inizioRisveglio;
+          }
+        } catch (_) {}
+      }
+    }
+    if (effStart == null && hypnogramBlocks.isNotEmpty) {
+      effStart = hypnogramBlocks.first.startTime;
+      effEnd = hypnogramBlocks.last.endTime;
+    }
+    final String? timeRangeStr = (effStart != null && effEnd != null)
+        ? '${_formatTimeOfDay(effStart)} - ${_formatTimeOfDay(effEnd)}'
+        : null;
 
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: isDark ? NatureColors.darkCanvas : NatureColors.canvas,
       appBar: AppBar(
-        backgroundColor: WhoopTheme.background,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.chevron_left, color: Colors.white, size: 28),
+          icon: Icon(
+            Icons.chevron_left,
+            color: isDark ? NatureColors.textDarkPrimary : NatureColors.textPrimary,
+            size: 28,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'OGGI',
           style: TextStyle(
-            color: Colors.white,
-            fontSize: 14,
+            color: isDark ? NatureColors.textDarkPrimary : NatureColors.textPrimary,
+            fontSize: 13,
             fontWeight: FontWeight.w900,
-            letterSpacing: 1.2,
+            letterSpacing: 1.5,
           ),
         ),
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.info_outline, color: WhoopTheme.textSecondary, size: 22),
+            icon: Icon(
+              Icons.info_outline,
+              color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+              size: 22,
+            ),
             onPressed: () {},
           ),
         ],
@@ -175,90 +222,115 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
           children: [
             const SizedBox(height: 10),
 
-            // 1. Grande Cerchio Prestazione del Sonno
-            Center(
-              child: SizedBox(
-                width: 220,
-                height: 220,
-                child: CustomPaint(
-                  painter: _SleepArcPainter(
-                    percentage: hasSleep ? widget.sleepPct : 0.0,
-                    arcColor: WhoopTheme.sleepSlate,
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        'WHOOP',
-                        style: TextStyle(
-                          color: WhoopTheme.textSecondary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.8,
-                        ),
+            // 1. Grande Cerchio Prestazione del Sonno in NatureScene
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: NatureScene(
+                mood: NatureMood.sleep,
+                intensity: hasSleep ? (widget.sleepPct / 100.0) : 0.70,
+                height: 270,
+                isDark: isDark,
+                borderRadius: BorderRadius.circular(28),
+                child: Center(
+                  child: SizedBox(
+                    width: 220,
+                    height: 220,
+                    child: CustomPaint(
+                      painter: _SleepArcPainter(
+                        percentage: hasSleep ? widget.sleepPct : 0.0,
+                        arcColor: NatureColors.tealLight,
+                        isDark: isDark,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        hasSleep ? '${widget.sleepPct.toInt()}%' : '--',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 54,
-                          fontWeight: FontWeight.w900,
-                          height: 1.0,
-                          fontFeatures: [FontFeature.tabularFigures()],
-                        ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? NatureColors.darkSurface.withOpacity(0.7)
+                                  : NatureColors.creamDark.withOpacity(0.85),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isDark
+                                    ? NatureColors.darkBorder.withOpacity(0.6)
+                                    : NatureColors.sandBorderSubtle,
+                              ),
+                            ),
+                            child: Text(
+                              _getSleepStateLabel(widget.sleepPct),
+                              style: TextStyle(
+                                color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            hasSleep ? '${widget.sleepPct.toInt()}%' : '--',
+                            style: TextStyle(
+                              color: isDark ? Colors.white : NatureColors.textPrimary,
+                              fontSize: 52,
+                              fontWeight: FontWeight.w900,
+                              height: 1.0,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'PRESTAZIONE\nDEL SONNO',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.8,
+                              height: 1.2,
+                            ),
+                          ),
+                          if (widget.provenance != null) ...[
+                            const SizedBox(height: 6),
+                            ProvenanceBadge(provenance: widget.provenance!),
+                          ],
+                        ],
                       ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'PRESTAZIONE\nDEL SONNO',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: WhoopTheme.textSecondary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.8,
-                          height: 1.2,
-                        ),
-                      ),
-                      if (widget.provenance != null) ...[
-                        const SizedBox(height: 6),
-                        ProvenanceBadge(provenance: widget.provenance!),
-                      ],
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
             const SizedBox(height: 8),
 
-            // Indicatori di paginazione a 3 trattini
+            // Indicatori di paginazione a 3 trattini organici
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
                   width: 14,
-                  height: 2.5,
+                  height: 3,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2C3844),
-                    borderRadius: BorderRadius.circular(1.5),
+                    color: NatureColors.darkSurfaceRaised,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
                 const SizedBox(width: 5),
                 Container(
-                  width: 18,
-                  height: 2.5,
+                  width: 20,
+                  height: 3,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(1.5),
+                    color: NatureColors.tealLight,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
                 const SizedBox(width: 5),
                 Container(
                   width: 14,
-                  height: 2.5,
+                  height: 3,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2C3844),
-                    borderRadius: BorderRadius.circular(1.5),
+                    color: NatureColors.darkSurfaceRaised,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ],
@@ -266,17 +338,11 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
 
             const SizedBox(height: 16),
 
-            // 2. Card 4 Sub-metriche con triangolo Caret Notch
-            const Center(
-              child: CustomPaint(
-                size: Size(14, 7),
-                painter: _SleepTriangleCaretPainter(),
-              ),
-            ),
+            // 2. Card 4 Sub-metriche
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
-                decoration: WhoopTheme.officialCardDecoration(),
+                decoration: NatureTheme.organicCardDecoration(),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 child: Column(
                   children: [
@@ -286,59 +352,63 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
                       value: hasSleep ? '${widget.sleepPct.toInt()}%' : '--',
                       segments: 2,
                       activeSegment: 2,
-                      activeColor: WhoopTheme.sleepSlate,
+                      activeColor: NatureColors.tealLight,
+                      iconColor: NatureColors.tealLight,
                     ),
-                    const Divider(color: WhoopTheme.cardBorder, height: 22, thickness: 1),
+                    Divider(color: NatureColors.darkBorder.withOpacity(0.6), height: 20, thickness: 1),
                     _buildSleepSubMetricRow(
                       icon: Icons.schedule,
                       title: 'REGOLARITÀ DEL\nSONNO',
                       value: widget.consistencyPct > 0 ? '${widget.consistencyPct.toInt()}%' : '--',
                       segments: 2,
                       activeSegment: 2,
-                      activeColor: WhoopTheme.sleepSlate,
+                      activeColor: NatureColors.tealLight,
+                      iconColor: NatureColors.powderBlue,
                     ),
-                    const Divider(color: WhoopTheme.cardBorder, height: 22, thickness: 1),
+                    Divider(color: NatureColors.darkBorder.withOpacity(0.6), height: 20, thickness: 1),
                     _buildSleepSubMetricRow(
                       icon: Icons.hotel,
                       title: 'EFFICIENZA DEL SONNO',
                       value: widget.efficiencyPct > 0 ? '${widget.efficiencyPct.toInt()}%' : '--',
                       segments: 2,
                       activeSegment: 2,
-                      activeColor: WhoopTheme.sleepSlate,
+                      activeColor: NatureColors.tealLight,
+                      iconColor: NatureColors.sage,
                     ),
-                    const Divider(color: WhoopTheme.cardBorder, height: 22, thickness: 1),
+                    Divider(color: NatureColors.darkBorder.withOpacity(0.6), height: 20, thickness: 1),
                     _buildSleepSubMetricRow(
                       icon: Icons.refresh,
                       title: 'STRESS ELEVATO NEL\nSONNO',
                       value: '0%',
                       segments: 3,
                       activeSegment: 3,
-                      activeColor: WhoopTheme.recoveryGreen,
+                      activeColor: NatureColors.sage,
+                      iconColor: NatureColors.lavender,
                     ),
-                    const Divider(color: WhoopTheme.cardBorder, height: 20, thickness: 1),
+                    Divider(color: NatureColors.darkBorder.withOpacity(0.6), height: 20, thickness: 1),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF141920),
+                          color: NatureColors.darkSurface,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFF222B34)),
+                          border: Border.all(color: NatureColors.darkBorder),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Container(width: 10, height: 2.5, color: const Color(0xFFFF9800)),
+                            Container(width: 10, height: 2.5, color: NatureColors.amberWarm),
                             const SizedBox(width: 4),
-                            const Text('Scarso', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                            const Text('Scarso', style: TextStyle(color: NatureColors.textDarkMuted, fontSize: 10, fontWeight: FontWeight.bold)),
                             const SizedBox(width: 12),
-                            Container(width: 10, height: 2.5, color: const Color(0xFF64748B)),
+                            Container(width: 10, height: 2.5, color: NatureColors.teal),
                             const SizedBox(width: 4),
-                            const Text('Sufficiente', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                            const Text('Sufficiente', style: TextStyle(color: NatureColors.textDarkMuted, fontSize: 10, fontWeight: FontWeight.bold)),
                             const SizedBox(width: 12),
-                            Container(width: 10, height: 2.5, color: WhoopTheme.recoveryGreen),
+                            Container(width: 10, height: 2.5, color: NatureColors.sage),
                             const SizedBox(width: 4),
-                            const Text('Ottimale', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                            const Text('Ottimale', style: TextStyle(color: NatureColors.textDarkMuted, fontSize: 10, fontWeight: FontWeight.bold)),
                           ],
                         ),
                       ),
@@ -356,10 +426,10 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         'Il sonno della scorsa notte',
                         style: TextStyle(
                           color: Colors.white,
@@ -367,10 +437,12 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      SizedBox(height: 2),
+                      const SizedBox(height: 2),
                       Text(
-                        'Oggi vs. 30 giorni precedenti',
-                        style: TextStyle(color: WhoopTheme.textSecondary, fontSize: 12),
+                        timeRangeStr != null
+                            ? '$timeRangeStr • Oggi vs. 30 giorni precedenti'
+                            : 'Oggi vs. 30 giorni precedenti',
+                        style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 12),
                       ),
                     ],
                   ),
@@ -420,7 +492,7 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
                 padding: const EdgeInsets.all(16),
-                decoration: WhoopTheme.officialCardDecoration(),
+                decoration: NatureTheme.organicCardDecoration(),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -430,27 +502,49 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
                       isLoading: viewModel?.isChartsLoading ?? false,
                     ),
                     const SizedBox(height: 16),
-                    const Divider(color: WhoopTheme.cardBorder, height: 1),
+                    Divider(color: NatureColors.darkBorder.withOpacity(0.6), height: 1),
                     const SizedBox(height: 14),
-                    _buildPhaseRow('VEGLIA', widget.awakeMin, WhoopTheme.textMuted),
+                    _buildPhaseRow('VEGLIA', widget.awakeMin, NatureColors.textDarkMuted),
                     const SizedBox(height: 14),
-                    _buildPhaseRow('LEGGERO', widget.lightSleepMin, WhoopTheme.strainBlue),
+                    _buildPhaseRow('LEGGERO', widget.lightSleepMin, NatureColors.tealLight),
                     const SizedBox(height: 14),
-                    _buildPhaseRow('SONNO A ONDE LENTE (PROFONDO)', widget.deepSleepMin, const Color(0xFFE91E8C)),
+                    _buildPhaseRow('SONNO A ONDE LENTE (PROFONDO)', widget.deepSleepMin, NatureColors.forestDeep),
                     const SizedBox(height: 14),
-                    _buildPhaseRow('REM', widget.remSleepMin, const Color(0xFF9C27B0)),
-                    const Divider(color: WhoopTheme.cardBorder, height: 24),
+                    _buildPhaseRow('REM', widget.remSleepMin, NatureColors.lavender),
+                    Divider(color: NatureColors.darkBorder.withOpacity(0.6), height: 24),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Row(
                           children: [
-                            Container(width: 10, height: 10, color: const Color(0xFFE91E8C)),
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: const BoxDecoration(
+                                color: NatureColors.teal,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
                             const SizedBox(width: 8),
-                            const Text('SONNO RISTORATORE', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                            const Text(
+                              'SONNO RISTORATORE',
+                              style: TextStyle(
+                                color: NatureColors.textDarkPrimary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
                           ],
                         ),
-                        Text(_formatHoursMin(restorativeMin), style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                        Text(
+                          _formatHoursMin(restorativeMin),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -493,7 +587,7 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
                 padding: const EdgeInsets.all(16),
-                decoration: WhoopTheme.officialCardDecoration(),
+                decoration: NatureTheme.organicCardDecoration(),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -503,7 +597,7 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
                         const Text(
                           'TREND SONNO (14 GIORNI)',
                           style: TextStyle(
-                            color: WhoopTheme.textSecondary,
+                            color: NatureColors.textDarkSecondary,
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 1.0,
@@ -512,7 +606,7 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
                         Text(
                           '${baseDur != null ? _formatHoursMin(baseDur) : "8:00"} BASELINE',
                           style: const TextStyle(
-                            color: WhoopTheme.textMuted,
+                            color: NatureColors.textDarkMuted,
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                           ),
@@ -524,7 +618,7 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
                       dataPoints: history14dSleep,
                       baselineValue: baseDur != null ? (baseDur / 60.0) : 8.0,
                       height: 55,
-                      primaryColor: WhoopTheme.sleepSlate,
+                      primaryColor: NatureColors.tealLight,
                       isLoading: viewModel?.isChartsLoading ?? false,
                     ),
                   ],
@@ -614,6 +708,13 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
     }
   }
 
+  String _getSleepStateLabel(double pct) {
+    if (pct <= 0) return 'IN ATTESA';
+    if (pct >= 85) return 'RIPOSO PROFONDO';
+    if (pct >= 70) return 'SUFFICIENTE';
+    return 'INSUFFICIENTE';
+  }
+
   Widget _buildSleepSubMetricRow({
     required IconData icon,
     required String title,
@@ -621,6 +722,7 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
     required int segments,
     required int activeSegment,
     required Color activeColor,
+    Color? iconColor,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -631,13 +733,22 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
           Expanded(
             child: Row(
               children: [
-                Icon(icon, color: WhoopTheme.textSecondary, size: 20),
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: NatureColors.darkSurface,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: NatureColors.darkBorder.withOpacity(0.5)),
+                  ),
+                  child: Icon(icon, color: iconColor ?? NatureColors.tealLight, size: 16),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     title,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: NatureColors.textDarkPrimary,
                       fontSize: 10.5,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.5,
@@ -661,7 +772,7 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
                     height: 3,
                     margin: const EdgeInsets.only(right: 3),
                     decoration: BoxDecoration(
-                      color: isActive ? activeColor : const Color(0xFF2C3946),
+                      color: isActive ? activeColor : NatureColors.darkBorder,
                       borderRadius: BorderRadius.circular(1.5),
                     ),
                   );
@@ -697,13 +808,13 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
     bool isYellow = false,
     required Widget child,
   }) {
-    Color arrowColor = isYellow ? WhoopTheme.recoveryYellow : (isUp ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryRed);
+    Color arrowColor = isYellow ? NatureColors.amberWarm : (isUp ? NatureColors.sage : NatureColors.terracotta);
     IconData arrowIcon = isUp ? Icons.arrow_drop_up : Icons.arrow_drop_down;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
-        decoration: WhoopTheme.officialCardDecoration(),
+        decoration: NatureTheme.organicCardDecoration(),
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -711,15 +822,15 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
-                const Icon(Icons.info_outline, color: WhoopTheme.textSecondary, size: 18),
+                Text(title, style: const TextStyle(color: NatureColors.textDarkSecondary, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                const Icon(Icons.info_outline, color: NatureColors.textDarkSecondary, size: 18),
               ],
             ),
             const SizedBox(height: 12),
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(mainValue, style: TextStyle(color: isYellow ? WhoopTheme.recoveryYellow : (isUp ? WhoopTheme.recoveryGreen : Colors.white), fontSize: 38, fontWeight: FontWeight.bold, height: 1.0)),
+                Text(mainValue, style: TextStyle(color: isYellow ? NatureColors.amberWarm : (isUp ? NatureColors.sage : Colors.white), fontSize: 38, fontWeight: FontWeight.bold, height: 1.0)),
                 const SizedBox(width: 4),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
@@ -727,7 +838,7 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
                     children: [
                       Icon(arrowIcon, color: arrowColor, size: 24),
                       const SizedBox(width: 2),
-                      Text(baselineValue, style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 14, fontWeight: FontWeight.w600)),
+                      Text(baselineValue, style: const TextStyle(color: NatureColors.textDarkMuted, fontSize: 14, fontWeight: FontWeight.w600)),
                     ],
                   ),
                 ),
@@ -835,15 +946,15 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: WhoopTheme.officialCardDecoration(),
+        decoration: NatureTheme.organicCardDecoration(),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
-                const Icon(Icons.chevron_right, color: WhoopTheme.textSecondary, size: 20),
+                Text(title, style: const TextStyle(color: NatureColors.textDarkSecondary, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                const Icon(Icons.chevron_right, color: NatureColors.textDarkSecondary, size: 20),
               ],
             ),
             const SizedBox(height: 16),
@@ -859,23 +970,23 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
 
                   return Container(
                     padding: isActive ? const EdgeInsets.symmetric(horizontal: 6, vertical: 4) : null,
-                    decoration: isActive ? BoxDecoration(color: WhoopTheme.cardSurface, borderRadius: BorderRadius.circular(8)) : null,
+                    decoration: isActive ? BoxDecoration(color: NatureColors.darkSurface, borderRadius: BorderRadius.circular(8)) : null,
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Text(val > 0 ? '$val$suffix' : '--', style: TextStyle(color: isActive ? WhoopTheme.sleepSlate : WhoopTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
+                        Text(val > 0 ? '$val$suffix' : '--', style: TextStyle(color: isActive ? NatureColors.tealLight : NatureColors.textDarkSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 6),
                         Container(
                           width: 24,
                           height: 90 * heightFactor,
                           decoration: BoxDecoration(
-                            color: val > 0 ? (isActive ? WhoopTheme.sleepSlate : WhoopTheme.sleepSlate.withValues(alpha: 0.5)) : WhoopTheme.cardBorder,
+                            color: val > 0 ? (isActive ? NatureColors.tealLight : NatureColors.tealLight.withValues(alpha: 0.5)) : NatureColors.darkBorder,
                             borderRadius: BorderRadius.circular(4),
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Text(days[i].split(' ')[0], style: TextStyle(color: isActive ? Colors.white : WhoopTheme.textMuted, fontSize: 10)),
-                        Text(days[i].split(' ')[1], style: TextStyle(color: isActive ? Colors.white : WhoopTheme.textMuted, fontSize: 10, fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
+                        Text(days[i].split(' ')[0], style: TextStyle(color: isActive ? Colors.white : NatureColors.textDarkMuted, fontSize: 10)),
+                        Text(days[i].split(' ')[1], style: TextStyle(color: isActive ? Colors.white : NatureColors.textDarkMuted, fontSize: 10, fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
                       ],
                     ),
                   );
@@ -898,15 +1009,15 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: WhoopTheme.officialCardDecoration(),
+        decoration: NatureTheme.organicCardDecoration(),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
-                const Icon(Icons.chevron_right, color: WhoopTheme.textSecondary, size: 20),
+                Text(title, style: const TextStyle(color: NatureColors.textDarkSecondary, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                const Icon(Icons.chevron_right, color: NatureColors.textDarkSecondary, size: 20),
               ],
             ),
             const SizedBox(height: 16),
@@ -924,8 +1035,8 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
                 final isActive = i == activeIdx;
                 return Column(
                   children: [
-                    Text(days[i].split(' ')[0], style: TextStyle(color: isActive ? Colors.white : WhoopTheme.textMuted, fontSize: 9)),
-                    Text(days[i].split(' ')[1], style: TextStyle(color: isActive ? Colors.white : WhoopTheme.textMuted, fontSize: 9, fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
+                    Text(days[i].split(' ')[0], style: TextStyle(color: isActive ? Colors.white : NatureColors.textDarkMuted, fontSize: 9)),
+                    Text(days[i].split(' ')[1], style: TextStyle(color: isActive ? Colors.white : NatureColors.textDarkMuted, fontSize: 9, fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
                   ],
                 );
               }),
@@ -942,8 +1053,13 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
 class _SleepArcPainter extends CustomPainter {
   final double percentage;
   final Color arcColor;
+  final bool isDark;
 
-  const _SleepArcPainter({required this.percentage, required this.arcColor});
+  const _SleepArcPainter({
+    required this.percentage,
+    required this.arcColor,
+    this.isDark = false,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -951,7 +1067,7 @@ class _SleepArcPainter extends CustomPainter {
     final radius = min(size.width / 2, size.height / 2) - 10;
 
     final bgPaint = Paint()
-      ..color = WhoopTheme.cardBorder
+      ..color = isDark ? WhoopTheme.cardBorder : NatureColors.sandBorderSubtle
       ..style = PaintingStyle.stroke
       ..strokeWidth = 14
       ..strokeCap = StrokeCap.round;
@@ -1033,35 +1149,6 @@ class _WeeklyLinePainter extends CustomPainter {
         textPainter.paint(canvas, Offset(p.dx - textPainter.width / 2, p.dy - 16));
       }
     }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _SleepTriangleCaretPainter extends CustomPainter {
-  const _SleepTriangleCaretPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(0, size.height)
-      ..lineTo(size.width / 2, 0)
-      ..lineTo(size.width, size.height)
-      ..close();
-
-    final fillPaint = Paint()
-      ..color = const Color(0xFF12171B)
-      ..style = PaintingStyle.fill;
-
-    final borderPaint = Paint()
-      ..color = const Color(0xFF242E35)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-
-    canvas.drawPath(path, fillPaint);
-    canvas.drawLine(Offset(0, size.height), Offset(size.width / 2, 0), borderPaint);
-    canvas.drawLine(Offset(size.width / 2, 0), Offset(size.width, size.height), borderPaint);
   }
 
   @override

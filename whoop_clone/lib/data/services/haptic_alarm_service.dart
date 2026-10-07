@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../ble/ble_connection_manager.dart';
 import '../ble/noop_protocol_decoder.dart';
 import '../database/database_helper.dart';
@@ -228,20 +229,44 @@ class HapticAlarmService extends ChangeNotifier {
     }
   }
 
+  Timer? _phoneVibrationLoop;
+
   /// Innesca l'allarme aptico attivo
   Future<void> triggerAlarm({String reason = 'Sveglia Attivata'}) async {
     _isRinging = true;
     _lastRingTime = DateTime.now();
     debugPrint('[HapticAlarmService] 🔔 ALLARME APTICO ATTIVATO: $reason');
 
-    // Invia pacchetto di vibrazione immediata allo strap
+    // 1. Invia pacchetto di vibrazione immediata allo strap
     await testVibrationPulse();
+
+    // 2. Innesca vibrazione fisica dello smartphone in loop
+    _startPhoneVibrationRinging();
+
     notifyListeners();
+  }
+
+  void _startPhoneVibrationRinging() {
+    _phoneVibrationLoop?.cancel();
+    HapticFeedback.vibrate();
+    _phoneVibrationLoop = Timer.periodic(const Duration(milliseconds: 800), (timer) {
+      if (!_isRinging) {
+        timer.cancel();
+      } else {
+        HapticFeedback.vibrate();
+      }
+    });
+  }
+
+  void _stopPhoneVibration() {
+    _phoneVibrationLoop?.cancel();
+    _phoneVibrationLoop = null;
   }
 
   /// Snooze della sveglia per 9 minuti
   void snoozeAlarm({int snoozeMinutes = 9}) {
     _isRinging = false;
+    _stopPhoneVibration();
     _snoozeUntil = DateTime.now().add(Duration(minutes: snoozeMinutes));
     debugPrint('[HapticAlarmService] ⏸ Sveglia in Snooze fino a: $_snoozeUntil');
     notifyListeners();
@@ -250,6 +275,7 @@ class HapticAlarmService extends ChangeNotifier {
   /// Spegne definitivamente la sveglia per il ciclo corrente
   Future<void> dismissAlarm() async {
     _isRinging = false;
+    _stopPhoneVibration();
     _snoozeUntil = null;
     await _cancelBleAlarmOnStrap();
     debugPrint('[HapticAlarmService] ⏹ Sveglia Disattivata / Dismissed');
@@ -271,6 +297,7 @@ class HapticAlarmService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _stopPhoneVibration();
     _monitoringTimer?.cancel();
     super.dispose();
   }

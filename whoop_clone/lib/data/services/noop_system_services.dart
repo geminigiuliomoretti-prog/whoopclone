@@ -133,41 +133,17 @@ class BackgroundSyncDaemon {
           _lastSpo2Pct = double.parse((110.0 - (25.0 * rRatio)).clamp(85.0, 100.0).toStringAsFixed(1));
         }
 
-        // Accoda i pacchetti 96-byte per il flush su SQLite in transazione
-        try {
-          final hrVal = packet.heartRateBpm > 0 ? packet.heartRateBpm : (_nocturnalBpmSamples.isNotEmpty ? _nocturnalBpmSamples.last : 0);
-          if (hrVal > 0) {
-            _lastPacket96Time = packet.timestamp;
-            final rmssdVal = packet.hrvRmssdMs > 0 && packet.hrvRmssdMs < 200 ? packet.hrvRmssdMs : null;
-            if (rmssdVal != null) {
-              _nocturnalHrvSamples.add(rmssdVal);
-              if (_nocturnalHrvSamples.length > 3600) {
-                _nocturnalHrvSamples.removeAt(0);
-              }
-            }
-            _flushQueue.add({
-              'bpm': hrVal,
-              'rmssd_ms': rmssdVal,
-              'rr_ms': rmssdVal,
-              'accel_enmo': _lastMotionVar,
-              'motion_var': _lastMotionVar,
-              'skin_temp_celsius': _lastSkinTempC,
-              'skin_temp_raw': rawTemp,
-              'spo2_pct': _lastSpo2Pct,
-              'spo2_ratio_r': rRatio,
-              'resp_rate': _lastRespRate,
-              'resp_power': _lastRespPower,
-              'timestamp': packet.timestamp.toUtc().toIso8601String(),
-              'timestamp_utc_ms': packet.timestamp.toUtc().millisecondsSinceEpoch,
-              'source': 'REAL_STREAM',
-              'quality': 'VALID',
-            });
-            if (_flushQueue.length >= maxQueueSize) {
-              await flushTelemetry();
+        // Aggiorna metriche in memoria per buffering notturno
+        final hrVal = packet.heartRateBpm > 0 ? packet.heartRateBpm : (_nocturnalBpmSamples.isNotEmpty ? _nocturnalBpmSamples.last : 0);
+        if (hrVal > 0) {
+          _lastPacket96Time = packet.timestamp;
+          final rmssdVal = packet.hrvRmssdMs > 0 && packet.hrvRmssdMs < 200 ? packet.hrvRmssdMs : null;
+          if (rmssdVal != null) {
+            _nocturnalHrvSamples.add(rmssdVal);
+            if (_nocturnalHrvSamples.length > 3600) {
+              _nocturnalHrvSamples.removeAt(0);
             }
           }
-        } catch (e) {
-          debugPrint('[BackgroundSyncDaemon] Error queuing packet telemetry: $e');
         }
       }
     });
@@ -181,7 +157,6 @@ class BackgroundSyncDaemon {
           _nocturnalBpmSamples.removeAt(0);
         }
 
-        double? calculatedRmssd;
         if (hrPacket.rrIntervalsMs.isNotEmpty) {
           for (final rr in hrPacket.rrIntervalsMs) {
             if (rr > 300 && rr < 1500) {
@@ -199,7 +174,6 @@ class BackgroundSyncDaemon {
                 : _nocturnalRrSamples;
             final rmssd = NoopAnalyticsEngine.calculateRmssd(recentRr);
             if (rmssd != null && rmssd > 0 && rmssd < 200) {
-              calculatedRmssd = rmssd;
               final hasRecent96 = _lastPacket96Time != null &&
                   hrPacket.timestamp.difference(_lastPacket96Time!).inMilliseconds.abs() < 2000;
               if (!hasRecent96) {
@@ -209,36 +183,6 @@ class BackgroundSyncDaemon {
                 }
               }
             }
-          }
-        }
-
-        // Coordinamento con _packet96Sub: se abbiamo appena ricevuto un pacchetto 96 byte (entro 1500 ms),
-        // evitiamo di inserire un campione duplicato alla stessa frequenza in telemetria_grezza
-        // poiché il pacchetto a 96 byte contiene già la telemetria completa (sensori + rMSSD nativo).
-        final bool hasRecent96Packet = _lastPacket96Time != null &&
-            hrPacket.timestamp.difference(_lastPacket96Time!).inMilliseconds.abs() < 1500;
-
-        if (!hasRecent96Packet) {
-          try {
-            _flushQueue.add({
-              'bpm': hrPacket.bpm,
-              'rr_ms': calculatedRmssd,
-              'accel_enmo': _lastMotionVar,
-              'motion_var': _lastMotionVar,
-              'skin_temp_celsius': _lastSkinTempC,
-              'spo2_pct': _lastSpo2Pct,
-              'resp_rate': _lastRespRate,
-              'resp_power': _lastRespPower,
-              'timestamp': hrPacket.timestamp.toUtc().toIso8601String(),
-              'timestamp_utc_ms': hrPacket.timestamp.toUtc().millisecondsSinceEpoch,
-              'source': 'HR_SERVICE_2A37',
-              'quality': 'VALID',
-            });
-            if (_flushQueue.length >= maxQueueSize) {
-              await flushTelemetry();
-            }
-          } catch (e) {
-            debugPrint('[BackgroundSyncDaemon] Error queuing HR telemetry: $e');
           }
         }
       }
@@ -305,7 +249,8 @@ class BackgroundSyncDaemon {
           'hr': bpm.toDouble(),
           'bpm': bpm.toDouble(),
           'rmssd': hrv,
-          'rr_ms': hrv,
+          'rmssd_ms': hrv,
+          'rr_ms': null,
           'motion_var': _lastMotionVar,
           'accel_enmo': _lastMotionVar,
           'resp_power': _lastRespPower,

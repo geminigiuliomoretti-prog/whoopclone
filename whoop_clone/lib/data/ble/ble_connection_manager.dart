@@ -9,6 +9,7 @@ import 'hr_data_packet.dart';
 import 'whoop_96byte_packet.dart';
 import 'noop_protocol_decoder.dart';
 import '../services/overnight_sleep_engine.dart';
+import '../services/telemetry_ingestion_service.dart';
 import '../database/database_helper.dart';
 import 'ble_diagnostic_service.dart';
 import '../services/raw_capture_service.dart';
@@ -178,6 +179,12 @@ class BleConnectionManager {
   // Data Watchdog: timeout 15 secondi per assenza dati in streaming
   static const Duration defaultDataWatchdogTimeout = Duration(seconds: 15);
   Duration dataWatchdogTimeout = defaultDataWatchdogTimeout;
+
+  final TelemetryIngestionService _ingestionService;
+  TelemetryIngestionService get ingestionService => _ingestionService;
+
+  BleConnectionManager({TelemetryIngestionService? ingestionService})
+      : _ingestionService = ingestionService ?? TelemetryIngestionService.instance;
 
   // Getters
   BleState get state => _state;
@@ -491,6 +498,15 @@ class BleConnectionManager {
         whereArgs: [1],
       );
     } catch (_) {}
+  }
+
+  /// Disconnette graziosamente il dispositivo, cancella timer di auto-riconnessione e reimposta lo stato (BLE-02, DIA-01)
+  Future<void> disconnectDevice({bool forget = false}) async {
+    if (forget) {
+      await forgetDevice();
+    } else {
+      await disconnect(cancelReconnectTimer: true, force: true);
+    }
   }
 
   /// 2. Flusso Zero-Scan all'avvio dell'applicazione
@@ -834,6 +850,14 @@ class BleConnectionManager {
               _fallbackModeActive = false;
               _onTelemetryDataReceived();
 
+              // UNIFIED INGESTION PIPELINE (ARCH-01):
+              _ingestionService.ingestRawPacket(
+                bytesU8,
+                source: _state == BleState.syncingHistory ? 'STORE_FORWARD' : 'REAL_STREAM',
+                deviceId: device.remoteId.str,
+                sessionId: _sessionStartTime?.toIso8601String(),
+              );
+
               // BLE-04: Non inviare ACK per i normali pacchetti live di streaming.
               // Solo durante sync storico (syncingHistory) si invia l'ACK opcode 23,
               // e viene accodato in modo asincrono non bloccante (NO await).
@@ -921,6 +945,16 @@ class BleConnectionManager {
               if (!_hrStreamController.isClosed) {
                 _hrStreamController.add(packet);
               }
+
+              // UNIFIED INGESTION PIPELINE (ARCH-01):
+              if (!_isProprietaryChannelActive) {
+                _ingestionService.ingestRawPacket(
+                  bytesU8,
+                  source: 'HR_SERVICE_2A37',
+                  deviceId: device.remoteId.str,
+                  sessionId: _sessionStartTime?.toIso8601String(),
+                );
+              }
             }
           });
           debugPrint('BleConnectionManager: [5/5] Sottoscritto canale 0x2A37 (Standard HR)');
@@ -948,6 +982,14 @@ class BleConnectionManager {
               if (!_hrStreamController.isClosed) {
                 _hrStreamController.add(packet);
               }
+
+              // UNIFIED INGESTION PIPELINE (ARCH-01):
+              _ingestionService.ingestRawPacket(
+                bytesU8,
+                source: 'HR_SERVICE_2A37',
+                deviceId: device.remoteId.str,
+                sessionId: _sessionStartTime?.toIso8601String(),
+              );
             }
           });
         } catch (_) {}
@@ -1457,6 +1499,8 @@ class BleConnectionManager {
     if (!_ackNotificationStreamController.isClosed) _ackNotificationStreamController.close();
     if (!_debugLogsController.isClosed) _debugLogsController.close();
   }
+
+  bool get isDisposed => _hrStreamController.isClosed;
 
   // --- Testing Hooks ---
   @visibleForTesting

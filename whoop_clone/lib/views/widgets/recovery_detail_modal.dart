@@ -1,8 +1,10 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 import '../../data/services/insight_engine.dart';
 import 'provenance_badge.dart';
+import 'nature/nature_scene.dart';
 
 /// Schermata Dettaglio Recupero WHOOP 5.0 (Full Page)
 /// Zero-Tolerance Mock Purge: Legge i dati calcolati matematicamente da SQLite (cicli_fisiologici)
@@ -81,6 +83,8 @@ class RecoveryDetailModal extends StatefulWidget {
 }
 
 class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
+  bool get isDark => Theme.of(context).brightness == Brightness.dark;
+
   Color get _recoveryColor => widget.recoveryPct > 0
       ? WhoopTheme.getRecoveryColor(widget.recoveryPct)
       : WhoopTheme.textMuted;
@@ -103,27 +107,35 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
     final List<Map<String, dynamic>> last7DaysData = _buildLast7DaysSeries(widget.historicalCicli);
 
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: isDark ? NatureColors.darkCanvas : NatureColors.canvas,
       appBar: AppBar(
-        backgroundColor: WhoopTheme.background,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.chevron_left, color: Colors.white, size: 28),
+          icon: Icon(
+            Icons.chevron_left,
+            color: isDark ? NatureColors.textDarkPrimary : NatureColors.textPrimary,
+            size: 28,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'OGGI',
           style: TextStyle(
-            color: Colors.white,
-            fontSize: 14,
+            color: isDark ? NatureColors.textDarkPrimary : NatureColors.textPrimary,
+            fontSize: 13,
             fontWeight: FontWeight.w900,
-            letterSpacing: 1.2,
+            letterSpacing: 1.5,
           ),
         ),
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.info_outline, color: WhoopTheme.textSecondary, size: 22),
+            icon: Icon(
+              Icons.info_outline,
+              color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+              size: 22,
+            ),
             onPressed: () {},
           ),
         ],
@@ -135,55 +147,80 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
           children: [
             const SizedBox(height: 10),
 
-            // 1. Grande Cerchio Recovery
-            Center(
-              child: SizedBox(
-                width: 220,
-                height: 220,
-                child: CustomPaint(
-                  painter: _RecoveryArcPainter(
-                    percent: hasRecovery ? (widget.recoveryPct / 100.0) : 0.0,
-                    color: _recoveryColor,
-                  ),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text(
-                          'WHOOP',
-                          style: TextStyle(
-                            color: WhoopTheme.textSecondary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2.0,
-                          ),
+            // 1. Hero Cerchio Recovery in NatureScene
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: NatureScene(
+                mood: NatureMood.recovery,
+                intensity: hasRecovery ? (widget.recoveryPct / 100.0) : 0.70,
+                height: 270,
+                isDark: isDark,
+                borderRadius: BorderRadius.circular(28),
+                child: Center(
+                  child: SizedBox(
+                    width: 220,
+                    height: 220,
+                    child: CustomPaint(
+                      painter: _RecoveryArcPainter(
+                        percent: hasRecovery ? (widget.recoveryPct / 100.0) : 0.0,
+                        color: _recoveryColor,
+                        isDark: isDark,
+                      ),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? NatureColors.darkSurface.withOpacity(0.7)
+                                    : NatureColors.creamDark.withOpacity(0.85),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isDark
+                                      ? NatureColors.darkBorder.withOpacity(0.6)
+                                      : NatureColors.sandBorderSubtle,
+                                ),
+                              ),
+                              child: Text(
+                                _getRecoveryStateLabel(widget.recoveryPct),
+                                style: TextStyle(
+                                  color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.5,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              hasRecovery ? '${widget.recoveryPct.toInt()}%' : '--',
+                              style: TextStyle(
+                                color: isDark ? Colors.white : NatureColors.textPrimary,
+                                fontSize: 52,
+                                fontWeight: FontWeight.w900,
+                                height: 1.0,
+                                fontFeatures: const [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'RECUPERO',
+                              style: TextStyle(
+                                color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                            if (widget.provenance != null) ...[
+                              const SizedBox(height: 6),
+                              ProvenanceBadge(provenance: widget.provenance!),
+                            ],
+                          ],
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          hasRecovery ? '${widget.recoveryPct.toInt()}%' : '--',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 54,
-                            fontWeight: FontWeight.w900,
-                            height: 1.0,
-                            fontFeatures: [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'RECUPERO',
-                          style: TextStyle(
-                            color: WhoopTheme.textSecondary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.0,
-                          ),
-                        ),
-                        if (widget.provenance != null) ...[
-                          const SizedBox(height: 6),
-                          ProvenanceBadge(provenance: widget.provenance!),
-                        ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -192,17 +229,11 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
 
             const SizedBox(height: 16),
 
-            // 2. Card 4 Sub-metriche Reali con Caret Notch
-            Center(
-              child: CustomPaint(
-                size: const Size(14, 7),
-                painter: const _TriangleCaretPainter(),
-              ),
-            ),
+            // 2. Card 4 Sub-metriche Reali
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
-                decoration: WhoopTheme.officialCardDecoration(),
+                decoration: NatureTheme.organicCardDecoration(isDark: isDark),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 child: Column(
                   children: [
@@ -212,34 +243,54 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
                       value: hasHrv ? '${widget.hrvMs.toInt()}' : '--',
                       baseline: hrvBase != null ? '${hrvBase.toInt()}' : '--',
                       isUp: hrvBase != null && widget.hrvMs >= hrvBase,
+                      iconColor: NatureColors.sage,
                     ),
-                    const Divider(color: WhoopTheme.cardBorder, height: 22, thickness: 1),
+                    Divider(
+                      color: isDark ? NatureColors.darkBorder.withOpacity(0.6) : NatureColors.sandBorderSubtle,
+                      height: 20,
+                      thickness: 1,
+                    ),
                     _buildSubMetricRow(
                       icon: Icons.favorite_border,
                       title: 'FREQUENZA CARDIACA A RIPOSO',
                       value: hasFcr ? '${widget.fcrBpm}' : '--',
                       baseline: fcrBase != null ? '$fcrBase' : '--',
                       isUp: fcrBase != null && widget.fcrBpm <= fcrBase,
-                      arrowColor: WhoopTheme.recoveryGreen,
+                      arrowColor: NatureColors.sage,
+                      iconColor: NatureColors.terracotta,
                     ),
-                    const Divider(color: WhoopTheme.cardBorder, height: 22, thickness: 1),
+                    Divider(
+                      color: isDark ? NatureColors.darkBorder.withOpacity(0.6) : NatureColors.sandBorderSubtle,
+                      height: 20,
+                      thickness: 1,
+                    ),
                     _buildSubMetricRow(
                       icon: Icons.air,
                       title: 'FREQUENZA RESPIRATORIA',
                       value: hasResp ? widget.respRateRpm.toStringAsFixed(1) : '--',
                       baseline: respBase != null ? respBase.toStringAsFixed(1) : '--',
                       isUp: respBase != null && widget.respRateRpm <= respBase + 0.5,
-                      arrowColor: const Color(0xFFFF9800),
+                      arrowColor: NatureColors.amberWarm,
+                      iconColor: NatureColors.powderBlue,
                     ),
-                    const Divider(color: WhoopTheme.cardBorder, height: 22, thickness: 1),
+                    Divider(
+                      color: isDark ? NatureColors.darkBorder.withOpacity(0.6) : NatureColors.sandBorderSubtle,
+                      height: 20,
+                      thickness: 1,
+                    ),
                     _buildSubMetricRow(
                       icon: Icons.nightlight_round,
                       title: 'PRESTAZIONE DEL SONNO',
                       value: hasSleepPerf ? '${sleepPerf.toInt()}%' : '--',
                       baseline: sleepBase != null ? '${sleepBase.toInt()}%' : '--',
                       isUp: sleepBase != null && (sleepPerf ?? 0) >= sleepBase,
+                      iconColor: NatureColors.teal,
                     ),
-                    const Divider(color: WhoopTheme.cardBorder, height: 20, thickness: 1),
+                    Divider(
+                      color: isDark ? NatureColors.darkBorder.withOpacity(0.6) : NatureColors.sandBorderSubtle,
+                      height: 20,
+                      thickness: 1,
+                    ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Row(
@@ -247,20 +298,22 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF141920),
+                              color: isDark ? NatureColors.darkSurface : NatureColors.creamLight,
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFF222B34)),
+                              border: Border.all(
+                                color: isDark ? NatureColors.darkBorder : NatureColors.sandBorderSubtle,
+                              ),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
-                              children: const [
-                                Icon(Icons.arrow_drop_up, color: WhoopTheme.recoveryGreen, size: 15),
-                                Icon(Icons.arrow_drop_down, color: Color(0xFFFF9800), size: 15),
-                                SizedBox(width: 6),
+                              children: [
+                                const Icon(Icons.arrow_drop_up, color: NatureColors.sage, size: 15),
+                                const Icon(Icons.arrow_drop_down, color: NatureColors.amberWarm, size: 15),
+                                const SizedBox(width: 6),
                                 Text(
                                   'Oggi vs. 30 giorni precedenti',
                                   style: TextStyle(
-                                    color: WhoopTheme.textMuted,
+                                    color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
                                     fontSize: 10.5,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -283,7 +336,10 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
                 padding: const EdgeInsets.all(16),
-                decoration: WhoopTheme.officialCardDecoration(tint: WhoopTheme.recoveryGreen),
+                decoration: NatureTheme.organicCardDecoration(
+                  accentTint: NatureColors.sage,
+                  isDark: isDark,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -292,7 +348,11 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
                         hrvSws: hasHrv ? widget.hrvMs : null,
                         hrvBaseline: hrvBase,
                       ),
-                      style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+                      style: TextStyle(
+                        color: isDark ? NatureColors.textDarkPrimary : NatureColors.textPrimary,
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     GestureDetector(
@@ -300,7 +360,7 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
                       child: const Text(
                         'ESPLORA I TUOI APPROFONDIMENTI SUL RECUPERO',
                         style: TextStyle(
-                          color: WhoopTheme.strainBlue,
+                          color: NatureColors.powderBlue,
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 0.8,
@@ -315,11 +375,15 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
             const SizedBox(height: 24),
 
             // 5. Titolo Tendenze settimanali
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
                 'Tendenze settimanali',
-                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: isDark ? Colors.white : NatureColors.textPrimary,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             const SizedBox(height: 14),
@@ -427,6 +491,13 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
     }
   }
 
+  String _getRecoveryStateLabel(double pct) {
+    if (pct <= 0) return 'IN ATTESA';
+    if (pct >= 67) return 'OTTIMALE';
+    if (pct >= 34) return 'ADEGUATO';
+    return 'INSUFFICIENTE';
+  }
+
   Widget _buildSubMetricRow({
     required IconData icon,
     required String title,
@@ -434,8 +505,9 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
     required String baseline,
     required bool isUp,
     Color? arrowColor,
+    Color? iconColor,
   }) {
-    final effectiveArrowColor = arrowColor ?? (isUp ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryRed);
+    final effectiveArrowColor = arrowColor ?? (isUp ? NatureColors.sage : NatureColors.terracotta);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -446,13 +518,24 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
           Expanded(
             child: Row(
               children: [
-                Icon(icon, color: WhoopTheme.textSecondary, size: 20),
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: isDark ? NatureColors.darkSurface : NatureColors.creamLight,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isDark ? NatureColors.darkBorder.withOpacity(0.5) : NatureColors.sandBorderSubtle,
+                    ),
+                  ),
+                  child: Icon(icon, color: iconColor ?? NatureColors.sage, size: 16),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     title,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: isDark ? NatureColors.textDarkPrimary : NatureColors.textPrimary,
                       fontSize: 10.5,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.5,
@@ -472,11 +555,11 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
                 children: [
                   Text(
                     value,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : NatureColors.textPrimary,
                       fontSize: 18,
                       fontWeight: FontWeight.w900,
-                      fontFeatures: [FontFeature.tabularFigures()],
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                   const SizedBox(width: 2),
@@ -489,11 +572,11 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
               ),
               Text(
                 baseline,
-                style: const TextStyle(
-                  color: WhoopTheme.textMuted,
+                style: TextStyle(
+                  color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  fontFeatures: [FontFeature.tabularFigures()],
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ],
@@ -513,15 +596,27 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: WhoopTheme.officialCardDecoration(),
+        decoration: NatureTheme.organicCardDecoration(isDark: isDark),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
-                const Icon(Icons.chevron_right, color: WhoopTheme.textSecondary, size: 20),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+                  size: 20,
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -533,27 +628,54 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
                 children: List.generate(days.length, (i) {
                   final isActive = i == activeIdx;
                   final val = values[i];
-                  final color = val > 0 ? WhoopTheme.getRecoveryColor(val.toDouble()) : WhoopTheme.cardBorder;
+                  final color = val > 0
+                      ? WhoopTheme.getRecoveryColor(val.toDouble())
+                      : (isDark ? NatureColors.darkBorder : NatureColors.sandBorderSubtle);
 
                   return Container(
                     padding: isActive ? const EdgeInsets.symmetric(horizontal: 6, vertical: 4) : null,
-                    decoration: isActive ? BoxDecoration(color: WhoopTheme.cardSurface, borderRadius: BorderRadius.circular(8)) : null,
+                    decoration: isActive
+                        ? BoxDecoration(
+                            color: isDark ? NatureColors.darkSurface : NatureColors.creamDark,
+                            borderRadius: BorderRadius.circular(8),
+                          )
+                        : null,
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Text(val > 0 ? '$val%' : '--', style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+                        Text(
+                          val > 0 ? '$val%' : '--',
+                          style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
                         const SizedBox(height: 6),
                         Container(
                           width: 24,
                           height: val > 0 ? (90 * (val / 100.0)) : 4.0,
                           decoration: BoxDecoration(
                             color: color,
-                            borderRadius: BorderRadius.circular(3),
+                            borderRadius: BorderRadius.circular(6),
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Text(days[i].split(' ')[0], style: TextStyle(color: isActive ? Colors.white : WhoopTheme.textMuted, fontSize: 10)),
-                        Text(days[i].split(' ')[1], style: TextStyle(color: isActive ? Colors.white : WhoopTheme.textMuted, fontSize: 10, fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
+                        Text(
+                          days[i].split(' ')[0],
+                          style: TextStyle(
+                            color: isActive
+                                ? (isDark ? Colors.white : NatureColors.textPrimary)
+                                : (isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary),
+                            fontSize: 10,
+                          ),
+                        ),
+                        Text(
+                          days[i].split(' ')[1],
+                          style: TextStyle(
+                            color: isActive
+                                ? (isDark ? Colors.white : NatureColors.textPrimary)
+                                : (isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary),
+                            fontSize: 10,
+                            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
                       ],
                     ),
                   );
@@ -576,15 +698,27 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: WhoopTheme.officialCardDecoration(),
+        decoration: NatureTheme.organicCardDecoration(isDark: isDark),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
-                const Icon(Icons.chevron_right, color: WhoopTheme.textSecondary, size: 20),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+                  size: 20,
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -592,7 +726,7 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
               height: 120,
               width: double.infinity,
               child: CustomPaint(
-                painter: _WeeklyLineIntPainter(values: values, activeIdx: activeIdx),
+                painter: _WeeklyLineIntPainter(values: values, activeIdx: activeIdx, isDark: isDark),
               ),
             ),
             const SizedBox(height: 8),
@@ -602,8 +736,25 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
                 final isActive = i == activeIdx;
                 return Column(
                   children: [
-                    Text(days[i].split(' ')[0], style: TextStyle(color: isActive ? Colors.white : WhoopTheme.textMuted, fontSize: 9)),
-                    Text(days[i].split(' ')[1], style: TextStyle(color: isActive ? Colors.white : WhoopTheme.textMuted, fontSize: 9, fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
+                    Text(
+                      days[i].split(' ')[0],
+                      style: TextStyle(
+                        color: isActive
+                            ? (isDark ? Colors.white : NatureColors.textPrimary)
+                            : (isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary),
+                        fontSize: 9,
+                      ),
+                    ),
+                    Text(
+                      days[i].split(' ')[1],
+                      style: TextStyle(
+                        color: isActive
+                            ? (isDark ? Colors.white : NatureColors.textPrimary)
+                            : (isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary),
+                        fontSize: 9,
+                        fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
                   ],
                 );
               }),
@@ -624,15 +775,27 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: WhoopTheme.officialCardDecoration(),
+        decoration: NatureTheme.organicCardDecoration(isDark: isDark),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
-                const Icon(Icons.chevron_right, color: WhoopTheme.textSecondary, size: 20),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: isDark ? NatureColors.textDarkSecondary : NatureColors.textSecondary,
+                  size: 20,
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -640,7 +803,7 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
               height: 120,
               width: double.infinity,
               child: CustomPaint(
-                painter: _WeeklyLineDoublePainter(values: values, activeIdx: activeIdx),
+                painter: _WeeklyLineDoublePainter(values: values, activeIdx: activeIdx, isDark: isDark),
               ),
             ),
             const SizedBox(height: 8),
@@ -650,8 +813,25 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
                 final isActive = i == activeIdx;
                 return Column(
                   children: [
-                    Text(days[i].split(' ')[0], style: TextStyle(color: isActive ? Colors.white : WhoopTheme.textMuted, fontSize: 9)),
-                    Text(days[i].split(' ')[1], style: TextStyle(color: isActive ? Colors.white : WhoopTheme.textMuted, fontSize: 9, fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
+                    Text(
+                      days[i].split(' ')[0],
+                      style: TextStyle(
+                        color: isActive
+                            ? (isDark ? Colors.white : NatureColors.textPrimary)
+                            : WhoopTheme.textMuted,
+                        fontSize: 9,
+                      ),
+                    ),
+                    Text(
+                      days[i].split(' ')[1],
+                      style: TextStyle(
+                        color: isActive
+                            ? (isDark ? Colors.white : NatureColors.textPrimary)
+                            : WhoopTheme.textMuted,
+                        fontSize: 9,
+                        fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
                   ],
                 );
               }),
@@ -668,8 +848,13 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
 class _RecoveryArcPainter extends CustomPainter {
   final double percent;
   final Color color;
+  final bool isDark;
 
-  const _RecoveryArcPainter({required this.percent, required this.color});
+  const _RecoveryArcPainter({
+    required this.percent,
+    required this.color,
+    this.isDark = false,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -677,7 +862,7 @@ class _RecoveryArcPainter extends CustomPainter {
     final radius = min(size.width / 2, size.height / 2) - 10;
 
     final bgPaint = Paint()
-      ..color = WhoopTheme.cardBorder
+      ..color = isDark ? WhoopTheme.cardBorder : NatureColors.sandBorderSubtle
       ..style = PaintingStyle.stroke
       ..strokeWidth = 14
       ..strokeCap = StrokeCap.round;
@@ -703,8 +888,13 @@ class _RecoveryArcPainter extends CustomPainter {
 class _WeeklyLineIntPainter extends CustomPainter {
   final List<int> values;
   final int activeIdx;
+  final bool isDark;
 
-  _WeeklyLineIntPainter({required this.values, required this.activeIdx});
+  _WeeklyLineIntPainter({
+    required this.values,
+    required this.activeIdx,
+    this.isDark = false,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -748,12 +938,12 @@ class _WeeklyLineIntPainter extends CustomPainter {
     for (int i = 0; i < points.length; i++) {
       final p = points[i];
       final isAct = i == activeIdx;
-      canvas.drawCircle(p, 4, Paint()..color = isAct ? Colors.white : WhoopTheme.sleepSlate);
-      canvas.drawCircle(p, 2, Paint()..color = WhoopTheme.background);
+      canvas.drawCircle(p, 4, Paint()..color = isAct ? (isDark ? Colors.white : NatureColors.tealDark) : WhoopTheme.sleepSlate);
+      canvas.drawCircle(p, 2, Paint()..color = isDark ? WhoopTheme.background : Colors.white);
 
       if (values[i] > 0) {
         final textPainter = TextPainter(
-          text: TextSpan(text: '${values[i]}', style: TextStyle(color: isAct ? WhoopTheme.sleepSlate : WhoopTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
+          text: TextSpan(text: '${values[i]}', style: TextStyle(color: isAct ? (isDark ? WhoopTheme.sleepSlate : NatureColors.tealDark) : WhoopTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
           textDirection: TextDirection.ltr,
         )..layout();
         textPainter.paint(canvas, Offset(p.dx - textPainter.width / 2, p.dy - 16));
@@ -768,8 +958,13 @@ class _WeeklyLineIntPainter extends CustomPainter {
 class _WeeklyLineDoublePainter extends CustomPainter {
   final List<double> values;
   final int activeIdx;
+  final bool isDark;
 
-  _WeeklyLineDoublePainter({required this.values, required this.activeIdx});
+  _WeeklyLineDoublePainter({
+    required this.values,
+    required this.activeIdx,
+    this.isDark = false,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -813,46 +1008,17 @@ class _WeeklyLineDoublePainter extends CustomPainter {
     for (int i = 0; i < points.length; i++) {
       final p = points[i];
       final isAct = i == activeIdx;
-      canvas.drawCircle(p, 4, Paint()..color = isAct ? Colors.white : WhoopTheme.sleepSlate);
-      canvas.drawCircle(p, 2, Paint()..color = WhoopTheme.background);
+      canvas.drawCircle(p, 4, Paint()..color = isAct ? (isDark ? Colors.white : NatureColors.tealDark) : WhoopTheme.sleepSlate);
+      canvas.drawCircle(p, 2, Paint()..color = isDark ? WhoopTheme.background : Colors.white);
 
       if (values[i] > 0) {
         final textPainter = TextPainter(
-          text: TextSpan(text: values[i].toStringAsFixed(1), style: TextStyle(color: isAct ? WhoopTheme.sleepSlate : WhoopTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
+          text: TextSpan(text: values[i].toStringAsFixed(1), style: TextStyle(color: isAct ? (isDark ? WhoopTheme.sleepSlate : NatureColors.tealDark) : WhoopTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
           textDirection: TextDirection.ltr,
         )..layout();
         textPainter.paint(canvas, Offset(p.dx - textPainter.width / 2, p.dy - 16));
       }
     }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _TriangleCaretPainter extends CustomPainter {
-  const _TriangleCaretPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(0, size.height)
-      ..lineTo(size.width / 2, 0)
-      ..lineTo(size.width, size.height)
-      ..close();
-
-    final fillPaint = Paint()
-      ..color = const Color(0xFF12171B)
-      ..style = PaintingStyle.fill;
-
-    final borderPaint = Paint()
-      ..color = const Color(0xFF242E35)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-
-    canvas.drawPath(path, fillPaint);
-    canvas.drawLine(Offset(0, size.height), Offset(size.width / 2, 0), borderPaint);
-    canvas.drawLine(Offset(size.width / 2, 0), Offset(size.width, size.height), borderPaint);
   }
 
   @override

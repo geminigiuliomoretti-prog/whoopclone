@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import '../models/allenamento.dart';
 import '../models/ciclo_fisiologico.dart';
+import '../models/sonno.dart';
 import '../repositories/sqlite_whoop_repository.dart';
 
 /// Servizio I/O per esportazione, importazione e parsing file (StrandImport da ryanbr/noop)
@@ -198,6 +199,240 @@ class NoopImportExportService {
   Future<int> importPhysiologicalCyclesCsv(String csvContent) async {
     final result = await bootstrapFromCsv(csvContent);
     return result.importedCycles;
+  }
+
+  /// Importa dati da stringa CSV di sessioni di sonno (sleeps.csv)
+  Future<int> importSleepsCsv(String csvContent) async {
+    final lines = const LineSplitter().convert(csvContent);
+    if (lines.length <= 1) return 0;
+
+    final header = lines.first.toLowerCase();
+    final headers = header.split(',').map((h) => h.trim()).toList();
+
+    int idxDate = headers.indexWhere((h) => h.contains('cycle date') || h.contains('date') || h.contains('giorno'));
+    int idxOnset = headers.indexWhere((h) => h.contains('sleep onset') || h.contains('onset') || h.contains('start time') || h.contains('inizio'));
+    int idxWake = headers.indexWhere((h) => h.contains('wake time') || h.contains('wake') || h.contains('end time') || h.contains('fine'));
+    int idxDuration = headers.indexWhere((h) => h.contains('asleep duration') || h.contains('duration (min)') || h.contains('durata'));
+    int idxDeep = headers.indexWhere((h) => h.contains('deep') || h.contains('sws'));
+    int idxRem = headers.indexWhere((h) => h.contains('rem'));
+    int idxPerf = headers.indexWhere((h) => h.contains('performance'));
+    int idxEff = headers.indexWhere((h) => h.contains('efficiency') || h.contains('efficienza'));
+    int idxResp = headers.indexWhere((h) => h.contains('respiratory') || h.contains('resp') || h.contains('rpm'));
+
+    if (idxDate == -1) idxDate = 0;
+
+    int importedCount = 0;
+
+    for (int i = 1; i < lines.length; i++) {
+      final line = lines[i].trim();
+      if (line.isEmpty) continue;
+      final cols = line.split(',');
+      if (cols.length <= idxDate) continue;
+
+      final dateRaw = cols[idxDate].trim();
+      if (dateRaw.isEmpty) continue;
+      final dateKey = dateRaw.contains(' ')
+          ? dateRaw.split(' ')[0]
+          : (dateRaw.contains('T') ? dateRaw.split('T')[0] : dateRaw);
+      if (dateKey.length < 10) continue;
+
+      String onsetStr = idxOnset != -1 && cols.length > idxOnset ? cols[idxOnset].trim() : '';
+      String wakeStr = idxWake != -1 && cols.length > idxWake ? cols[idxWake].trim() : '';
+
+      final onsetDt = DateTime.tryParse(onsetStr) ?? DateTime.tryParse('${dateKey}T23:00:00.000Z') ?? DateTime.now();
+      final wakeDt = DateTime.tryParse(wakeStr) ?? DateTime.tryParse('${dateKey}T07:00:00.000Z') ?? DateTime.now();
+
+      int durationMin = idxDuration != -1 && cols.length > idxDuration ? (double.tryParse(cols[idxDuration].trim())?.round() ?? 0) : 0;
+      if (durationMin <= 0 && wakeDt.isAfter(onsetDt)) {
+        durationMin = wakeDt.difference(onsetDt).inMinutes;
+      }
+
+      int deepMin = idxDeep != -1 && cols.length > idxDeep ? (double.tryParse(cols[idxDeep].trim())?.round() ?? 0) : 0;
+      int remMin = idxRem != -1 && cols.length > idxRem ? (double.tryParse(cols[idxRem].trim())?.round() ?? 0) : 0;
+      double? perfPct = idxPerf != -1 && cols.length > idxPerf ? double.tryParse(cols[idxPerf].trim()) : null;
+      double? effPct = idxEff != -1 && cols.length > idxEff ? double.tryParse(cols[idxEff].trim()) : null;
+      double? respRate = idxResp != -1 && cols.length > idxResp ? double.tryParse(cols[idxResp].trim()) : null;
+
+      final sonno = Sonno(
+        dataIso: dateKey,
+        oraInizio: onsetDt.toIso8601String(),
+        oraFine: wakeDt.toIso8601String(),
+        durataTotMin: durationMin,
+        sonnoProfondoMin: deepMin,
+        sonnoRemMin: remMin,
+        efficienzaPct: effPct,
+        sleepPerformancePct: perfPct,
+        provenance: 'BOOTSTRAP',
+      );
+
+      await repository.insertSonno(sonno);
+
+      // Se disponibile frequenza respiratoria, aggiorna il ciclo fisiologico corrispondente
+      if (respRate != null && respRate > 0) {
+        final existingCiclo = await repository.getCicloPerData(dateKey);
+        if (existingCiclo != null) {
+          final updatedCiclo = CicloFisiologico(
+            dataIso: existingCiclo.dataIso,
+            strainGiornaliero: existingCiclo.strainGiornaliero,
+            recoveryScore: existingCiclo.recoveryScore,
+            rhrNotte: existingCiclo.rhrNotte,
+            hrvNotte: existingCiclo.hrvNotte,
+            tempCutaneaC: existingCiclo.tempCutaneaCVal,
+            frequenzaRespiratoriaRpm: respRate,
+            sleepNeedMin: existingCiclo.sleepNeedMin,
+            spo2Pct: existingCiclo.spo2PctVal,
+            calorieTot: existingCiclo.calorieTot,
+            provenance: existingCiclo.provenance,
+          );
+          await repository.insertCicloFisiologico(updatedCiclo);
+        }
+      }
+
+      importedCount++;
+    }
+
+    if (importedCount > 0) {
+      await recalculateBaselineFromHistory();
+    }
+    return importedCount;
+  }
+
+  /// Importa dati da stringa CSV di allenamenti (workouts.csv)
+  Future<int> importWorkoutsCsv(String csvContent) async {
+    final lines = const LineSplitter().convert(csvContent);
+    if (lines.length <= 1) return 0;
+
+    final header = lines.first.toLowerCase();
+    final headers = header.split(',').map((h) => h.trim()).toList();
+
+    int idxName = headers.indexWhere((h) => h.contains('activity name') || h.contains('name') || h.contains('sport'));
+    int idxStart = headers.indexWhere((h) => h.contains('activity start time') || h.contains('start time') || h.contains('inizio'));
+    int idxEnd = headers.indexWhere((h) => h.contains('activity end time') || h.contains('end time') || h.contains('fine'));
+    int idxDur = headers.indexWhere((h) => h.contains('duration (min)') || h.contains('duration') || h.contains('durata'));
+    int idxStrain = headers.indexWhere((h) => h.contains('strain'));
+    int idxAvgHr = headers.indexWhere((h) => h.contains('average hr') || h.contains('avg hr') || h.contains('media hr'));
+    int idxMaxHr = headers.indexWhere((h) => h.contains('max hr') || h.contains('massima hr'));
+    int idxCals = headers.indexWhere((h) => h.contains('kilocalories') || h.contains('calories') || h.contains('calorie') || h.contains('energy burned'));
+
+    if (idxName == -1) idxName = 0;
+
+    int importedCount = 0;
+
+    for (int i = 1; i < lines.length; i++) {
+      final line = lines[i].trim();
+      if (line.isEmpty) continue;
+      final cols = line.split(',');
+      if (cols.length <= idxName) continue;
+
+      final name = cols[idxName].trim();
+      if (name.isEmpty) continue;
+
+      String startStr = idxStart != -1 && cols.length > idxStart ? cols[idxStart].trim() : '';
+      String endStr = idxEnd != -1 && cols.length > idxEnd ? cols[idxEnd].trim() : '';
+
+      final startDt = DateTime.tryParse(startStr) ?? DateTime.now();
+      final endDt = DateTime.tryParse(endStr) ?? startDt.add(const Duration(minutes: 45));
+      final dateIso = startDt.toIso8601String().substring(0, 10);
+
+      int durMin = idxDur != -1 && cols.length > idxDur ? (double.tryParse(cols[idxDur].trim())?.round() ?? 0) : 0;
+      if (durMin <= 0) {
+        durMin = endDt.difference(startDt).inMinutes.clamp(1, 1440);
+      }
+
+      double? strain = idxStrain != -1 && cols.length > idxStrain ? double.tryParse(cols[idxStrain].trim()) : null;
+      int? avgHr = idxAvgHr != -1 && cols.length > idxAvgHr ? double.tryParse(cols[idxAvgHr].trim())?.round() : null;
+      int? maxHr = idxMaxHr != -1 && cols.length > idxMaxHr ? double.tryParse(cols[idxMaxHr].trim())?.round() : null;
+      int? cals = idxCals != -1 && cols.length > idxCals ? double.tryParse(cols[idxCals].trim())?.round() : null;
+
+      final workout = Allenamento(
+        dataIso: dateIso,
+        nomeAttivita: name,
+        oraInizioAllenamento: startDt,
+        oraFineAllenamento: endDt,
+        durataMin: durMin,
+        strainAttivita: strain,
+        hrMedia: avgHr,
+        hrMax: maxHr,
+        calorie: cals,
+      );
+
+      await repository.insertAllenamento(workout);
+      importedCount++;
+    }
+
+    return importedCount;
+  }
+
+  /// Ricalcola progressivamente la baseline utente sui cicli e sonni presenti nel DB
+  Future<void> recalculateBaselineFromHistory() async {
+    final cicli = await repository.getCicliFisiologici();
+    final sonni = await repository.getSonnoLogs();
+    final currentProfile = await repository.userRepository.getProfile();
+    if (currentProfile == null) return;
+
+    final hrvList = cicli.map((c) => c.vfcMs).where((v) => v != null && v > 0).map((v) => v!).toList();
+    final rhrList = cicli.map((c) => c.fcrBpm).where((r) => r != null && r > 0).map((r) => r!.toDouble()).toList();
+    final sleepDurations = sonni.map((s) => s.durataTotMin).where((d) => d > 120).toList();
+
+    if (hrvList.length >= 3 && rhrList.length >= 3) {
+      final hrvMean = hrvList.reduce((a, b) => a + b) / hrvList.length;
+      final hrvVariance = hrvList.map((x) => (x - hrvMean) * (x - hrvMean)).reduce((a, b) => a + b) / hrvList.length;
+      final hrvStd = math.sqrt(hrvVariance).clamp(5.0, 50.0);
+
+      final rhrMean = rhrList.reduce((a, b) => a + b) / rhrList.length;
+      final rhrVariance = rhrList.map((x) => (x - rhrMean) * (x - rhrMean)).reduce((a, b) => a + b) / rhrList.length;
+      final rhrStd = math.sqrt(rhrVariance).clamp(1.0, 20.0);
+
+      final avgSleepMin = sleepDurations.isNotEmpty
+          ? (sleepDurations.reduce((a, b) => a + b) / sleepDurations.length).round().clamp(360, 600)
+          : currentProfile.sleepBaselineMin;
+
+      final updatedProfile = currentProfile.copyWith(
+        hrvBaselineMean: double.parse(hrvMean.toStringAsFixed(1)),
+        hrvBaselineStd: double.parse(hrvStd.toStringAsFixed(1)),
+        rhrBaselineMean: double.parse(rhrMean.toStringAsFixed(1)),
+        rhrBaselineStd: double.parse(rhrStd.toStringAsFixed(1)),
+        hrRestBaseline: rhrMean.round(),
+        sleepBaselineMin: avgSleepMin,
+        isBootstrapCompleted: true,
+        baselineSampleCount: hrvList.length,
+      );
+      await repository.userRepository.updateProfile(updatedProfile);
+    }
+  }
+
+  /// Importa un archivio WHOOP completo (cicli, sonni, workout)
+  Future<BootstrapResult> importFullWhoopArchive({
+    String? cyclesCsv,
+    String? sleepsCsv,
+    String? workoutsCsv,
+  }) async {
+    int cyclesCount = 0;
+    int sleepsCount = 0;
+    int workoutsCount = 0;
+
+    if (cyclesCsv != null && cyclesCsv.isNotEmpty) {
+      final res = await bootstrapFromCsv(cyclesCsv);
+      cyclesCount = res.importedCycles;
+    }
+
+    if (sleepsCsv != null && sleepsCsv.isNotEmpty) {
+      sleepsCount = await importSleepsCsv(sleepsCsv);
+    }
+
+    if (workoutsCsv != null && workoutsCsv.isNotEmpty) {
+      workoutsCount = await importWorkoutsCsv(workoutsCsv);
+    }
+
+    await recalculateBaselineFromHistory();
+
+    final totalImported = cyclesCount + sleepsCount + workoutsCount;
+    return BootstrapResult(
+      success: totalImported > 0,
+      importedCycles: cyclesCount,
+      sampleCount: totalImported,
+      message: 'Import completato: $cyclesCount cicli, $sleepsCount sonni, $workoutsCount workout importati con successo.',
+    );
   }
 
   // ==========================================

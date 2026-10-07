@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 import 'coach_screen.dart';
 import 'trends_screen.dart';
 import 'journal_screen.dart';
-import 'community_screen.dart';
 import 'profile_plan_screen.dart';
 import 'settings_device_screen.dart';
 import 'integrations_screen.dart';
@@ -20,7 +20,7 @@ class MoreMenuScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
@@ -98,14 +98,14 @@ class MoreMenuScreen extends StatelessWidget {
               ),
               _buildNavTile(
                 context: context,
-                icon: Icons.flag_outlined,
-                title: 'My Plan — Obiettivi Personali',
-                subtitle: 'Peak Performance, Mantenimento, Off-Season',
+                icon: Icons.person_outline,
+                title: 'Profilo Atleta',
+                subtitle: 'Dati anagrafici, FCmax, Baseline biometriche',
                 color: WhoopTheme.strainBlue,
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const ProfilePlanScreen(initialTab: 1),
+                    builder: (_) => const ProfilePlanScreen(initialTab: 0),
                   ),
                 ),
               ),
@@ -118,22 +118,6 @@ class MoreMenuScreen extends StatelessWidget {
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(
                         builder: (_) => const CustomizableDashboardScreen())),
-              ),
-
-              const SizedBox(height: 20),
-
-              // ── Sezione: Social & Community ─────────────────────────
-              _buildSectionLabel('SOCIAL & COMMUNITY'),
-              const SizedBox(height: 10),
-
-              _buildNavTile(
-                context: context,
-                icon: Icons.groups_outlined,
-                title: 'Community & Teams',
-                subtitle: 'Classifiche dinamiche, Chat di gruppo, I miei team',
-                color: WhoopTheme.strainBlue,
-                onTap: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const CommunityScreen())),
               ),
               _buildNavTile(
                 context: context,
@@ -233,24 +217,33 @@ class MoreMenuScreen extends StatelessWidget {
       ),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: WhoopTheme.officialCardDecoration(tint: WhoopTheme.strainBlue),
+        decoration: WhoopTheme.officialCardDecoration(),
         child: Row(
           children: [
             Container(
-              width: 52,
-              height: 52,
+              width: 50,
+              height: 50,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: WhoopTheme.strainBlue.withValues(alpha: 0.15),
-                border: Border.all(color: WhoopTheme.strainBlue, width: 2),
+                color: Theme.of(context).brightness == Brightness.light
+                    ? NatureColors.sageBackground
+                    : NatureColors.forestDeep,
+                border: Border.all(
+                  color: Theme.of(context).brightness == Brightness.light
+                      ? NatureColors.sage.withOpacity(0.4)
+                      : NatureColors.sageLight,
+                  width: 1.5,
+                ),
               ),
-              child: const Center(
+              child: Center(
                 child: Text(
                   'GM',
                   style: TextStyle(
-                    color: WhoopTheme.strainBlue,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
+                    color: Theme.of(context).brightness == Brightness.light
+                        ? NatureColors.sageDark
+                        : Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
@@ -273,14 +266,14 @@ class MoreMenuScreen extends StatelessWidget {
                     style: TextStyle(
                         color: WhoopTheme.textSecondary, fontSize: 12),
                   ),
-                  const SizedBox(height: 6),
-                  Row(
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
                     children: [
-                      _buildBadge('Lv. 13', WhoopTheme.strainBlue),
-                      const SizedBox(width: 8),
-                      _buildBadge('🔥 175 giorni', WhoopTheme.strainHigh),
-                      const SizedBox(width: 8),
-                      _buildBadge('173 recuperi', WhoopTheme.recoveryGreen),
+                      _buildBadge('Lv. 13', NatureColors.tealDark, NatureColors.tealBackground),
+                      _buildBadge('🔥 175 giorni', NatureColors.terracotta, NatureColors.terracottaBackground),
+                      _buildBadge('173 recuperi', NatureColors.sageDark, NatureColors.sageBackground),
                     ],
                   ),
                 ],
@@ -294,18 +287,21 @@ class MoreMenuScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBadge(String text, Color color) {
+  Widget _buildBadge(String text, Color textColor, Color bgColor) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: textColor.withOpacity(0.25), width: 0.8),
       ),
       child: Text(
         text,
         style: TextStyle(
-            color: color, fontSize: 10, fontWeight: FontWeight.w900),
+          color: textColor,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

@@ -129,11 +129,11 @@ class WhoopAnalyticsEngine {
     final hrr = calculateHrr(hrMax: hrMax, hrRest: hrRest);
     if (hrr <= 0) return 0.0;
 
-    final z0Soglia = hrRest + 0.30 * hrr;
-    final z1Soglia = hrRest + 0.40 * hrr;
-    final z2Soglia = hrRest + 0.50 * hrr;
-    final z3Soglia = hrRest + 0.60 * hrr;
-    final z4Soglia = hrRest + 0.80 * hrr;
+    final z0Soglia = hrRest + 0.50 * hrr;
+    final z1Soglia = hrRest + 0.60 * hrr;
+    final z2Soglia = hrRest + 0.70 * hrr;
+    final z3Soglia = hrRest + 0.80 * hrr;
+    final z4Soglia = hrRest + 0.90 * hrr;
 
     if (hr < z0Soglia) {
       return 0.0;
@@ -297,10 +297,24 @@ class WhoopAnalyticsEngine {
     return max(0, sleepNeed);
   }
 
+  /// Calcola il Debito di Sonno accumulato (in minuti) con decadimento progressivo su finestra rolling
+  static double calculateAccumulatedSleepDebt({
+    required List<({double sleepNeedMin, double actualSleepMin})> historicalSleeps,
+    double decayFactor = 0.80,
+  }) {
+    if (historicalSleeps.isEmpty) return 0.0;
+    double debt = 0.0;
+    for (final day in historicalSleeps) {
+      final deficit = day.sleepNeedMin - day.actualSleepMin;
+      debt = (debt * decayFactor) + (deficit > 0 ? deficit : 0.0);
+    }
+    return double.parse(debt.clamp(0.0, 300.0).toStringAsFixed(1));
+  }
+
   static int calculateSleepNeedMinutes({
     double baselineNeedMin = 480.0,
     required double dayStrain,
-    double sleepDebtMin = 30.0,
+    double sleepDebtMin = 0.0,
     double napMinutes = 0.0,
   }) {
     return calculateSleepNeed(
