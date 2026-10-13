@@ -186,13 +186,8 @@ class ActivityDetailsScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Oggi • 10:30 AM • $durationText',
+                          'Durata: $durationText',
                           style: const TextStyle(color: NatureColors.textDarkSecondary, fontSize: 12),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Sforzo elevato in Zona 4 per 48 min',
-                          style: TextStyle(color: NatureColors.coralLight, fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -223,32 +218,46 @@ class ActivityDetailsScreen extends StatelessWidget {
                 decoration: NatureTheme.organicCardDecoration(),
                 child: Stack(
                   children: [
-                    CustomPaint(
-                      size: const Size(double.infinity, 180),
-                      painter: _DarkGpsMapPainter(routePoints: routePoints),
-                    ),
-                    Positioned(
-                      top: 12,
-                      left: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: NatureColors.darkSurface.withValues(alpha: 0.85),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: NatureColors.darkBorder),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.navigation, color: NatureColors.coralLight, size: 14),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Distanza: ${distanceKm != null ? "${distanceKm!.toStringAsFixed(1)} km" : "--"}',
-                              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                            ),
-                          ],
+                    if (routePoints.length >= 2)
+                      CustomPaint(
+                        size: const Size(double.infinity, 180),
+                        painter: _DarkGpsMapPainter(routePoints: routePoints),
+                      )
+                    else
+                      const Center(
+                        child: Text(
+                          'Nessuna traccia GPS registrata per questa sessione',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: NatureColors.textDarkMuted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
+                    if (distanceKm != null && distanceKm! > 0)
+                      Positioned(
+                        top: 12,
+                        left: 12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: NatureColors.darkSurface.withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: NatureColors.darkBorder),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.navigation, color: NatureColors.coralLight, size: 14),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Distanza: ${distanceKm!.toStringAsFixed(1)} km',
+                                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -256,41 +265,15 @@ class ActivityDetailsScreen extends StatelessWidget {
 
             const SizedBox(height: 20),
 
-            // 3. Statistiche Chiave (FC Media, FC Max, Calorie, Passo Medio)
+            // 3. Statistiche Chiave (FC Media, FC Max, Calorie)
             Row(
               children: [
-                Expanded(child: _buildStatTile('FC Media', fcMediaBpm != null ? '$fcMediaBpm bpm' : '--', Icons.favorite, NatureColors.powderBlue)),
+                Expanded(child: _buildStatTile('FC Media', fcMediaBpm != null && fcMediaBpm! > 0 ? '$fcMediaBpm bpm' : '--', Icons.favorite, NatureColors.powderBlue)),
                 const SizedBox(width: 10),
-                Expanded(child: _buildStatTile('FC Max', fcMaxBpm != null ? '$fcMaxBpm bpm' : '--', Icons.favorite_border, NatureColors.terracotta)),
+                Expanded(child: _buildStatTile('FC Max', fcMaxBpm != null && fcMaxBpm! > 0 ? '$fcMaxBpm bpm' : '--', Icons.favorite_border, NatureColors.terracotta)),
                 const SizedBox(width: 10),
-                Expanded(child: _buildStatTile('Calorie', caloriesBurned != null ? '$caloriesBurned kcal' : '--', Icons.local_fire_department, NatureColors.amberWarm)),
+                Expanded(child: _buildStatTile('Calorie', caloriesBurned != null && caloriesBurned! > 0 ? '$caloriesBurned kcal' : '--', Icons.local_fire_department, NatureColors.amberWarm)),
               ],
-            ),
-
-            const SizedBox(height: 20),
-
-            // 4. Grafico Frequenza Cardiaca nel Tempo
-            const Text(
-              'ANDAMENTO BATTITO CARDIACO (LIVE HR TIMELINE)',
-              style: TextStyle(
-                color: NatureColors.textDarkSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.2,
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            Container(
-              decoration: NatureTheme.organicCardDecoration(),
-              padding: const EdgeInsets.all(16.0),
-              child: SizedBox(
-                height: 120,
-                width: double.infinity,
-                child: CustomPaint(
-                  painter: _HrTimelinePainter(),
-                ),
-              ),
             ),
 
             const SizedBox(height: 20),
@@ -393,29 +376,6 @@ class _DarkGpsMapPainter extends CustomPainter {
     }
 
     if (routePoints.length < 2) {
-      // Fallback: Disegna percorso rappresentativo dinamico
-      final routePaint = Paint()
-        ..color = NatureColors.strainAccent
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.5
-        ..strokeCap = StrokeCap.round;
-
-      final path = Path();
-      path.moveTo(size.width * 0.1, size.height * 0.8);
-      path.cubicTo(
-        size.width * 0.25, size.height * 0.2,
-        size.width * 0.5, size.height * 0.9,
-        size.width * 0.7, size.height * 0.3,
-      );
-      path.lineTo(size.width * 0.9, size.height * 0.5);
-
-      canvas.drawPath(path, routePaint);
-
-      final startDot = Paint()..color = NatureColors.recoveryAccent;
-      canvas.drawCircle(Offset(size.width * 0.1, size.height * 0.8), 6, startDot);
-
-      final endDot = Paint()..color = NatureColors.terracotta;
-      canvas.drawCircle(Offset(size.width * 0.9, size.height * 0.5), 6, endDot);
       return;
     }
 
@@ -473,33 +433,4 @@ class _DarkGpsMapPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}
-
-class _HrTimelinePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final linePaint = Paint()
-      ..color = NatureColors.terracotta
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
-
-    final points = [
-      Offset(0, size.height * 0.8),
-      Offset(size.width * 0.2, size.height * 0.6),
-      Offset(size.width * 0.4, size.height * 0.3),
-      Offset(size.width * 0.6, size.height * 0.2),
-      Offset(size.width * 0.8, size.height * 0.5),
-      Offset(size.width, size.height * 0.7),
-    ];
-
-    final path = Path()..moveTo(points[0].dx, points[0].dy);
-    for (int i = 1; i < points.length; i++) {
-      path.lineTo(points[i].dx, points[i].dy);
-    }
-
-    canvas.drawPath(path, linePaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

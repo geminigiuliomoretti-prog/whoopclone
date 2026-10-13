@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/nature_theme.dart';
+import '../../viewmodels/whoop_viewmodel.dart';
 import 'coach_screen.dart';
 import 'trends_screen.dart';
 import 'journal_screen.dart';
 import 'profile_plan_screen.dart';
 import 'settings_device_screen.dart';
-import 'integrations_screen.dart';
-import 'onboarding_screen.dart';
 import 'customizable_dashboard_screen.dart';
-import 'activity_details_screen.dart';
 import 'health_screen.dart';
 import '../breathe/haptic_breathe_screen.dart';
 import 'whoop_import_screen.dart';
@@ -63,14 +62,6 @@ class MoreMenuScreen extends StatelessWidget {
                 color: NatureColors.teal,
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const HealthScreen())),
-              ),
-              _buildNavTile(
-                context: context,
-                icon: Icons.directions_run_rounded,
-                title: 'Ultima Attività (Activity Details)',
-                subtitle: 'Tracciato GPS, 5 Zone FC, calorie, strain sessione',
-                color: NatureColors.terracotta,
-                onTap: () => ActivityDetailsScreen.show(context),
               ),
               _buildNavTile(
                 context: context,
@@ -134,30 +125,20 @@ class MoreMenuScreen extends StatelessWidget {
               _buildSectionLabel('DISPOSITIVO & IMPOSTAZIONI'),
               const SizedBox(height: 10),
 
-              _buildNavTile(
-                context: context,
-                icon: Icons.watch_outlined,
-                title: 'Gestione Sensore & Dispositivo',
-                subtitle: 'ID 5A00479315 • Firmware 50.39.1.0 • Batteria 77%',
-                color: NatureColors.teal,
-                onTap: () => SettingsDeviceScreen.show(context),
-              ),
-              _buildNavTile(
-                context: context,
-                icon: Icons.sync_outlined,
-                title: 'Integrazioni Ecosistemi Esterni',
-                subtitle:
-                    'Apple Health, Health Connect, Strava, Withings, TrainingPeaks',
-                color: NatureColors.teal,
-                onTap: () => IntegrationsScreen.show(context),
-              ),
-              _buildNavTile(
-                context: context,
-                icon: Icons.tune_outlined,
-                title: 'Onboarding & Calibrazione 4 Giorni',
-                subtitle: 'Guida primo utilizzo, associazione BLE, baseline',
-                color: NatureColors.teal,
-                onTap: () => OnboardingScreen.show(context),
+              Consumer<WhoopViewModel>(
+                builder: (context, viewModel, _) {
+                  final String deviceSubtitle = viewModel.isBleConnected
+                      ? 'Connesso • Batteria ${viewModel.batteryPct != null ? "${viewModel.batteryPct}%" : "--"}'
+                      : 'Disconnesso • Tocca per gestire';
+                  return _buildNavTile(
+                    context: context,
+                    icon: Icons.watch_outlined,
+                    title: 'Gestione Sensore & Dispositivo',
+                    subtitle: deviceSubtitle,
+                    color: NatureColors.teal,
+                    onTap: () => SettingsDeviceScreen.show(context),
+                  );
+                },
               ),
 
               const SizedBox(height: 32),
@@ -183,75 +164,85 @@ class MoreMenuScreen extends StatelessWidget {
   }
 
   Widget _buildProfileHeader(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (_) => const ProfilePlanScreen(initialTab: 0)),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: NatureTheme.organicCardDecoration(isDark: true),
-        child: Row(
-          children: [
-            Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: NatureColors.forestDeep,
-                border: Border.all(
-                  color: NatureColors.sageLight,
-                  width: 1.5,
-                ),
-              ),
-              child: const Center(
-                child: Text(
-                  'GM',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Giulio Moretti',
-                    style: TextStyle(
-                      color: NatureColors.textDarkPrimary,
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
+    return Consumer<WhoopViewModel>(
+      builder: (context, viewModel, child) {
+        final name = viewModel.userName.isNotEmpty ? viewModel.userName : 'Atleta';
+        final initials = name.length >= 2 ? name.substring(0, 2).toUpperCase() : 'AT';
+        final streak = viewModel.streakDays;
+        final recoveriesCount = viewModel.cicliList.where((c) => c.punteggioRecuperoPct != null).length;
+        final nightsCount = viewModel.allSonnoList.length;
+
+        return GestureDetector(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => const ProfilePlanScreen(initialTab: 0)),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: NatureTheme.organicCardDecoration(isDark: true),
+            child: Row(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: NatureColors.forestDeep,
+                    border: Border.all(
+                      color: NatureColors.sageLight,
+                      width: 1.5,
                     ),
                   ),
-                  const Text(
-                    '@Giulio_moretti',
-                    style: TextStyle(
-                        color: NatureColors.textDarkSecondary, fontSize: 12),
+                  child: Center(
+                    child: Text(
+                      initials,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildBadge('Lv. 13', NatureColors.tealDark, NatureColors.tealBackground),
-                      _buildBadge('🔥 175 giorni', NatureColors.terracotta, NatureColors.terracottaBackground),
-                      _buildBadge('173 recuperi', NatureColors.sageDark, NatureColors.sageBackground),
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          color: NatureColors.textDarkPrimary,
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        '@${name.toLowerCase().replaceAll(' ', '_')}',
+                        style: const TextStyle(
+                            color: NatureColors.textDarkSecondary, fontSize: 12),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          _buildBadge('🔥 $streak giorni', NatureColors.terracotta, NatureColors.terracottaBackground),
+                          _buildBadge('$recoveriesCount recuperi', NatureColors.sageDark, NatureColors.sageBackground),
+                          _buildBadge('$nightsCount notti registrate', NatureColors.tealDark, NatureColors.tealBackground),
+                        ],
+                      ),
                     ],
                   ),
-                ],
-              ),
+                ),
+                const Icon(Icons.chevron_right,
+                    color: NatureColors.textDarkMuted, size: 20),
+              ],
             ),
-            const Icon(Icons.chevron_right,
-                color: NatureColors.textDarkMuted, size: 20),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 

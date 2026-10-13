@@ -3,10 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants/whoop_theme.dart';
 import '../../core/theme/nature_theme.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
-import 'activity_details_screen.dart';
 import 'settings_device_screen.dart';
-import 'integrations_screen.dart';
-import 'onboarding_screen.dart';
 import 'whoop_import_screen.dart';
 
 class ProfilePlanScreen extends StatelessWidget {
@@ -15,55 +12,68 @@ class ProfilePlanScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      initialIndex: initialTab,
-      length: 2,
-      child: Scaffold(
+    return Scaffold(
+      backgroundColor: NatureColors.background,
+      appBar: AppBar(
         backgroundColor: NatureColors.background,
-        appBar: AppBar(
-          backgroundColor: NatureColors.background,
-          elevation: 0,
-          title: const Text(
-            'PROFILO ATLETA & MY PLAN',
-            style: TextStyle(
-              color: NatureColors.textDarkPrimary,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.2,
-            ),
-          ),
-          bottom: const TabBar(
-            indicatorColor: NatureColors.teal,
-            indicatorSize: TabBarIndicatorSize.tab,
-            labelColor: Colors.white,
-            unselectedLabelColor: NatureColors.textDarkMuted,
-            labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-            tabs: [
-              Tab(text: 'Profilo Atleta'),
-              Tab(text: 'My Plan (Obiettivi)'),
-            ],
+        elevation: 0,
+        title: const Text(
+          'PROFILO ATLETA & STATISTICHE REALI',
+          style: TextStyle(
+            color: NatureColors.textDarkPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.2,
           ),
         ),
-        body: Consumer<WhoopViewModel>(
-          builder: (context, viewModel, child) {
-            return TabBarView(
-              children: [
-                // Tab 1: Profilo Atleta & Record
-                _buildProfileTab(context, viewModel),
-
-                // Tab 2: My Plan (Gestione Obiettivi)
-                _buildPlanTab(context),
-              ],
-            );
-          },
-        ),
+      ),
+      body: Consumer<WhoopViewModel>(
+        builder: (context, viewModel, child) {
+          return _buildProfileTab(context, viewModel);
+        },
       ),
     );
   }
 
   Widget _buildProfileTab(BuildContext context, WhoopViewModel viewModel) {
     final profile = viewModel.userProfile;
-    final initials = profile.nome.length >= 2 ? profile.nome.substring(0, 2).toUpperCase() : 'GM';
+    final initials = profile.nome.length >= 2 ? profile.nome.substring(0, 2).toUpperCase() : 'AT';
+
+    final cicli = viewModel.cicliList;
+    final sonni = viewModel.allSonnoList;
+    final allenamenti = viewModel.allenamentiList;
+
+    // Calcolo dinamico statistiche ALL-TIME da cicli reali
+    final fcrValues = cicli.map((c) => c.fcrBpm).whereType<int>().where((v) => v > 0).toList();
+    final String minFcr = fcrValues.isNotEmpty ? '${fcrValues.reduce((a, b) => a < b ? a : b)} bpm' : '--';
+    final String maxFcr = fcrValues.isNotEmpty ? '${fcrValues.reduce((a, b) => a > b ? a : b)} bpm' : '--';
+
+    final hrvValues = cicli.map((c) => c.vfcMs).whereType<double>().where((v) => v > 0).toList();
+    final String minHrv = hrvValues.isNotEmpty ? '${hrvValues.reduce((a, b) => a < b ? a : b).toInt()} ms' : '--';
+    final String maxHrv = hrvValues.isNotEmpty ? '${hrvValues.reduce((a, b) => a > b ? a : b).toInt()} ms' : '--';
+
+    final fcMaxValues = cicli.map((c) => c.fcMaxBpm).whereType<int>().where((v) => v > 0).toList();
+    final String maxHrReached = fcMaxValues.isNotEmpty ? '${fcMaxValues.reduce((a, b) => a > b ? a : b)} bpm' : '--';
+
+    final sleepDurValues = sonni.map((s) => s.durataTotMin).where((v) => v > 0).toList();
+    String longestSleep = '--';
+    if (sleepDurValues.isNotEmpty) {
+      final maxMin = sleepDurValues.reduce((a, b) => a > b ? a : b);
+      final h = (maxMin / 60).floor();
+      final m = (maxMin % 60).round();
+      longestSleep = '${h}h ${m}m';
+    }
+
+    final recValues = cicli.map((c) => c.punteggioRecuperoPct).whereType<double>().where((v) => v > 0).toList();
+    final String minRecovery = recValues.isNotEmpty ? '${recValues.reduce((a, b) => a < b ? a : b).toInt()}%' : '--';
+
+    // Raggruppamento dinamico attività registrate
+    final Map<String, List<double>> activitiesMap = {};
+    for (final a in allenamenti) {
+      final name = a.nomeAttivita.isNotEmpty ? a.nomeAttivita : 'Attività';
+      final strain = a.strainAttivita ?? a.sforzoRichiesto ?? 0.0;
+      activitiesMap.putIfAbsent(name, () => []).add(strain);
+    }
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -108,7 +118,7 @@ class ProfilePlanScreen extends StatelessWidget {
                             ),
                           ),
                           const Text(
-                            'Atleta • Membro dal 2024',
+                            'Atleta • Wellness Companion',
                             style: TextStyle(color: NatureColors.textDarkSecondary, fontSize: 11),
                           ),
                           const SizedBox(height: 4),
@@ -183,53 +193,26 @@ class ProfilePlanScreen extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
 
-          const Text(
-            'IMPOSTAZIONI & SERVIZI WHOOP 5.0',
-            style: TextStyle(color: WhoopTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2),
-          ),
-          const SizedBox(height: 10),
-
+          // Importazione e Dispositivo
           _buildActionNavTile(
             context: context,
-            title: 'Gestione Sensore & Dispositivo (ID 5A00479315)',
-            subtitle: 'Batteria 77%, Firmware 50.39.1.0, Notifiche & Reset',
-            icon: Icons.settings,
+            title: 'Gestione Sensore & Dispositivo',
+            subtitle: viewModel.isBleConnected
+                ? 'Connesso • Batteria ${viewModel.batteryPct ?? "--"}%'
+                : 'Disconnesso • Gestisci connessione BLE',
+            icon: Icons.watch_outlined,
             color: WhoopTheme.strainBlue,
             onTap: () => SettingsDeviceScreen.show(context),
           ),
           _buildActionNavTile(
             context: context,
-            title: 'Integrazioni Ecosistemi Esterni',
-            subtitle: 'Apple Health, Health Connect, Strava, TrainingPeaks, Withings',
-            icon: Icons.sync,
-            color: WhoopTheme.recoveryGreen,
-            onTap: () => IntegrationsScreen.show(context),
-          ),
-          _buildActionNavTile(
-            context: context,
-            title: 'Onboarding & Calibrazione 4 Giorni',
-            subtitle: 'Guida associazione BLE e calibrazione baseline iniziale',
-            icon: Icons.tune,
-            color: WhoopTheme.strainBlue,
-            onTap: () => OnboardingScreen.show(context),
-          ),
-          _buildActionNavTile(
-            context: context,
             title: 'Importa dati WHOOP',
-            subtitle: 'Importa lo storico export ZIP per personalizzare le baseline',
+            subtitle: 'Importa lo storico export ZIP per calibrare le baseline',
             icon: Icons.file_upload_outlined,
             color: NatureColors.teal,
             onTap: () => WhoopImportScreen.show(context),
-          ),
-          _buildActionNavTile(
-            context: context,
-            title: 'Dettaglio Ultimo Allenamento (Activity Details)',
-            subtitle: 'Tracciato GPS Dark Mode, FC Live & 5 Zone Cardiarche',
-            icon: Icons.directions_bike,
-            color: WhoopTheme.strainHigh,
-            onTap: () => ActivityDetailsScreen.show(context),
           ),
 
           const SizedBox(height: 20),
@@ -240,13 +223,13 @@ class ProfilePlanScreen extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          _buildBioTile('FCR minima registrata', '43 bpm', Icons.favorite, WhoopTheme.recoveryGreen),
-          _buildBioTile('FCR massima registrata', '82 bpm', Icons.favorite, WhoopTheme.strainHigh),
-          _buildBioTile('VFC minima registrata', '21 ms', Icons.show_chart, WhoopTheme.recoveryRed),
-          _buildBioTile('VFC massima registrata', '120 ms', Icons.show_chart, WhoopTheme.recoveryGreen),
-          _buildBioTile('HR Max raggiunta', '200 bpm', Icons.bolt, WhoopTheme.strainHigh),
-          _buildBioTile('Sonno più lungo', '10:00 h', Icons.nightlight_round, WhoopTheme.sleepSlate),
-          _buildBioTile('Recovery minima registrata', '1%', Icons.battery_alert, WhoopTheme.recoveryRed),
+          _buildBioTile('FCR minima registrata', minFcr, Icons.favorite, WhoopTheme.recoveryGreen),
+          _buildBioTile('FCR massima registrata', maxFcr, Icons.favorite, WhoopTheme.strainHigh),
+          _buildBioTile('VFC minima registrata', minHrv, Icons.show_chart, WhoopTheme.recoveryRed),
+          _buildBioTile('VFC massima registrata', maxHrv, Icons.show_chart, WhoopTheme.recoveryGreen),
+          _buildBioTile('HR Max raggiunta', maxHrReached, Icons.bolt, WhoopTheme.strainHigh),
+          _buildBioTile('Sonno più lungo', longestSleep, Icons.nightlight_round, WhoopTheme.sleepSlate),
+          _buildBioTile('Recovery minima registrata', minRecovery, Icons.battery_alert, WhoopTheme.recoveryRed),
 
           const SizedBox(height: 20),
 
@@ -256,32 +239,35 @@ class ProfilePlanScreen extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          _buildBioTile('Attività totali registrate', '311×', Icons.fitness_center, WhoopTheme.strainBlue),
-          _buildBioTile('Tennis', '166× • Sforzo medio 12.2', Icons.sports_tennis, WhoopTheme.strainBlue),
-          _buildBioTile('Attività generica', '41× • Sforzo medio 6.2', Icons.directions_run, WhoopTheme.textSecondary),
-          _buildBioTile('Strength Trainer', '35× • Sforzo medio 7.6', Icons.fitness_center, WhoopTheme.strainHigh),
+          _buildBioTile('Attività totali registrate', '${allenamenti.length}×', Icons.fitness_center, WhoopTheme.strainBlue),
+          if (activitiesMap.isEmpty)
+            _buildBioTile('Nessuna sessione specifica', '--', Icons.directions_run, WhoopTheme.textSecondary)
+          else
+            ...activitiesMap.entries.map((entry) {
+              final count = entry.value.length;
+              final avgStrain = entry.value.reduce((a, b) => a + b) / count;
+              return _buildBioTile(
+                entry.key,
+                '$count× • Sforzo medio ${avgStrain.toStringAsFixed(1)}',
+                Icons.sports_score,
+                WhoopTheme.strainBlue,
+              );
+            }),
 
-          const SizedBox(height: 20),
-
-          // Programma Referral
-          Card(
-            color: WhoopTheme.cardSurface,
-            margin: const EdgeInsets.only(bottom: 8),
-            child: ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: WhoopTheme.recoveryGreen.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.share, color: WhoopTheme.recoveryGreen, size: 20),
-              ),
-              title: const Text('Programma Referral', style: TextStyle(color: WhoopTheme.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
-              subtitle: const Text('Codice: WHOOP-GM13 • Invita amici e ottieni 1 mese gratis', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 11)),
-              trailing: const Icon(Icons.chevron_right, color: WhoopTheme.textMuted, size: 18),
-            ),
-          ),
+          const SizedBox(height: 30),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBioTile(String label, String value, IconData icon, [Color? color]) {
+    return Container(
+      decoration: NatureTheme.organicCardDecoration(isDark: true),
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Icon(icon, color: color ?? NatureColors.tealLight, size: 20),
+        title: Text(label, style: const TextStyle(color: NatureColors.textDarkSecondary, fontSize: 12)),
+        trailing: Text(value, style: TextStyle(color: color ?? NatureColors.textDarkPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
       ),
     );
   }
@@ -315,102 +301,7 @@ class ProfilePlanScreen extends StatelessWidget {
   }
 
 
-  Widget _buildPlanTab(BuildContext context) {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: WhoopTheme.cardSurface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: WhoopTheme.cardBorder),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.flag, color: WhoopTheme.strainBlue, size: 24),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'My Plan configura gli obiettivi di sforzo e sonno quotidiani basati sulle tue mete sportive.',
-                    style: TextStyle(color: WhoopTheme.textPrimary, fontSize: 12),
-                  ),
-                ),
-              ],
-            ),
-          ),
 
-          const SizedBox(height: 16),
-
-          const Text(
-            'OBIETTIVO DI PERFORMANCE CORRENTE',
-            style: TextStyle(color: WhoopTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2),
-          ),
-          const SizedBox(height: 10),
-
-          _buildPlanOption(
-            title: 'Prestazione Max (Peak Performance)',
-            description: 'Obiettivo Sonno 100% | Sforzo Target 16.0 - 18.5',
-            isSelected: true,
-          ),
-          _buildPlanOption(
-            title: 'Mantenimento & Recupero',
-            description: 'Obiettivo Sonno 85% | Sforzo Target 12.0 - 15.0',
-            isSelected: false,
-          ),
-          _buildPlanOption(
-            title: 'Stagione di Riposo (Off-Season)',
-            description: 'Obiettivo Sonno 70% | Sforzo Target 8.0 - 12.0',
-            isSelected: false,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBioTile(String label, String value, IconData icon, [Color? color]) {
-    return Container(
-      decoration: NatureTheme.organicCardDecoration(isDark: true),
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: Icon(icon, color: color ?? NatureColors.tealLight, size: 20),
-        title: Text(label, style: const TextStyle(color: NatureColors.textDarkSecondary, fontSize: 12)),
-        trailing: Text(value, style: TextStyle(color: color ?? NatureColors.textDarkPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
-      ),
-    );
-  }
-
-  Widget _buildPlanOption({
-    required String title,
-    required String description,
-    required bool isSelected,
-  }) {
-    return Container(
-      decoration: NatureTheme.organicCardDecoration(
-        isDark: true,
-        accentTint: isSelected ? NatureColors.teal.withValues(alpha: 0.12) : null,
-      ),
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        leading: Icon(
-          isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-          color: isSelected ? NatureColors.tealLight : NatureColors.textDarkMuted,
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            color: isSelected ? Colors.white : NatureColors.textDarkPrimary,
-            fontWeight: FontWeight.bold,
-            fontSize: 13,
-          ),
-        ),
-        subtitle: Text(description, style: const TextStyle(color: NatureColors.textDarkMuted, fontSize: 11)),
-      ),
-    );
-  }
 
   Future<void> _showEditBiometricsDialog(BuildContext context, WhoopViewModel viewModel) async {
     final profile = viewModel.userProfile;

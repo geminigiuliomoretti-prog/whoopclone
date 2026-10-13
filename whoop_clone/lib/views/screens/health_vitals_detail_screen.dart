@@ -167,45 +167,6 @@ class HealthVitalsDetailScreen extends StatelessWidget {
               ],
             ),
 
-            const SizedBox(height: 28),
-
-            // Pulsante In Basso: CONDIVIDI IL REPORT SUL TUO STATO DI SALUTE
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Report Stato di Salute condiviso in PDF!'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isLight ? Colors.white : const Color(0xFF1C242C),
-                  elevation: isLight ? 1 : 0,
-                  side: BorderSide(
-                    color: isLight ? NatureColors.sandBorder : const Color(0xFF283440),
-                    width: 0.85,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                child: const Text(
-                  'CONDIVIDI IL REPORT SUL TUO STATO DI SALUTE',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: WhoopTheme.textPrimary,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 11,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-              ),
-            ),
-
             const SizedBox(height: 40),
           ],
         ),

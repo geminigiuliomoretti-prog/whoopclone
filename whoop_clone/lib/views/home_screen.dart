@@ -6,7 +6,7 @@ import '../data/ble/ble_connection_manager.dart';
 import '../data/biometrics/health_vitals_engine.dart';
 import '../viewmodels/whoop_viewmodel.dart';
 import 'widgets/whoop_header.dart';
-import 'widgets/tri_ring_dial.dart';
+import 'widgets/nature/nature_tri_ring_dial.dart';
 import 'widgets/nature/nature_scene.dart';
 import 'widgets/stress_wave_chart.dart';
 import 'widgets/weekly_dual_axis_chart.dart';
@@ -269,12 +269,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 10),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: TriRingDial(
+                      child: NatureTriRingDial(
                         strainScore: strain,
                         recoveryPct: recovery,
                         sleepPct: sleep,
                         liveBpm: viewModel.liveBpm,
                         calories: ciclo?.energiaBruciataCal ?? 0,
+                        isDark: isDark,
                         onTapRecovery: () => RecoveryDetailModal.show(
                           context,
                           recoveryPct: recovery,
@@ -848,10 +849,10 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'ATTIVITÀ DI OGGI',
                 style: TextStyle(
                   color: WhoopTheme.textSecondary,
@@ -859,12 +860,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   fontWeight: FontWeight.w800,
                   letterSpacing: 1.0,
                 ),
-              ),
-              IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                icon: const Icon(Icons.open_in_full, color: WhoopTheme.textSecondary, size: 16),
-                onPressed: () {},
               ),
             ],
           ),
@@ -1345,12 +1340,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final double punteggioRecuperoPct = (ciclo?.punteggioRecuperoPct ?? 0.0).toDouble();
     final double sforzoGiornaliero = (ciclo?.sforzoGiornaliero ?? 0.0).toDouble();
     final int energiaBruciataCal = ciclo?.energiaBruciataCal ?? 0;
-    final double sonnoRichiestoMin = (ciclo?.sonnoRichiestoMin ?? 0.0).toDouble();
-    final double sonnoArretratoMin = (ciclo?.sonnoArretratoMin ?? 0.0).toDouble();
     final double frequenzaRespiratoriaRpm = (ciclo?.frequenzaRespiratoriaRpm ?? 0.0).toDouble();
-    final double sonnoProfondoMin = (ciclo?.sonnoProfondoMin ?? 0.0).toDouble();
-    final double sonnoRemMin = (ciclo?.sonnoRemMin ?? 0.0).toDouble();
-    final double efficienzaSonnoPct = (ciclo?.efficienzaSonnoPct ?? 0.0).toDouble();
+
+    final sonno = viewModel.ultimoSonno;
+    final double sonnoProfondoMin = (sonno?.sonnoProfondoMin ?? 0).toDouble();
+    final double sonnoRemMin = (sonno?.sonnoRemMin ?? 0).toDouble();
+    final double efficienzaSonnoPct = (sonno?.efficienzaPct ?? 0.0).toDouble();
+    final double sonnoRichiestoMin = (ciclo?.sonnoRichiestoMin ?? sonno?.sleepNeedMin?.toDouble() ?? viewModel.currentSleepNeedMinutes).toDouble();
+    final double sonnoArretratoMin = (ciclo?.sonnoArretratoMin ?? sonno?.sleepDebtMin?.toDouble() ?? viewModel.accumulatedSleepDebtMinutes).toDouble();
 
     final bool hasData = ciclo != null && (vfcMs > 0 || fcrBpm > 0 || punteggioRecuperoPct > 0 || sforzoGiornaliero > 0);
     final profile = viewModel.userProfile;
@@ -1360,12 +1357,26 @@ class _HomeScreenState extends State<HomeScreen> {
     final rhrBaseVal = viewModel.getPersonalBaseline('rhr')?.mean ?? (isCalibrated ? profile.hrRestBaseline.toDouble() : null);
     final respBaseVal = viewModel.getPersonalBaseline('respiratory_rate')?.mean ?? (isCalibrated ? 14.0 : null);
     final spo2BaseVal = viewModel.getPersonalBaseline('spo2')?.mean ?? (isCalibrated ? 96.0 : null);
-    final tempBaseVal = viewModel.getPersonalBaseline('skin_temp')?.mean;
+    final tempBaseVal = viewModel.getPersonalBaseline('skin_temp')?.mean ?? (isCalibrated ? 36.5 : null);
     final sleepDurBaseVal = viewModel.getPersonalBaseline('sleep_duration')?.mean ?? (isCalibrated ? profile.sleepBaselineMin.toDouble() : null);
     final sleepNeedBaseVal = viewModel.getPersonalBaseline('sleep_need')?.mean ?? sleepDurBaseVal;
     final sleepEffBaseVal = viewModel.getPersonalBaseline('sleep_efficiency')?.mean;
     final deepSleepBaseVal = viewModel.getPersonalBaseline('deep_sleep_duration')?.mean;
     final remSleepBaseVal = viewModel.getPersonalBaseline('rem_sleep_duration')?.mean;
+
+    // Calcolo reale valore e baseline per Temperatura Cutanea
+    String skinTempValText = '--';
+    String skinTempBaseText = tempBaseVal != null ? '${tempBaseVal.toStringAsFixed(1)} °C' : (isCalibrated ? '36.5 °C' : 'In calibrazione');
+    if (hasData && ciclo?.tempCutaneaC != null) {
+      final double rawT = (ciclo!.tempCutaneaC! as num).toDouble();
+      if (rawT >= 25.0) {
+        final double base = tempBaseVal ?? 36.5;
+        final double delta = rawT - base;
+        skinTempValText = '${rawT.toStringAsFixed(1)} °C (${delta >= 0 ? "+" : ""}${delta.toStringAsFixed(1)} °C)';
+      } else {
+        skinTempValText = '${rawT >= 0 ? "+" : ""}${rawT.toStringAsFixed(1)} °C';
+      }
+    }
 
     final allMetrics = [
       {
@@ -1385,42 +1396,6 @@ class _HomeScreenState extends State<HomeScreen> {
         'base': rhrBaseVal != null ? '${rhrBaseVal.round()} bpm' : 'In calibrazione',
         'arrow': hasData && fcrBpm > 0 && rhrBaseVal != null ? (fcrBpm <= rhrBaseVal ? '▼' : '▲') : '•',
         'color': hasData && fcrBpm > 0 && rhrBaseVal != null ? (fcrBpm <= rhrBaseVal ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
-      },
-      {
-        'key': 'steps',
-        'title': 'PASSI GIORNALIERI',
-        'metricName': 'Passi Giornalieri',
-        'val': '--',
-        'base': 'Passi WHOOP non disponibili',
-        'arrow': '•',
-        'color': WhoopTheme.textSecondary,
-      },
-      {
-        'key': 'zone_fc_low',
-        'title': 'ZONE FC 1-3 (SETTIMANALE)',
-        'metricName': 'Zone FC 1–3',
-        'val': '--',
-        'base': 'Target 3:00',
-        'arrow': '•',
-        'color': WhoopTheme.textSecondary,
-      },
-      {
-        'key': 'zone_fc_high',
-        'title': 'ZONE FC 4-5 (SETTIMANALE)',
-        'metricName': 'Zone FC 4–5',
-        'val': '--',
-        'base': 'Target 0:30',
-        'arrow': '•',
-        'color': WhoopTheme.textSecondary,
-      },
-      {
-        'key': 'vo2max',
-        'title': 'VO₂ MAX',
-        'metricName': 'VO₂ Max Stimato',
-        'val': '--',
-        'base': 'Baseline --',
-        'arrow': '•',
-        'color': WhoopTheme.textPrimary,
       },
       {
         'key': 'calories',
@@ -1471,8 +1446,8 @@ class _HomeScreenState extends State<HomeScreen> {
         'key': 'skin_temp',
         'title': 'TEMPERATURA CUTANEA',
         'metricName': 'Temperatura Cutanea',
-        'val': (hasData && ciclo?.tempCutaneaC != null) ? '${ciclo!.tempCutaneaC! >= 0 ? '+' : ''}${ciclo.tempCutaneaC!.toStringAsFixed(1)} °C' : '--',
-        'base': tempBaseVal != null ? '${tempBaseVal.toStringAsFixed(1)} °C' : (isCalibrated ? '0.0 °C' : 'In calibrazione'),
+        'val': skinTempValText,
+        'base': skinTempBaseText,
         'arrow': '•',
         'color': WhoopTheme.textPrimary,
       },

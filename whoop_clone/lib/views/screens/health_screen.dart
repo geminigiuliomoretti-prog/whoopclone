@@ -18,28 +18,6 @@ class HealthScreen extends StatefulWidget {
 }
 
 class _HealthScreenState extends State<HealthScreen> {
-  String _getCurrentItalianWeekday() {
-    final now = DateTime.now();
-    switch (now.weekday) {
-      case DateTime.monday:
-        return 'lunedì';
-      case DateTime.tuesday:
-        return 'martedì';
-      case DateTime.wednesday:
-        return 'mercoledì';
-      case DateTime.thursday:
-        return 'giovedì';
-      case DateTime.friday:
-        return 'venerdì';
-      case DateTime.saturday:
-        return 'sabato';
-      case DateTime.sunday:
-        return 'domenica';
-      default:
-        return 'giorno';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final viewModel = Provider.of<WhoopViewModel>(context);
@@ -78,11 +56,6 @@ class _HealthScreenState extends State<HealthScreen> {
 
             // 3. MONITORAGGIO DELLO STRESS (Picco di stress + mini wave graph)
             _buildStressSummaryCard(context, viewModel),
-
-            const SizedBox(height: 16),
-
-            // 4. HEALTHSPAN (Card con lucchetto 🔒 per sbloccare)
-            _buildHealthspanCard(),
 
             const SizedBox(height: 80), // Padding per floating bar
           ],
@@ -288,8 +261,6 @@ class _HealthScreenState extends State<HealthScreen> {
         ? viewModel.liveStressIndex
         : (viewModel.ultimoCiclo?.vfcMs != null ? (viewModel.ultimoCiclo!.vfcMs! < 50 ? 1.8 : 0.8) : 0.8);
 
-    final weekdayName = _getCurrentItalianWeekday();
-
     return GestureDetector(
       onTap: () => StressMonitorScreen.show(context, stressScore: stressScore),
       child: Container(
@@ -316,73 +287,77 @@ class _HealthScreenState extends State<HealthScreen> {
             const SizedBox(height: 14),
 
             Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Colonna Sinistra
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'PICCO DI STRESS DI\nOGGI',
-                        style: TextStyle(
-                          color: WhoopTheme.textSecondary,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.8,
-                          height: 1.25,
-                        ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'PUNTEGGIO ATTUALE',
+                      style: TextStyle(
+                        color: WhoopTheme.textSecondary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8,
+                        height: 1.25,
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '0:00 h',
-                        style: TextStyle(
-                          color: WhoopTheme.textPrimary,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      viewModel.currentStressScore > 0
+                          ? viewModel.currentStressScore.toStringAsFixed(1).replaceAll('.', ',')
+                          : '--',
+                      style: const TextStyle(
+                        color: WhoopTheme.textPrimary,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        fontFeatures: [FontFeature.tabularFigures()],
                       ),
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF132B25) : NatureColors.sageLight.withOpacity(0.30),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.arrow_drop_down,
-                              color: WhoopTheme.recoveryGreen,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'rispetto a un tipico $weekdayName',
-                              style: TextStyle(
-                                color: isDark ? WhoopTheme.recoveryGreen : NatureColors.sageDark,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
+                Builder(
+                  builder: (context) {
+                    final s = viewModel.currentStressScore;
+                    String categoryText = 'In attesa';
+                    Color categoryColor = WhoopTheme.textMuted;
+                    Color categoryBg = WhoopTheme.cardBorder;
 
-                const SizedBox(width: 12),
+                    if (s > 0) {
+                      if (s < 1.0) {
+                        categoryText = 'Basso';
+                        categoryColor = NatureColors.teal;
+                        categoryBg = NatureColors.teal.withValues(alpha: 0.18);
+                      } else if (s < 2.0) {
+                        categoryText = 'Moderato';
+                        categoryColor = NatureColors.amberWarm;
+                        categoryBg = NatureColors.amberWarm.withValues(alpha: 0.18);
+                      } else {
+                        categoryText = 'Elevato';
+                        categoryColor = NatureColors.coralLight;
+                        categoryBg = NatureColors.coralLight.withValues(alpha: 0.18);
+                      }
+                    }
 
-                // Area Destra: Grafico mini onda fisiologica con spike verdi e pallino bianco
-                SizedBox(
-                  width: 145,
-                  height: 75,
-                  child: CustomPaint(
-                    painter: _StressWaveHealthPainter(),
-                  ),
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: categoryBg,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: categoryColor.withValues(alpha: 0.4)),
+                      ),
+                      child: Text(
+                        categoryText,
+                        style: TextStyle(
+                          color: categoryColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -391,165 +366,4 @@ class _HealthScreenState extends State<HealthScreen> {
       ),
     );
   }
-
-  // Card 4: Healthspan
-  Widget _buildHealthspanCard() {
-    return Builder(
-      builder: (context) {
-        final isDark = Theme.of(context).brightness == Brightness.dark;
-        return Container(
-          padding: const EdgeInsets.all(18.0),
-          decoration: WhoopTheme.officialCardDecoration(isDark: isDark),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'HEALTHSPAN',
-                    style: TextStyle(
-                      color: WhoopTheme.textPrimary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isDark ? const Color(0xFF2C3945) : NatureColors.sandBorder,
-                        width: 1.2,
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.lock_outline,
-                      color: WhoopTheme.textSecondary,
-                      size: 15,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Per sbloccare devi avere almeno 18 anni.',
-                style: TextStyle(
-                  color: WhoopTheme.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 18),
-
-              Row(
-                children: const [
-                  Text(
-                    'LIFE',
-                    style: TextStyle(
-                      color: WhoopTheme.textSecondary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.1,
-                    ),
-                  ),
-                  SizedBox(width: 20),
-                  Text(
-                    'PEAK',
-                    style: TextStyle(
-                      color: WhoopTheme.textMuted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.1,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// Custom painter per la mini-onda dello stress in HealthScreen
-/// Riproduce fedelmente la preview di stress con baseline ciano e picchi verdi
-class _StressWaveHealthPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    // 1. Linea guida orizzontale di base
-    final guidePaint = Paint()
-      ..color = const Color(0xFF1E2833)
-      ..strokeWidth = 1.0;
-    canvas.drawLine(
-      Offset(0, size.height * 0.40),
-      Offset(size.width, size.height * 0.40),
-      guidePaint,
-    );
-
-    // 2. Linea tratteggiata verticale
-    final targetX = size.width * 0.90;
-    final dashPaint = Paint()
-      ..color = const Color(0xFF495B6A)
-      ..strokeWidth = 1.0;
-    double currentY = 0;
-    while (currentY < size.height) {
-      canvas.drawLine(
-        Offset(targetX, currentY),
-        Offset(targetX, currentY + 3),
-        dashPaint,
-      );
-      currentY += 6;
-    }
-
-    // 3. Onda continua dello stress con sfumatura ciano -> verde
-    final wavePath = Path();
-    wavePath.moveTo(0, size.height * 0.65);
-    wavePath.lineTo(size.width * 0.15, size.height * 0.63);
-    wavePath.lineTo(size.width * 0.25, size.height * 0.68);
-    wavePath.lineTo(size.width * 0.35, size.height * 0.64);
-    wavePath.lineTo(size.width * 0.45, size.height * 0.55);
-    wavePath.lineTo(size.width * 0.50, size.height * 0.67);
-    wavePath.lineTo(size.width * 0.58, size.height * 0.65);
-    // Picco moderato
-    wavePath.lineTo(size.width * 0.62, size.height * 0.35);
-    wavePath.lineTo(size.width * 0.66, size.height * 0.68);
-    wavePath.lineTo(size.width * 0.72, size.height * 0.66);
-    // Picco alto
-    wavePath.lineTo(size.width * 0.76, size.height * 0.15);
-    wavePath.lineTo(size.width * 0.80, size.height * 0.60);
-    // Picco secondario
-    wavePath.lineTo(size.width * 0.84, size.height * 0.20);
-    wavePath.lineTo(size.width * 0.88, size.height * 0.28);
-    // Valore live sul tratteggio
-    wavePath.lineTo(targetX, size.height * 0.48);
-
-    final linePaint = Paint()
-      ..strokeWidth = 1.8
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..shader = LinearGradient(
-        colors: [
-          WhoopTheme.stressLow,
-          WhoopTheme.stressLow,
-          WhoopTheme.recoveryGreen,
-          WhoopTheme.recoveryGreen,
-        ],
-        stops: const [0.0, 0.55, 0.75, 1.0],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-
-    canvas.drawPath(wavePath, linePaint);
-
-    // 4. Pallino bianco live
-    final liveDotY = size.height * 0.48;
-    final dotPaint = Paint()..color = Colors.white;
-    canvas.drawCircle(Offset(targetX, liveDotY), 3.0, dotPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
