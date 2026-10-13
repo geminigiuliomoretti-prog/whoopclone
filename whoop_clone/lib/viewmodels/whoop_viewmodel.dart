@@ -64,6 +64,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   List<CicloFisiologico> _cicliList = [];
   List<Allenamento> _allenamentiList = [];
   List<VoceDiario> _vociDiarioList = [];
+  List<VoceDiario> _allVociDiarioList = [];
   List<Sonno> _sonnoList = [];
   List<Sonno> _allSonnoList = [];
   Set<String> _completedDiaryDates = {};
@@ -320,7 +321,15 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   double? get hrv => _ultimoCiclo?.vfcMs;
   double? get restingHr => _ultimoCiclo?.rhrNotte;
   double? get respiratoryRate => _ultimoCiclo?.frequenzaRespiratoriaRpm;
-  double? get skinTempDelta => _ultimoCiclo?.tempCutaneaC;
+  double? get skinTempDelta {
+    final t = _ultimoCiclo?.tempCutaneaC;
+    if (t == null) return null;
+    final base = getPersonalBaseline('skin_temp')?.mean ?? 36.5;
+    if (t >= 25.0) {
+      return double.parse((t - base).clamp(-3.0, 3.0).toStringAsFixed(1));
+    }
+    return t;
+  }
   double? get bloodOxygenSpo2 => _ultimoCiclo?.spo2Pct?.toDouble();
 
   String get userName => _userProfile.nome;
@@ -349,7 +358,10 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   double get liveHrvRmssd => _liveHrvRmssd;
   double get liveStressIndex => _liveStressIndex;
   BleState get bleState => _bleState;
-  bool get isBleConnected => _bleState == BleState.connected;
+  bool get isBleConnected =>
+      _bleState == BleState.connected ||
+      _bleState == BleState.streaming ||
+      _bleState == BleState.syncingHistory;
   String get selectedDateIso => _selectedDate.toIso8601String().substring(0, 10);
   String? get bleStatusMessage => _bleStatusMessage;
   bool get isFallbackMode => _isFallbackMode;
@@ -448,12 +460,12 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
         .map((c) => c.spo2Pct!.toDouble())
         .toList();
 
-    final skinTempBaseline = baselines['skin_temp']?.mean;
+    final skinTempBaseline = baselines['skin_temp']?.mean ?? (_userProfile.baselineSampleCount >= 4 ? 36.5 : 36.5);
     final historical30dTemp = _cicliList
         .where((c) => c.tempCutaneaC != null)
         .map((c) {
           final t = c.tempCutaneaC!;
-          if (skinTempBaseline != null && t >= 25.0) {
+          if (t >= 25.0) {
             return t - skinTempBaseline;
           }
           return t.abs() <= 3.0 ? t : 0.0;
@@ -467,7 +479,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     double? tempVal;
     if (current?.tempCutaneaC != null) {
       final t = current!.tempCutaneaC!;
-      if (skinTempBaseline != null && t >= 25.0) {
+      if (t >= 25.0) {
         tempVal = t - skinTempBaseline;
       } else if (t.abs() <= 3.0) {
         tempVal = t;
@@ -762,6 +774,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       _sonnoList = allSonno.where((s) => s.dataIso == dateKey).toList();
 
       final allDiario = await _repository.getVociDiario();
+      _allVociDiarioList = allDiario;
       _vociDiarioList = allDiario.where((v) => v.dataIso == dateKey).toList();
       _completedDiaryDates = allDiario.map((v) => v.dataIso).toSet();
 
@@ -1057,20 +1070,42 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     await DatabaseHelper().saveVociDiarioBatch(dateIso, items);
     _completedDiaryDates.add(dateIso);
     final allDiario = await _repository.getVociDiario();
+    _allVociDiarioList = allDiario;
     _vociDiarioList = allDiario.where((v) => v.dataIso == _selectedDate.toIso8601String().substring(0, 10)).toList();
     notifyListeners();
   }
 
   HabitImpactResult getHabitImpact(String habitQuestion) {
-    final records = _vociDiarioList
+    final Map<String, CicloFisiologico> cicliMap = {
+      for (final c in _cicliList) c.dataIso: c,
+    };
+    final Map<String, Sonno> sonnoMap = {
+      for (final s in _allSonnoList) s.dataIso: s,
+    };
+
+    final records = _allVociDiarioList
         .where((v) => v.chiaveDomanda == habitQuestion)
-        .map((v) => JournalHabitRecord(
-              habitQuestion: v.chiaveDomanda,
-              answeredYes: v.rispostaBool,
-              date: v.oraInizioCiclo,
-              nextDayRecoveryPct: _ultimoCiclo?.punteggioRecuperoPct ?? 75.0,
-              nextDaySleepPct: _ultimoCiclo?.andamentoSonnoPct ?? 85.0,
-            ))
+        .map((v) {
+          final matchingCiclo = cicliMap[v.dataIso];
+          final matchingSonno = sonnoMap[v.dataIso];
+
+          final recoveryPct = matchingCiclo?.punteggioRecuperoPct ??
+              _ultimoCiclo?.punteggioRecuperoPct ??
+              0.0;
+
+          final sleepPct = matchingSonno?.sleepPerformancePct ??
+              matchingSonno?.actualVsNeededPct ??
+              matchingCiclo?.andamentoSonnoPct ??
+              0.0;
+
+          return JournalHabitRecord(
+            habitQuestion: v.chiaveDomanda,
+            answeredYes: v.rispostaBool,
+            date: v.oraInizioCiclo,
+            nextDayRecoveryPct: recoveryPct,
+            nextDaySleepPct: sleepPct,
+          );
+        })
         .toList();
 
     return _biometricEngine.calculateJournalHabitImpact(

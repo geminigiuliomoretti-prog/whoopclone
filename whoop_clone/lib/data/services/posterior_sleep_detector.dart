@@ -236,6 +236,46 @@ class PosteriorSleepDetector {
         cursor++;
       }
 
+      final int couchSearchLimit = math.min(lastQuietIdx, candidateStartIdx + 180);
+      int postTransitionStart = candidateStartIdx;
+      int wakeBoutLen = 0;
+
+      for (int k = candidateStartIdx; k <= couchSearchLimit; k++) {
+        final bucket = epochBuckets[k];
+        double maxEnmoInEpoch = 0.0;
+        double avgHrInEpoch = profileRhr;
+        if (bucket.isNotEmpty) {
+          for (final r in bucket) {
+            final e = (r['accel_enmo'] ?? r['motion_var'] ?? r['enmo'] as num?)?.toDouble() ?? 0.0;
+            if (e > maxEnmoInEpoch) maxEnmoInEpoch = e;
+          }
+          final hrs = bucket
+              .map((r) => (r['bpm'] ?? r['hr'] as num?)?.toDouble() ?? 0.0)
+              .where((h) => h > 0)
+              .toList();
+          if (hrs.isNotEmpty) {
+            avgHrInEpoch = hrs.reduce((a, b) => a + b) / hrs.length;
+          }
+        }
+
+        final bool isWalkingToBed = epochStatus[k] == false &&
+            (maxEnmoInEpoch >= 0.035 || avgHrInEpoch >= profileRhr + 12.0);
+
+        if (isWalkingToBed) {
+          wakeBoutLen++;
+        } else {
+          if (wakeBoutLen >= 4 && (lastQuietIdx - k) >= 240) {
+            int newStart = k;
+            while (newStart < lastQuietIdx && epochStatus[newStart] != true) {
+              newStart++;
+            }
+            postTransitionStart = newStart;
+          }
+          wakeBoutLen = 0;
+        }
+      }
+      candidateStartIdx = postTransitionStart;
+
       final startTs = firstTs.add(Duration(seconds: candidateStartIdx * 30));
       final endTs = firstTs.add(Duration(seconds: (lastQuietIdx + 1) * 30));
       final durationMin = endTs.difference(startTs).inMinutes;

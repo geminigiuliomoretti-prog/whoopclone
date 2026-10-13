@@ -994,7 +994,13 @@ class OvernightSleepEngine {
       'resting_hr_bpm': finalNightRhr,
       'rhr_notte': finalNightRhr,
       'respiratory_rate': nocturnalRespRate,
-      'skin_temperature_delta_c': deltaSkinTemp,
+      'skin_temperature_delta_c': (tempBaseline != null && deltaSkinTemp != null && deltaSkinTemp >= 25.0)
+          ? double.parse((deltaSkinTemp - tempBaseline).clamp(-3.0, 3.0).toStringAsFixed(1))
+          : deltaSkinTemp,
+      'delta_skin_temp': (tempBaseline != null && deltaSkinTemp != null && deltaSkinTemp >= 25.0)
+          ? double.parse((deltaSkinTemp - tempBaseline).clamp(-3.0, 3.0).toStringAsFixed(1))
+          : deltaSkinTemp,
+      'skin_temp_celsius': deltaSkinTemp,
       'spo2_percentage': spo2Pct,
       'total_sleep_min': totalSleepMin,
       'sws_min': swsMin,
@@ -1226,66 +1232,79 @@ class OvernightSleepEngine {
     final int totalEpochs = epochs.length;
     if (totalEpochs == 0) return;
 
-    final List<SleepStage> rawStages = [];
+    final validEpochs = epochs
+        .where((e) => e.quality != EpochQuality.missing && e.sampleCount > 0 && e.hr > 30)
+        .toList();
+    if (validEpochs.isEmpty) return;
+
+    final hrs = validEpochs.map((e) => e.hr).toList()..sort();
+    final double nightHrMean = hrs.reduce((a, b) => a + b) / hrs.length;
+    final double nightHrVar = hrs.map((h) => math.pow(h - nightHrMean, 2)).reduce((a, b) => a + b) / hrs.length;
+    final double nightHrStd = math.max(2.2, math.sqrt(nightHrVar));
+    final double nightHrP22 = hrs[(hrs.length * 0.22).floor()];
+
+    final rmssds = validEpochs.where((e) => e.rmssd > 5).map((e) => e.rmssd).toList()..sort();
+    final double nightHrvMean = rmssds.isNotEmpty ? (rmssds.reduce((a, b) => a + b) / rmssds.length) : hrvBaseline;
+    final double nightHrvStd = rmssds.length > 2
+        ? math.max(4.0, math.sqrt(rmssds.map((r) => math.pow(r - nightHrvMean, 2)).reduce((a, b) => a + b) / rmssds.length))
+        : 10.0;
+
+    final List<SleepStage> rawStages = List.filled(totalEpochs, SleepStage.light);
 
     for (int k = 0; k < totalEpochs; k++) {
       final ep = epochs[k];
-
-      // Se l'epoca è priva di campioni o marcata MISSING, preserva lo stato MISSING
       if (ep.quality == EpochQuality.missing || ep.sampleCount == 0 || ep.stage == 'MISSING') {
-        rawStages.add(SleepStage.missing);
+        rawStages[k] = SleepStage.missing;
         continue;
       }
 
       final double enmo = ep.motionVar;
-      final double hrRatio = rhrBaseline > 0 ? (ep.hr / rhrBaseline) : 1.0;
-      final double hrvNorm = hrvBaseline > 0 ? (ep.rmssd / hrvBaseline) : 1.0;
-      final double respVar = ep.respPower > 0.0
-          ? double.parse(((1.0 - ep.respPower) * 0.5).clamp(0.0, 1.0).toStringAsFixed(3))
-          : 0.50;
+      final double zHr = (ep.hr - nightHrMean) / nightHrStd;
+      final double zHrv = ep.rmssd > 0 ? (ep.rmssd - nightHrvMean) / nightHrvStd : 0.0;
+      final double progress = k / totalEpochs;
 
-      var stage = classifyEpoch(
-        enmo: enmo,
-        hrRatio: hrRatio,
-        hrvNorm: hrvNorm,
-        respVar: respVar,
-        epochIndex: k,
-        totalEpochs: totalEpochs,
-      );
-
-      // Supporto per feature aggiuntive di atonia REM su epoche con hrFluctuations o rmssdVarInWindow
-      if (stage == SleepStage.light && k > (totalEpochs > 150 ? 120 : (totalEpochs * 0.15).round())) {
-        if (enmo < 0.010 && (ep.rmssdVarInWindow >= 0.25 || ep.hrFluctuations >= 4)) {
-          stage = SleepStage.rem;
-        }
+      double localHrDiff = 0.0;
+      if (k > 0 && k < totalEpochs - 1) {
+        localHrDiff = (ep.hr - epochs[k - 1].hr).abs() + (epochs[k + 1].hr - ep.hr).abs();
       }
 
-      rawStages.add(stage);
+      if (enmo > 0.038 || (enmo > 0.018 && zHr > 1.4) || zHr > 2.2) {
+        rawStages[k] = SleepStage.wake;
+        continue;
+      }
+
+      final bool isDeepCandidate = enmo <= 0.006 &&
+          (zHr <= -0.50 || (zHr <= -0.20 && ep.hr <= nightHrP22)) &&
+          localHrDiff <= 3.2 &&
+          (progress <= 0.88 || zHr <= -0.70);
+
+      final bool isRemCandidate = enmo <= 0.008 &&
+          progress >= 0.12 &&
+          zHr > -0.40 &&
+          zHr <= 1.25 &&
+          (localHrDiff >= 1.6 || zHrv >= 0.20 || ep.rmssdVarInWindow >= 0.20 || ep.hrFluctuations >= 2);
+
+      if (isDeepCandidate) {
+        rawStages[k] = SleepStage.deepSws;
+      } else if (isRemCandidate) {
+        rawStages[k] = SleepStage.rem;
+      } else {
+        rawStages[k] = SleepStage.light;
+      }
     }
 
-    // 2. Filtro di Smoothing Temporale (Majority Vote / Eliminazione Flickering a singola epoca)
     final List<SleepStage> smoothedStages = List.from(rawStages);
     for (int i = 1; i < totalEpochs - 1; i++) {
       final prev = smoothedStages[i - 1];
       final curr = smoothedStages[i];
       final next = rawStages[i + 1];
-
-      // Non applicare smoothing su epoche MISSING (i buchi di dati rimangono buchi autentici)
-      if (curr == SleepStage.missing || prev == SleepStage.missing || next == SleepStage.missing) {
-        continue;
-      }
-
-      // Se l'epoca corrente è isolata tra due epoche dello stesso stadio, uniforma (a meno di forte spike motorio di veglia)
+      if (curr == SleepStage.missing || prev == SleepStage.missing || next == SleepStage.missing) continue;
       if (prev == next && curr != prev) {
-        if (curr == SleepStage.wake && epochs[i].motionVar > 0.060) {
-          // Preserva micro-risveglio autentico ad alta accelerazione
-        } else {
-          smoothedStages[i] = prev;
-        }
+        if (curr == SleepStage.wake && epochs[i].motionVar > 0.055) continue;
+        smoothedStages[i] = prev;
       }
     }
 
-    // STG-04: Enforce minimum bout duration for SWS e REM (>= 4 epoche = 2 minuti) in stream continui
     if (totalEpochs >= 10) {
       int idx = 0;
       while (idx < totalEpochs) {
@@ -1295,15 +1314,11 @@ class OvernightSleepEngine {
           while (idx + run < totalEpochs && smoothedStages[idx + run] == st) {
             run++;
           }
-          if (run < 4) {
-            // Applica il revert a LIGHT solo se il bout breve è circondato da sonno contiguo (flickering)
-            // e non da buchi MISSING di campionamento rado
-            final bool surroundedBySleep = (idx > 0 && smoothedStages[idx - 1] == SleepStage.light) ||
-                (idx + run < totalEpochs && smoothedStages[idx + run] == SleepStage.light);
-            if (surroundedBySleep) {
-              for (int r = 0; r < run; r++) {
-                smoothedStages[idx + r] = SleepStage.light;
-              }
+          final bool surroundedBySleep = (idx > 0 && smoothedStages[idx - 1] == SleepStage.light) ||
+              (idx + run < totalEpochs && smoothedStages[idx + run] == SleepStage.light);
+          if (run < 4 && surroundedBySleep) {
+            for (int r = 0; r < run; r++) {
+              smoothedStages[idx + r] = SleepStage.light;
             }
           }
           idx += run;
@@ -1350,6 +1365,21 @@ class OvernightSleepEngine {
         startIdx--;
       }
       evalSws = epochs.sublist(startIdx, lastSwsIdx + 1);
+
+      // Se l'ultimo blocco contiguo 'SWS' ha meno di 10 epoche, usa tutte le epoche con stage == 'SWS'
+      // della seconda metà della notte (o tutte le epoche SWS della notte se sono meno di 15)
+      if (evalSws.length < 10) {
+        final halfIdx = epochs.length ~/ 2;
+        final secondHalfSws = epochs.sublist(halfIdx).where((e) => e.stage == 'SWS').toList();
+        if (secondHalfSws.length >= 10) {
+          evalSws = secondHalfSws;
+        } else {
+          final allSws = epochs.where((e) => e.stage == 'SWS').toList();
+          if (allSws.isNotEmpty) {
+            evalSws = allSws;
+          }
+        }
+      }
     } else {
       // 2. Fallback: Finestra di minima varianza accelerometrica (motionVar < 0.020g) escludendo epoche MISSING
       final validEpochs = epochs.where((e) => e.stage != 'MISSING' && e.stage != 'UNKNOWN' && e.sampleCount > 0).toList();
@@ -1523,32 +1553,46 @@ class OvernightSleepEngine {
     };
   }
 
-  /// Calcolo Delta Temperatura Cutanea (°C) reale rispetto alla baseline
+  /// Calcolo Temperatura Cutanea Notturna Reale in Gradi Celsius (°C)
+  /// Estrae i gradi reali da telemetria grezza (celsius, AS6221 raw, o int8 framed)
+  /// e restituisce direttamente la media in gradi Celsius, consentendo a BaselineCalculator
+  /// di calcolare la baseline 30d e il relativo delta.
   double? _calculateDeltaSkinTemp(List<Map<String, dynamic>> records, double? baseTemp) {
-    if (records.isEmpty || baseTemp == null) return null;
+    if (records.isEmpty) return null;
     final List<double> celsiusList = [];
 
     for (final r in records) {
       // 1. Lettura diretta gradi Celsius (da SQLite telemetria_grezza o stream BLE decodificato)
       final directCelsius = (r['skin_temp_celsius'] ?? r['temp_celsius'] ?? r['skin_temp']) as num?;
-      if (directCelsius != null && directCelsius > 25.0 && directCelsius < 43.0) {
+      if (directCelsius != null && directCelsius >= 28.0 && directCelsius <= 42.0) {
         celsiusList.add(directCelsius.toDouble());
         continue;
       }
 
-      // 2. Lettura valore raw sensore AS6221 (es. 4672 / 128.0 = 36.5 °C)
+      // 2. Lettura valore raw sensore AS6221 (es. > 1000 * 0.0078125 = 16-bit LE)
       final rawSensor = (r['skin_temp_raw'] ?? r['temp_raw']) as num?;
-      if (rawSensor != null && rawSensor > 1000 && rawSensor < 8000) {
-        final c = rawSensor.toDouble() / 128.0;
-        if (c > 25.0 && c < 43.0) {
-          celsiusList.add(c);
+      if (rawSensor != null) {
+        final rawVal = rawSensor.toInt();
+        if (rawVal > 1000 && rawVal < 8000) {
+          final c = rawVal * 0.0078125;
+          if (c >= 28.0 && c <= 42.0) {
+            celsiusList.add(c);
+            continue;
+          }
+        } else if (rawVal >= 1 && rawVal <= 250) {
+          // Frame compatto int8 offset
+          final c = 36.0 + (rawVal > 127 ? (rawVal - 256) : rawVal) / 10.0;
+          if (c >= 30.0 && c <= 41.5) {
+            celsiusList.add(c);
+            continue;
+          }
         }
       }
     }
 
     if (celsiusList.isEmpty) return null;
     final avgCelsius = celsiusList.reduce((a, b) => a + b) / celsiusList.length;
-    return double.parse((avgCelsius - baseTemp).clamp(-3.0, 3.0).toStringAsFixed(1));
+    return double.parse(avgCelsius.toStringAsFixed(2));
   }
 
   /// Calcolo Saturazione d'Ossigeno SpO2 (% = 110 - 25 * R) reale

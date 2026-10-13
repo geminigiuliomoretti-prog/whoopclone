@@ -947,14 +947,13 @@ class BleConnectionManager {
               }
 
               // UNIFIED INGESTION PIPELINE (ARCH-01):
-              if (!_isProprietaryChannelActive) {
-                _ingestionService.ingestRawPacket(
-                  bytesU8,
-                  source: 'HR_SERVICE_2A37',
-                  deviceId: device.remoteId.str,
-                  sessionId: _sessionStartTime?.toIso8601String(),
-                );
-              }
+              // Ingerisci SEMPRE per catturare i veri intervalli R-R (rrIntervalsMs) indispensabili per HRV precisa:
+              _ingestionService.ingestRawPacket(
+                bytesU8,
+                source: 'HR_SERVICE_2A37',
+                deviceId: device.remoteId.str,
+                sessionId: _sessionStartTime?.toIso8601String(),
+              );
             }
           });
           debugPrint('BleConnectionManager: [5/5] Sottoscritto canale 0x2A37 (Standard HR)');

@@ -325,9 +325,7 @@ class TelemetryIngestionService {
       accelEnmo = packet96.enmo;
       motionVar = packet96.motionVariance;
       skinTempRaw = packet96.skinTempRaw;
-      if (skinTempRaw > 1000 && skinTempRaw < 6000) {
-        skinTempC = double.parse((skinTempRaw * 0.0078125).toStringAsFixed(2));
-      }
+      skinTempC = packet96.skinTempCelsius;
       spo2RatioR = packet96.spo2Ratio > 0 ? packet96.spo2Ratio : null;
       if (spo2RatioR != null && spo2RatioR > 0 && spo2RatioR <= 1.2) {
         spo2Pct = double.parse((110.0 - (25.0 * spo2RatioR)).clamp(70.0, 100.0).toStringAsFixed(1));

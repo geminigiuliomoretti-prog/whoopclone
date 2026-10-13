@@ -69,12 +69,19 @@ class Whoop96BytePacket {
   }
   
   /// Respiratory Rate:
-  /// - Bytes 20-23 (float32 LE) convalidato per range fisiologico umano [7.0 - 30.0 atti/min]
+  /// - Se isWhoopFramed e rawBytes.length >= 28 legge float32 da sublist(24, 28); con fallback su sublist(20, 24)
   double get respiratoryRate {
-    if (rawBytes.length < 24) return 0.0;
-    final bd = ByteData.sublistView(Uint8List.fromList(rawBytes.sublist(20, 24)));
-    final val = bd.getFloat32(0, Endian.little);
-    return (val.isFinite && val >= 7.0 && val <= 30.0) ? val : 0.0;
+    if (isWhoopFramed && rawBytes.length >= 28) {
+      final bd = ByteData.sublistView(Uint8List.fromList(rawBytes.sublist(24, 28)));
+      final val = bd.getFloat32(0, Endian.little);
+      if (val.isFinite && val >= 7.0 && val <= 30.0) return val;
+    }
+    if (rawBytes.length >= 24) {
+      final bd = ByteData.sublistView(Uint8List.fromList(rawBytes.sublist(20, 24)));
+      final val = bd.getFloat32(0, Endian.little);
+      if (val.isFinite && val >= 7.0 && val <= 30.0) return val;
+    }
+    return 0.0;
   }
   
   /// Skin Temperature raw:
@@ -91,14 +98,51 @@ class Whoop96BytePacket {
     }
     return 0;
   }
+
+  /// Skin Temperature (°C):
+  /// - Decodifica temperatura cutanea sia dai pacchetti flat (AS6221 16-bit LE) sia dai pacchetti framed 0xAA (byte 17 int8)
+  double? get skinTempCelsius {
+    if (rawBytes.length >= 30) {
+      final offset = isWhoopFramed && rawBytes.length >= 34 ? 32 : 28;
+      final val16 = rawBytes[offset] | (rawBytes[offset + 1] << 8);
+      final tempC = val16 * 0.0078125;
+      if (tempC >= 28.0 && tempC <= 42.0) {
+        return double.parse(tempC.toStringAsFixed(2));
+      }
+      // Se a offset 32 non era valido ma a 28 c'è un valore valido AS6221:
+      if (offset != 28) {
+        final val16Fallback = rawBytes[28] | (rawBytes[29] << 8);
+        final tempCFallback = val16Fallback * 0.0078125;
+        if (tempCFallback >= 28.0 && tempCFallback <= 42.0) {
+          return double.parse(tempCFallback.toStringAsFixed(2));
+        }
+      }
+    }
+    if (rawBytes.length >= 18) {
+      final bd = ByteData.sublistView(Uint8List.fromList(rawBytes));
+      final int8Val = bd.getInt8(17);
+      final tempC = 36.0 + (int8Val / 10.0);
+      if (tempC >= 30.0 && tempC <= 41.5 && int8Val != 0) {
+        return double.parse(tempC.toStringAsFixed(2));
+      }
+    }
+    return null;
+  }
   
   /// SpO2 R-ratio:
-  /// - Bytes 32-35 (float32 LE) convalidato su ratio ottico R [0.4 - 1.2]
+  /// - Se isWhoopFramed e rawBytes.length >= 40 legge float32 da sublist(36, 40); con fallback su sublist(32, 36)
   double get spo2Ratio {
-    if (rawBytes.length < 36) return 0.0;
-    final bd = ByteData.sublistView(Uint8List.fromList(rawBytes.sublist(32, 36)));
-    final val = bd.getFloat32(0, Endian.little);
-    return (val.isFinite && val >= 0.4 && val <= 1.2) ? val : 0.0;
+    if (isWhoopFramed && rawBytes.length >= 40) {
+      final bd = ByteData.sublistView(Uint8List.fromList(rawBytes.sublist(36, 40)));
+      final val = bd.getFloat32(0, Endian.little);
+      if (val.isFinite && val >= 0.4 && val <= 1.2) return val;
+    }
+    if (rawBytes.length >= 36) {
+      final bd = ByteData.sublistView(Uint8List.fromList(rawBytes.sublist(32, 36)));
+      final val = bd.getFloat32(0, Endian.little);
+      if (val.isFinite && val >= 0.4 && val <= 1.2) return val;
+    }
+    return 0.0;
   }
   
   /// HRV rMSSD (ms):
