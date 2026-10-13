@@ -217,7 +217,7 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
             // ── 2. CARD PILASTRI QUALITÀ DEL SONNO ──────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _buildSleepPillarsCard(hasSleep),
+              child: _buildSleepPillarsCard(hasSleep, viewModel),
             ),
 
             const SizedBox(height: 16),
@@ -447,11 +447,17 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
   }
 
   // ── CARD PILASTRI QUALITÀ DEL SONNO ─────────────────────────────────────
-  Widget _buildSleepPillarsCard(bool hasSleep) {
+  Widget _buildSleepPillarsCard(bool hasSleep, WhoopViewModel? viewModel) {
     final actualVsNeededPct = WhoopAnalyticsEngine.calculateActualVsNeededPct(
       actualDurationMin: widget.durationMin,
       sleepNeedMin: widget.sleepNeedMin,
     );
+
+    final sleepStress = viewModel?.sleepStress;
+    final sleepStressStr = sleepStress != null ? '${sleepStress.toStringAsFixed(1)} / 3.0' : '--';
+    final int stressSegment = sleepStress != null
+        ? (sleepStress < 1.0 ? 3 : (sleepStress < 2.0 ? 2 : 1))
+        : 1;
 
     return Container(
       decoration: NatureTheme.organicCardDecoration(isDark: true),
@@ -491,9 +497,9 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
           _buildSleepSubMetricRow(
             icon: Icons.spa_outlined,
             title: 'STRESS ELEVATO NEL\nSONNO',
-            value: '0%',
+            value: sleepStressStr,
             segments: 3,
-            activeSegment: 3,
+            activeSegment: stressSegment,
             activeColor: NatureColors.recoveryAccent,
             iconColor: NatureColors.lavender,
           ),
@@ -1411,11 +1417,11 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
 
   // Costruzione serie temporale reale degli ultimi 7 giorni
   List<Map<String, dynamic>> _buildLast7DaysSeries(List<dynamic>? historical) {
-    final now = DateTime.now();
+    final refDate = widget.startTime ?? DateTime.now();
     final List<Map<String, dynamic>> series = [];
 
     for (int i = 6; i >= 0; i--) {
-      final date = now.subtract(Duration(days: i));
+      final date = refDate.subtract(Duration(days: i));
       final dateIso = date.toIso8601String().substring(0, 10);
       final weekdayStr = _weekdayShort(date.weekday);
       final dayNum = date.day;
@@ -1430,7 +1436,16 @@ class _SleepDetailModalState extends State<SleepDetailModal> {
         }
       }
 
-      final pct = (matchingSonno?.sleepPerformancePct as num?)?.toInt() ??
+      int? computedPct = (matchingSonno?.sleepPerformancePct as num?)?.toInt();
+      if (computedPct == null && matchingSonno != null) {
+        final durata = (matchingSonno.durataTotMin as num?)?.toDouble() ?? 0.0;
+        final need = (matchingSonno.sleepNeedMin as num?)?.toDouble() ?? 0.0;
+        if (durata > 0 && need > 0) {
+          computedPct = ((durata / need) * 100).round();
+        }
+      }
+
+      final pct = computedPct ??
           (i == 0 && widget.sleepPct > 0 ? widget.sleepPct.toInt() : 0);
       final eff = (matchingSonno?.efficienzaPct as num?)?.toInt() ??
           (i == 0 && widget.efficiencyPct > 0 ? widget.efficiencyPct.toInt() : 0);

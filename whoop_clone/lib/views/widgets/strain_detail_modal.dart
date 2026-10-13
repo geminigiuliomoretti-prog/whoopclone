@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/constants/whoop_theme.dart';
 import '../../core/theme/nature_theme.dart';
+import '../../viewmodels/whoop_viewmodel.dart';
 
 /// Modulo 6 — Strain Detail Screen (Full Page)
 /// Riproduce fedelmente lo screenshot ufficiale "Strain - Pagina Sforzo Day Strain e Zone FC.jpeg":
@@ -76,12 +78,6 @@ class StrainDetailModal extends StatelessWidget {
     );
   }
 
-  String _formatNumber(int n) {
-    return n.toString().replaceAllMapped(
-          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-          (Match m) => '${m[1]}.',
-        );
-  }
 
   String _getStrainStateLabel(double strain) {
     if (strain <= 0) return 'A RIPOSO';
@@ -90,8 +86,59 @@ class StrainDetailModal extends StatelessWidget {
     return 'LEGGERO';
   }
 
+  String _formatDuration(int totalSeconds) {
+    if (totalSeconds <= 0) return '0 min';
+    final hours = totalSeconds ~/ 3600;
+    final minutes = (totalSeconds % 3600) ~/ 60;
+    if (hours > 0) {
+      return '${hours}h ${minutes}m';
+    }
+    return '$minutes min';
+  }
+
   @override
   Widget build(BuildContext context) {
+    WhoopViewModel? viewModel;
+    try {
+      viewModel = Provider.of<WhoopViewModel>(context);
+    } catch (_) {}
+
+    final recoveryScore = viewModel?.recoveryScore;
+    final String targetMsg;
+    if (recoveryScore == null) {
+      targetMsg = 'Il tuo corpo sta raccogliendo i dati per determinare il target ottimale. Mantieni uno sforzo moderato in base a come ti senti.';
+    } else if (recoveryScore >= 67) {
+      targetMsg = 'Ottimo recupero ($recoveryScore%). Il tuo corpo è pronto per un carico elevato oggi. Puoi spingerti verso uno sforzo tra 14.0 e 18.0 senza rischi.';
+    } else if (recoveryScore >= 34) {
+      targetMsg = 'Recupero moderato ($recoveryScore%). Il tuo corpo è in grado di sostenere uno sforzo moderato oggi. Per mantenere l\'equilibrio, mantieni uno sforzo tra 10.0 e 14.0.';
+    } else {
+      targetMsg = 'Recupero basso ($recoveryScore%). Priorità al riposo e alla rigenerazione attiva. Cerca di mantenere lo sforzo al di sotto di 9.0 oggi.';
+    }
+
+    final zones = viewModel?.currentHrZones ?? {};
+    final z1Sec = (zones['z1_seconds'] as num?)?.toInt() ?? 0;
+    final z2Sec = (zones['z2_seconds'] as num?)?.toInt() ?? 0;
+    final z3Sec = (zones['z3_seconds'] as num?)?.toInt() ?? 0;
+    final z4Sec = (zones['z4_seconds'] as num?)?.toInt() ?? 0;
+    final z5Sec = (zones['z5_seconds'] as num?)?.toInt() ?? 0;
+
+    final z1Pct = (zones['z1_pct'] as num?)?.toDouble() ?? 0.0;
+    final z2Pct = (zones['z2_pct'] as num?)?.toDouble() ?? 0.0;
+    final z3Pct = (zones['z3_pct'] as num?)?.toDouble() ?? 0.0;
+    final z4Pct = (zones['z4_pct'] as num?)?.toDouble() ?? 0.0;
+    final z5Pct = (zones['z5_pct'] as num?)?.toDouble() ?? 0.0;
+
+    final z1Str = _formatDuration(z1Sec);
+    final z2Str = _formatDuration(z2Sec);
+    final z3Str = _formatDuration(z3Sec);
+    final z4Str = _formatDuration(z4Sec);
+    final z5Str = _formatDuration(z5Sec);
+
+    final z1to3TotalSec = z1Sec + z2Sec + z3Sec;
+    final z4to5TotalSec = z4Sec + z5Sec;
+    final z1to3Str = z1to3TotalSec > 0 ? _formatDuration(z1to3TotalSec) : zone1to3Duration;
+    final z4to5Str = z4to5TotalSec > 0 ? _formatDuration(z4to5TotalSec) : zone4to5Duration;
+
     final bmrCal = (caloriesTotal * 0.65).round();
     final activeCal = caloriesTotal - bmrCal;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -215,7 +262,7 @@ class StrainDetailModal extends StatelessWidget {
 
             const SizedBox(height: 16),
 
-            // 2. Card 4 Sub-metriche
+            // 2. Card Sub-metriche Zone FC
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
@@ -226,7 +273,7 @@ class StrainDetailModal extends StatelessWidget {
                     _buildSubMetricRow(
                       icon: Icons.favorite_border,
                       title: 'ZONE DI FREQUENZA CARDIACA\n1-3',
-                      value: zone1to3Duration,
+                      value: z1to3Str,
                       baseline: zone1to3Baseline,
                       indicatorType: _IndicatorType.downOrange,
                       iconColor: NatureColors.tealLight,
@@ -235,28 +282,10 @@ class StrainDetailModal extends StatelessWidget {
                     _buildSubMetricRow(
                       icon: Icons.favorite_border,
                       title: 'ZONE DI FREQUENZA CARDIACA\n4-5',
-                      value: zone4to5Duration,
+                      value: z4to5Str,
                       baseline: zone4to5Baseline,
                       indicatorType: _IndicatorType.dotGrey,
                       iconColor: NatureColors.terracotta,
-                    ),
-                    Divider(color: NatureColors.darkBorder.withOpacity(0.6), height: 20, thickness: 1),
-                    _buildSubMetricRow(
-                      icon: Icons.fitness_center,
-                      title: 'TEMPO DI ATTIVITÀ DI FORZA',
-                      value: strengthDuration,
-                      baseline: strengthBaseline,
-                      indicatorType: _IndicatorType.dotGrey,
-                      iconColor: NatureColors.powderBlue,
-                    ),
-                    Divider(color: NatureColors.darkBorder.withOpacity(0.6), height: 20, thickness: 1),
-                    _buildSubMetricRow(
-                      icon: Icons.directions_walk,
-                      title: 'PASSI',
-                      value: steps != null && steps! > 0 ? _formatNumber(steps!) : '--',
-                      baseline: stepsBaseline != null && stepsBaseline! > 0 ? _formatNumber(stepsBaseline!) : '--',
-                      indicatorType: steps != null && steps! > 0 ? _IndicatorType.downOrange : _IndicatorType.dotGrey,
-                      iconColor: NatureColors.sage,
                     ),
                     Divider(color: NatureColors.darkBorder.withOpacity(0.6), height: 20, thickness: 1),
                     Padding(
@@ -306,26 +335,13 @@ class StrainDetailModal extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Il tuo corpo è in grado di sostenere uno sforzo moderato oggi. Per mantenere l\'equilibrio, oggi mantieni un livello di sforzo moderato tra 11,8 e 16,5.',
-                      style: TextStyle(
+                    Text(
+                      targetMsg,
+                      style: const TextStyle(
                         color: NatureColors.textDarkPrimary,
                         fontSize: 13.5,
                         height: 1.45,
                         fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    GestureDetector(
-                      onTap: () {},
-                      child: const Text(
-                        'ESPLORA I TUOI APPROFONDIMENTI SULLO SFORZO',
-                        style: TextStyle(
-                          color: NatureColors.coralLight,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.8,
-                        ),
                       ),
                     ),
                   ],
@@ -389,15 +405,15 @@ class StrainDetailModal extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _buildZoneRow('Zona 5 — Max (90–100%)', '0 min', NatureColors.terracotta, 0.0),
+                    _buildZoneRow('Zona 5 — Max (90–100%)', z5Str, NatureColors.terracotta, z5Pct),
                     const SizedBox(height: 12),
-                    _buildZoneRow('Zona 4 — Anaerobica (80–90%)', '0 min', NatureColors.amberWarm, 0.0),
+                    _buildZoneRow('Zona 4 — Anaerobica (80–90%)', z4Str, NatureColors.amberWarm, z4Pct),
                     const SizedBox(height: 12),
-                    _buildZoneRow('Zona 3 — Aerobica (70–80%)', '0 min', NatureColors.powderBlue, 0.0),
+                    _buildZoneRow('Zona 3 — Aerobica (70–80%)', z3Str, NatureColors.powderBlue, z3Pct),
                     const SizedBox(height: 12),
-                    _buildZoneRow('Zona 2 — Endurance (60–70%)', '0 min', NatureColors.sage, 0.0),
+                    _buildZoneRow('Zona 2 — Endurance (60–70%)', z2Str, NatureColors.sage, z2Pct),
                     const SizedBox(height: 12),
-                    _buildZoneRow('Zona 1 — Riscaldamento (50–60%)', '0 min', NatureColors.textDarkMuted, 0.0),
+                    _buildZoneRow('Zona 1 — Riscaldamento (50–60%)', z1Str, NatureColors.textDarkMuted, z1Pct),
                   ],
                 ),
               ),

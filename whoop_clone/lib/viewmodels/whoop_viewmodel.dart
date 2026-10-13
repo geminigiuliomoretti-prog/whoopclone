@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../data/models/ciclo_fisiologico.dart';
 import '../data/models/allenamento.dart';
 import '../data/models/voce_diario.dart';
@@ -854,8 +855,34 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     return await DatabaseHelper().getHrZoneDistribution(start, end, maxHr ?? _userProfile.hrMax.toDouble());
   }
 
+  /// Riprocessa le sessioni di sonno storiche degli ultimi 14 giorni da telemetria_grezza
+  Future<int> reprocessHistoricalSleepsFromRawTelemetry() async {
+    final now = DateTime.now();
+    final windowStart = now.subtract(const Duration(days: 14));
+    final count = await _posteriorSleepDetector.runPosteriorDetectionAndPersist(
+      windowStart: windowStart,
+      windowEnd: now,
+    );
+    if (count > 0) {
+      await loadData(triggerAutoSync: false);
+    }
+    return count;
+  }
+
   /// Caricamento iniziale all'avvio dell'applicazione
-  Future<void> loadInitialData() => loadData();
+  Future<void> loadInitialData() async {
+    await loadData();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final reprocessed = prefs.getBool('sleep_reprocessed_v2') ?? false;
+      if (!reprocessed) {
+        await prefs.setBool('sleep_reprocessed_v2', true);
+        await reprocessHistoricalSleepsFromRawTelemetry();
+      }
+    } catch (e) {
+      debugPrint('WhoopViewModel: Errore riprocessamento storico iniziale sonno: $e');
+    }
+  }
 
   /// Verifica ed esegue il sync notturno automatico se per oggi manca ancora il sonno e il recovery
   Future<void> triggerOvernightSyncIfNeeded() async {

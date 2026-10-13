@@ -38,13 +38,13 @@ class _TrendsScreenState extends State<TrendsScreen> {
   final List<String> _allMetrics = [
     'Variabilità FC (VFC)',
     'FC a Riposo (FCR)',
-    'Passi Giornalieri',
+    'Recupero (%)',
+    'Prestazione Sonno (%)',
+    'Durata del Sonno (ore)',
     'Sforzo Giornaliero',
-    'Zone FC 1–3',
-    'Zone FC 4–5',
+    'Ossigeno nel Sangue (SpO₂)',
     'Frequenza Respiratoria',
     'Temperatura Cutanea',
-    'VO₂ Max Stimato',
     'Dispendio Energetico',
   ];
 
@@ -71,9 +71,15 @@ class _TrendsScreenState extends State<TrendsScreen> {
         limit = 30;
     }
 
-    final cicli = allCicli.length > limit
-        ? allCicli.sublist(allCicli.length - limit)
-        : allCicli;
+    final cicli = allCicli.take(limit).toList().reversed.toList();
+
+    final allSonno = viewModel.allSonnoList;
+    Map<String, dynamic> sonnoByDate = {};
+    for (final s in allSonno) {
+      if (!sonnoByDate.containsKey(s.dataIso)) {
+        sonnoByDate[s.dataIso] = s;
+      }
+    }
 
     final hasData = cicli.isNotEmpty;
     final strainList = cicli.map((c) => c.sforzoGiornaliero).whereType<double>().toList();
@@ -91,7 +97,12 @@ class _TrendsScreenState extends State<TrendsScreen> {
         ? (hrvList.reduce((a, b) => a + b) / hrvList.length)
         : 0.0;
 
-    final sleepList = cicli.map((c) => c.andamentoSonnoPct).whereType<double>().toList();
+    final sleepList = cicli.map((c) {
+      final dateIso = c.giorno.toIso8601String().substring(0, 10);
+      final s = sonnoByDate[dateIso];
+      final val = (s?.sleepPerformancePct ?? s?.actualVsNeededPct ?? c.andamentoSonnoPct);
+      return val is num ? val.toDouble() : null;
+    }).whereType<double>().toList();
     final avgSleep = sleepList.isNotEmpty
         ? (sleepList.reduce((a, b) => a + b) / sleepList.length)
         : 0.0;
@@ -101,7 +112,7 @@ class _TrendsScreenState extends State<TrendsScreen> {
     final hrvValues = hrvList;
     final sleepValues = sleepList;
 
-    final selectedData = _extractMetricData(_selectedMetric, cicli);
+    final selectedData = _extractMetricData(_selectedMetric, cicli, sonnoByDate);
 
     final selectedDateStr = _selectedDate.toIso8601String().substring(0, 10);
     CicloFisiologico? dayCiclo;
@@ -110,6 +121,7 @@ class _TrendsScreenState extends State<TrendsScreen> {
     } catch (_) {
       dayCiclo = null;
     }
+    final selectedDaySonno = sonnoByDate[selectedDateStr];
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -352,8 +364,8 @@ class _TrendsScreenState extends State<TrendsScreen> {
                           children: [
                             const Text('Sonno', style: TextStyle(color: NatureColors.textMuted, fontSize: 11)),
                             Text(
-                              dayCiclo?.andamentoSonnoPct != null
-                                  ? '${dayCiclo!.andamentoSonnoPct!.toInt()}%'
+                              (selectedDaySonno?.sleepPerformancePct ?? selectedDaySonno?.actualVsNeededPct ?? dayCiclo?.andamentoSonnoPct) != null
+                                  ? '${(selectedDaySonno?.sleepPerformancePct ?? selectedDaySonno?.actualVsNeededPct ?? dayCiclo?.andamentoSonnoPct)!.round()}%'
                                   : '--%',
                               style: const TextStyle(color: NatureColors.tealLight, fontWeight: FontWeight.bold, fontSize: 18),
                             ),
@@ -371,7 +383,7 @@ class _TrendsScreenState extends State<TrendsScreen> {
     );
   }
 
-  MetricData _extractMetricData(String metric, List<CicloFisiologico> cicli) {
+  MetricData _extractMetricData(String metric, List<CicloFisiologico> cicli, [Map<String, dynamic>? sonnoByDate]) {
     if (cicli.isEmpty) {
       return MetricData(title: metric, values: [], unit: '', color: NatureColors.tealLight);
     }
@@ -385,12 +397,35 @@ class _TrendsScreenState extends State<TrendsScreen> {
         final vals = cicli.map((c) => c.frequenzaCardiacaRiposoBpm?.toDouble()).whereType<double>().toList();
         return MetricData(title: metric, values: vals, unit: 'bpm', color: NatureColors.sage);
 
-      case 'Passi Giornalieri':
-        return MetricData(title: metric, values: [], unit: 'passi', color: NatureColors.mist);
+      case 'Recupero (%)':
+        final vals = cicli.map((c) => c.punteggioRecuperoPct).whereType<double>().toList();
+        return MetricData(title: metric, values: vals, unit: '%', color: NatureColors.sage);
+
+      case 'Prestazione Sonno (%)':
+        final vals = cicli.map((c) {
+          final dateIso = c.giorno.toIso8601String().substring(0, 10);
+          final s = sonnoByDate?[dateIso];
+          final val = (s?.sleepPerformancePct ?? s?.actualVsNeededPct ?? c.andamentoSonnoPct);
+          return val is num ? val.toDouble() : null;
+        }).whereType<double>().toList();
+        return MetricData(title: metric, values: vals, unit: '%', color: NatureColors.tealLight);
+
+      case 'Durata del Sonno (ore)':
+        final vals = cicli.map((c) {
+          final dateIso = c.giorno.toIso8601String().substring(0, 10);
+          final s = sonnoByDate?[dateIso];
+          final min = s?.durataTotMin;
+          return min is num ? (min / 60.0) : null;
+        }).whereType<double>().toList();
+        return MetricData(title: metric, values: vals, unit: 'h', color: NatureColors.tealLight);
 
       case 'Sforzo Giornaliero':
         final vals = cicli.map((c) => c.sforzoGiornaliero).whereType<double>().toList();
         return MetricData(title: metric, values: vals, unit: '', color: NatureColors.amber);
+
+      case 'Ossigeno nel Sangue (SpO₂)':
+        final vals = cicli.map((c) => c.spo2Pct).whereType<double>().toList();
+        return MetricData(title: metric, values: vals, unit: '%', color: NatureColors.powderBlue);
 
       case 'Frequenza Respiratoria':
         final vals = cicli.map((c) => c.frequenzaRespiratoriaRpm).whereType<double>().toList();
@@ -399,9 +434,6 @@ class _TrendsScreenState extends State<TrendsScreen> {
       case 'Temperatura Cutanea':
         final vals = cicli.map((c) => c.temperaturaPelleCelsius).whereType<double>().toList();
         return MetricData(title: metric, values: vals, unit: '°C', color: NatureColors.amber);
-
-      case 'VO₂ Max Stimato':
-        return MetricData(title: metric, values: [], unit: 'ml/kg/min', color: NatureColors.tealLight);
 
       case 'Dispendio Energetico':
         final vals = cicli.map((c) => c.calorieTot?.toDouble()).whereType<double>().toList();

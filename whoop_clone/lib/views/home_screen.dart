@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/constants/whoop_theme.dart';
 import '../core/theme/nature_theme.dart';
-import '../data/ble/ble_connection_manager.dart';
 import '../data/biometrics/health_vitals_engine.dart';
 import '../viewmodels/whoop_viewmodel.dart';
 import 'widgets/whoop_header.dart';
@@ -247,7 +246,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           : 'GM',
                       streakDays: viewModel.streakDays,
                       batteryPct: viewModel.batteryPct,
-                      bleConnected: viewModel.bleState == BleState.connected || viewModel.liveBpm > 0,
+                      bleConnected: viewModel.isBleConnected || viewModel.liveBpm > 0,
                       onRingSelected: (idx) {
                         setState(() => _selectedRingIndex = idx);
                       },
@@ -325,7 +324,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ? viewModel.userProfile.sleepBaselineMin.toDouble()
                                   : null),
                           baselinePerformancePct: viewModel.getPersonalBaseline('sleep_performance')?.mean,
-                          historicalSonno: viewModel.sonnoList,
+                          historicalSonno: viewModel.allSonnoList,
                           provenance: sonno?.provenance ?? (ciclo?.provenance ?? 'REAL'),
                         ),
                         onTapStrain: () => StrainDetailModal.show(
@@ -907,7 +906,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ? viewModel.userProfile.sleepBaselineMin.toDouble()
                           : null),
                   baselinePerformancePct: viewModel.getPersonalBaseline('sleep_performance')?.mean,
-                  historicalSonno: viewModel.sonnoList,
+                  historicalSonno: viewModel.allSonnoList,
                   provenance: sonno?.provenance ?? (ciclo?.provenance ?? 'REAL'),
                 ),
                 child: Container(
