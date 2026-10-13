@@ -147,7 +147,23 @@ class PosteriorSleepDetector {
         final avgEnmo = enmoCount > 0 ? sumEnmo / enmoCount : 0.0;
         final avgHr = hrCount > 0 ? sumHr / hrCount : profileRhr;
 
-        final isQuiet = avgEnmo <= effectiveEnmoQuietThresh && avgHr <= maxSleepHr;
+        final epochTime = firstTs.add(Duration(seconds: i * 30));
+        final localHour = epochTime.toLocal().hour;
+        final isCircadianNight = localHour >= 21 || localHour < 9;
+
+        final bool isQuiet;
+        if (isCircadianNight) {
+          // In fascia serale (es. 21:00 - 23:00): una persona rilassata sul divano o a cena è immobile (enmo basso)
+          // ma ha FC ancora da sveglio (65-80 bpm). L'addormentamento reale richiede quiete motoria combinata
+          // con caduta della FC verso il baseline di riposo (non basta solo < maxSleepHr).
+          final isEveningLeisure = (localHour >= 21 && localHour < 23);
+          final eveningMaxHr = isEveningLeisure ? math.min(maxSleepHr, profileRhr + 8.0) : maxSleepHr;
+          isQuiet = avgEnmo <= effectiveEnmoQuietThresh && avgHr <= eveningMaxHr;
+        } else {
+          // Di giorno (09:00 - 21:00): una persona rilassata sul divano ha FC 60-75 bpm.
+          // Un pisolino diurno reale richiede quiete motoria profonda (enmo <= 0.008) e caduta della FC a livelli basali (<= profileRhr + 2.0).
+          isQuiet = avgEnmo <= 0.008 && avgHr <= (profileRhr + 2.0);
+        }
         epochStatus.add(isQuiet);
       }
     }
@@ -227,6 +243,13 @@ class PosteriorSleepDetector {
       // 5. Valuta durata e tipologia (Main Sleep >= 180m, Nap >= 20m e < 180m)
       if (durationMin >= 20) {
         final isNap = durationMin < 180;
+        final localStartHour = startTs.toLocal().hour;
+        final isDaytime = localStartHour >= 9 && localStartHour < 21;
+        // Un pisolino diurno richiede almeno 30 minuti continui di sonno fisiologico confermato
+        if (isNap && isDaytime && durationMin < 30) {
+          i = lastQuietIdx + 1;
+          continue;
+        }
 
         // Calcola copertura reale
         int recordedEpochs = 0;
@@ -292,9 +315,22 @@ class PosteriorSleepDetector {
 
     for (final session in sessions) {
       try {
+        final existing = await _dbHelper.getSonnoByDate(session.wakeDateIso);
+        if (existing != null && existing['provenance'] == 'WHOOP_IMPORT') {
+          debugPrint('[PosteriorSleepDetector] Ignorata sovrascrittura sessione WHOOP_IMPORT per ${session.wakeDateIso}');
+          continue;
+        }
+
+        final cycleMap = await _dbHelper.getCicloByDate(session.wakeDateIso);
+        final cycleNeed = (cycleMap?['sleep_need_min'] as num?)?.toDouble();
+        final sessionBaseline = Map<String, dynamic>.from(baseline);
+        if (cycleNeed != null && cycleNeed > 0) {
+          sessionBaseline['sleep_need_min'] = cycleNeed;
+        }
+
         await _sleepEngine.processNightlyTelemetry(
           rawTelemetryRecords: session.records,
-          userBaseline30d: baseline,
+          userBaseline30d: sessionBaseline,
           windowStart: session.startTime,
           windowEnd: session.endTime,
           targetDateIso: session.wakeDateIso, // SLP-02: data locale del risveglio

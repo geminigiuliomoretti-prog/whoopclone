@@ -9,13 +9,15 @@ import 'behavior_detail_screen.dart';
 
 /// WHOOP Journal & Impact Analytics
 class JournalScreen extends StatefulWidget {
-  const JournalScreen({super.key});
+  final String? targetDateIso;
+  const JournalScreen({super.key, this.targetDateIso});
 
   @override
   State<JournalScreen> createState() => _JournalScreenState();
 }
 
 class _JournalScreenState extends State<JournalScreen> {
+  late String _effectiveDateIso;
   final Map<String, bool> _habits = {
     'Magnesio Bisglicinato prima di dormire (400mg)': true,
     'Consumo di Caffeina dopo le 14:00': false,
@@ -24,6 +26,32 @@ class _JournalScreenState extends State<JournalScreen> {
     'Utilizzo schermi / Luce blu prima di coricarsi': false,
     'Doccia fredda / Saunaterapia': true,
   };
+
+  @override
+  void initState() {
+    super.initState();
+    _effectiveDateIso = widget.targetDateIso ?? DateTime.now().toIso8601String().substring(0, 10);
+    _loadSavedJournalEntries();
+  }
+
+  Future<void> _loadSavedJournalEntries() async {
+    try {
+      final entries = await DatabaseHelper().getVociDiarioByDate(_effectiveDateIso);
+      if (entries.isNotEmpty && mounted) {
+        setState(() {
+          for (final entry in entries) {
+            final key = entry['chiave_domanda'] as String?;
+            final val = (entry['risposta_bool'] as num?)?.toInt() == 1;
+            if (key != null) {
+              _habits[key] = val;
+            }
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('[JournalScreen] Notice loading saved entries: $e');
+    }
+  }
 
   Future<void> _showAddCustomHabitDialog(BuildContext context) async {
     final controller = TextEditingController();
@@ -269,8 +297,8 @@ class _JournalScreenState extends State<JournalScreen> {
             child: ElevatedButton.icon(
               onPressed: () async {
                 final viewModel = Provider.of<WhoopViewModel>(context, listen: false);
-                final todayIso = DateTime.now().toIso8601String().substring(0, 10);
-                await viewModel.saveJournalEntries(dateIso: todayIso, habits: _habits);
+                await viewModel.saveJournalEntries(dateIso: _effectiveDateIso, habits: _habits);
+                await viewModel.loadData();
                 if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(

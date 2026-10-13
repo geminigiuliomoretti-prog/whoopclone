@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../core/constants/whoop_theme.dart';
 import '../../core/theme/nature_theme.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 import '../../data/models/ciclo_fisiologico.dart';
@@ -87,13 +86,13 @@ class _RecoveryCalendarModalState extends State<RecoveryCalendarModal> {
     final leadingBlanks = firstWeekday - 1;
 
     return Container(
-      decoration: BoxDecoration(
-        color: isDark ? NatureColors.darkCard : NatureColors.offWhite,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      decoration: const BoxDecoration(
+        color: NatureColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         border: Border(
           top: BorderSide(
-            color: isDark ? NatureColors.darkBorder : NatureColors.sandBorder,
-            width: 1.5,
+            color: NatureColors.border,
+            width: 1.2,
           ),
         ),
       ),
@@ -190,14 +189,14 @@ class _RecoveryCalendarModalState extends State<RecoveryCalendarModal> {
                   decoration: BoxDecoration(
                     color: isSelected
                         ? NatureColors.tealLight.withValues(alpha: 0.20)
-                        : (isDark ? NatureColors.darkSurface : Colors.white),
+                        : NatureColors.surfaceElevated,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: isSelected
                           ? NatureColors.tealLight
                           : (hasRecovery
                               ? recoveryColor.withValues(alpha: 0.35)
-                              : (isDark ? NatureColors.darkBorder : NatureColors.sandBorderSubtle)),
+                              : NatureColors.border),
                       width: isSelected ? 2.0 : 1.0,
                     ),
                   ),
@@ -208,8 +207,8 @@ class _RecoveryCalendarModalState extends State<RecoveryCalendarModal> {
                         '$dayNum',
                         style: TextStyle(
                           color: isSelected
-                              ? (isDark ? Colors.white : NatureColors.tealDark)
-                              : (isDark ? NatureColors.textDarkPrimary : NatureColors.textPrimary),
+                              ? Colors.white
+                              : NatureColors.textDarkPrimary,
                           fontSize: 12,
                           fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
                         ),
@@ -235,10 +234,10 @@ class _RecoveryCalendarModalState extends State<RecoveryCalendarModal> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: isDark ? NatureColors.darkSurface : Colors.white,
+              color: NatureColors.surfaceElevated,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: isDark ? NatureColors.darkBorder : NatureColors.sandBorderSubtle,
+                color: NatureColors.border,
               ),
             ),
             child: const Row(
@@ -269,7 +268,7 @@ class _WeekdayHeader extends StatelessWidget {
         child: Text(
           label,
           style: const TextStyle(
-            color: WhoopTheme.textSecondary,
+            color: NatureColors.textDarkMuted,
             fontSize: 11,
             fontWeight: FontWeight.bold,
           ),
@@ -301,7 +300,7 @@ class _LegendDot extends StatelessWidget {
         Text(
           label,
           style: const TextStyle(
-            color: WhoopTheme.textSecondary,
+            color: NatureColors.textDarkSecondary,
             fontSize: 10,
             fontWeight: FontWeight.w600,
           ),

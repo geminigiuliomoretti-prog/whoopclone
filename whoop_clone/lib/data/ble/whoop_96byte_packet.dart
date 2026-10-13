@@ -68,36 +68,37 @@ class Whoop96BytePacket {
     return (val.isFinite && val >= 0.0) ? val : 0.0;
   }
   
-  /// Respiratory Rate: bytes 20-23 (float32 LE) - Frequenza respiratoria estratta (atti/min)
+  /// Respiratory Rate:
+  /// - Bytes 20-23 (float32 LE) convalidato per range fisiologico umano [7.0 - 30.0 atti/min]
   double get respiratoryRate {
     if (rawBytes.length < 24) return 0.0;
     final bd = ByteData.sublistView(Uint8List.fromList(rawBytes.sublist(20, 24)));
     final val = bd.getFloat32(0, Endian.little);
-    return (val.isFinite && val >= 0.0) ? val : 0.0;
+    return (val.isFinite && val >= 7.0 && val <= 30.0) ? val : 0.0;
   }
   
   /// Skin Temperature raw:
-  /// - In frame 0xAA: byte 17 (int8 normalizzato a offset raw)
-  /// - In pacchetti flat: bytes 28-29 (uint16 LE) - Valore grezzo sensore AS6221
+  /// - Sensore digitale AS6221 a 16-bit LE su bytes 28-29 (range 1000..8000, 0.0078125 °C/LSB)
+  /// - In alternativa su frame con formato ridotto: byte 17
   int get skinTempRaw {
     if (rawBytes.length >= 30) {
       final val16 = rawBytes[28] | (rawBytes[29] << 8);
       if (val16 > 1000 && val16 < 8000) return val16;
     }
-    if (isWhoopFramed) {
-      if (rawBytes.length < 18) return 0;
-      return rawBytes[17];
+    if (rawBytes.length >= 18) {
+      final val8 = rawBytes[17];
+      return val8 > 0 ? val8 : 0;
     }
-    if (rawBytes.length < 30) return 0;
-    return rawBytes[28] | (rawBytes[29] << 8);
+    return 0;
   }
   
-  /// SpO2 R-ratio: bytes 32-35 (float32 LE) - Rapporto R per calcolo saturazione
+  /// SpO2 R-ratio:
+  /// - Bytes 32-35 (float32 LE) convalidato su ratio ottico R [0.4 - 1.2]
   double get spo2Ratio {
     if (rawBytes.length < 36) return 0.0;
     final bd = ByteData.sublistView(Uint8List.fromList(rawBytes.sublist(32, 36)));
     final val = bd.getFloat32(0, Endian.little);
-    return (val.isFinite && val >= 0.0) ? val : 0.0;
+    return (val.isFinite && val >= 0.4 && val <= 1.2) ? val : 0.0;
   }
   
   /// HRV rMSSD (ms):

@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 import '../../data/ble/ble_connection_manager.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 import 'strap_connection_screen.dart';
+import 'whoop_import_screen.dart';
 
-/// Modulo 19: Impostazioni e Gestione Sensore Whoop 5.0 (Sezione 19 Roadmap)
+/// Impostazioni e Gestione Sensore Biometrico BLE
 /// Dashboard di controllo hardware: ID hardware reale, Firmware, Livello Batteria BLE,
 /// Notifiche, Privacy Biometrica, Posizionamento sul corpo, Verifica Firmware e Reset.
 class SettingsDeviceScreen extends StatefulWidget {
@@ -40,47 +41,53 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
     final viewModel = Provider.of<WhoopViewModel>(context);
     final isConnected = viewModel.bleState == BleState.connected;
     final batteryPct = viewModel.batteryPct;
-    final hardwareId = viewModel.connectedDevice?.remoteId.str ?? (isConnected ? 'WHOOP-BLE-LIVE' : 'Non Connesso');
-    final deviceName = viewModel.connectedDeviceName ?? (isConnected ? 'WHOOP 5.0 SENSOR' : 'NESSUN SENSORE');
+    final hardwareId = viewModel.connectedDevice?.remoteId.str ?? (isConnected ? 'BLE-LIVE-SENSOR' : 'Non Connesso');
+    final deviceName = viewModel.connectedDeviceName ?? (isConnected ? 'SENSORE BIOMETRICO' : 'NESSUN SENSORE');
 
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: NatureColors.background,
       appBar: AppBar(
+        backgroundColor: NatureColors.background,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: NatureColors.textPrimary, size: 18),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
         title: const Text(
-          'GESTIONE DISPOSITIVO WHOOP 5.0',
+          'GESTIONE DISPOSITIVO',
           style: TextStyle(
-            color: WhoopTheme.textPrimary,
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
+            color: NatureColors.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
             letterSpacing: 1.2,
           ),
         ),
+        centerTitle: true,
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Hardware Status Card (WHOOP 5.0 Sensor)
-            Card(
-              color: WhoopTheme.cardSurface,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
+            // 1. Hardware Status Card
+            Container(
+              decoration: NatureTheme.organicCardDecoration(isDark: true),
+              padding: const EdgeInsets.all(18.0),
+              child: Column(
+                children: [
                     Row(
                       children: [
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: (isConnected ? WhoopTheme.recoveryGreen : WhoopTheme.strainBlue).withValues(alpha: 0.15),
+                            color: (isConnected ? NatureColors.recoveryGreen : NatureColors.teal).withValues(alpha: 0.15),
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
                             isConnected ? Icons.bluetooth_connected : Icons.watch,
-                            color: isConnected ? WhoopTheme.recoveryGreen : WhoopTheme.strainBlue,
-                            size: 28,
+                            color: isConnected ? NatureColors.recoveryGreen : NatureColors.teal,
+                            size: 26,
                           ),
                         ),
                         const SizedBox(width: 14),
@@ -91,22 +98,23 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
                               Text(
                                 deviceName.toUpperCase(),
                                 style: const TextStyle(
-                                  color: WhoopTheme.textPrimary,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 14,
+                                  color: NatureColors.textPrimary,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  letterSpacing: 0.5,
                                 ),
                               ),
                               const SizedBox(height: 2),
                               Text(
                                 'ID: $hardwareId',
-                                style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 11),
+                                style: const TextStyle(color: NatureColors.textSecondary, fontSize: 11),
                               ),
                               Text(
                                 isConnected
                                     ? 'Firmware: $_firmwareVersion (Attivo)'
-                                    : 'Stato: Disconnesso',
+                                    : 'Stato: In attesa di segnale',
                                 style: TextStyle(
-                                  color: isConnected ? WhoopTheme.textMuted : WhoopTheme.recoveryYellow,
+                                  color: isConnected ? NatureColors.textMuted : NatureColors.amber,
                                   fontSize: 10,
                                 ),
                               ),
@@ -116,26 +124,26 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: (batteryPct != null && batteryPct > 20 ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow).withValues(alpha: 0.15),
+                            color: (batteryPct != null && batteryPct > 20 ? NatureColors.recoveryGreen : NatureColors.amber).withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: (batteryPct != null && batteryPct > 20 ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow).withValues(alpha: 0.4),
+                              color: (batteryPct != null && batteryPct > 20 ? NatureColors.recoveryGreen : NatureColors.amber).withValues(alpha: 0.4),
                             ),
                           ),
                           child: Row(
                             children: [
                               Icon(
                                 isConnected ? Icons.battery_charging_full : Icons.battery_unknown,
-                                color: batteryPct != null && batteryPct > 20 ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow,
-                                size: 18,
+                                color: batteryPct != null && batteryPct > 20 ? NatureColors.recoveryGreen : NatureColors.amber,
+                                size: 16,
                               ),
                               const SizedBox(width: 4),
                               Text(
                                 batteryPct != null ? '$batteryPct%' : (isConnected ? '95%' : '--%'),
                                 style: TextStyle(
-                                  color: batteryPct != null && batteryPct > 20 ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 13,
+                                  color: batteryPct != null && batteryPct > 20 ? NatureColors.recoveryGreen : NatureColors.amber,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12,
                                 ),
                               ),
                             ],
@@ -144,7 +152,7 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    const Divider(),
+                    const Divider(color: NatureColors.borderSubtle),
                     const SizedBox(height: 8),
 
                     // Azione rapida Connessione / Abbinamento
@@ -154,9 +162,9 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
                         Text(
                           isConnected ? 'Stato BLE: Connesso' : 'Stato BLE: Non connesso',
                           style: TextStyle(
-                            color: isConnected ? WhoopTheme.recoveryGreen : WhoopTheme.textMuted,
+                            color: isConnected ? NatureColors.recoveryGreen : NatureColors.textMuted,
                             fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         TextButton.icon(
@@ -164,11 +172,11 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
                           icon: Icon(
                             isConnected ? Icons.tune : Icons.bluetooth_searching,
                             size: 16,
-                            color: WhoopTheme.strainBlue,
+                            color: NatureColors.teal,
                           ),
                           label: Text(
-                            isConnected ? 'Configura' : 'Connetti Fascia',
-                            style: const TextStyle(color: WhoopTheme.strainBlue, fontSize: 12, fontWeight: FontWeight.bold),
+                            isConnected ? 'Configura' : 'Connetti Sensore',
+                            style: const TextStyle(color: NatureColors.teal, fontSize: 12, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],
@@ -181,12 +189,13 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
                       children: [
                         const Text(
                           'Posizione sul Corpo:',
-                          style: TextStyle(color: WhoopTheme.textSecondary, fontSize: 12),
+                          style: TextStyle(color: NatureColors.textSecondary, fontSize: 12),
                         ),
                         DropdownButton<String>(
                           value: _bodyPlacement,
-                          dropdownColor: WhoopTheme.cardSurface,
-                          style: const TextStyle(color: WhoopTheme.strainBlue, fontWeight: FontWeight.bold, fontSize: 12),
+                          dropdownColor: NatureColors.surfaceElevated,
+                          style: const TextStyle(color: NatureColors.teal, fontWeight: FontWeight.w600, fontSize: 12),
+                          underline: const SizedBox.shrink(),
                           items: [
                             'Polso Sinistro',
                             'Polso Destro',
@@ -203,7 +212,6 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
                   ],
                 ),
               ),
-            ),
 
             const SizedBox(height: 20),
 
@@ -211,13 +219,13 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
             const Text(
               'NOTIFICHE & ALLERTI FISIOLOGICI',
               style: TextStyle(
-                color: WhoopTheme.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
+                color: NatureColors.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
                 letterSpacing: 1.2,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
 
             _buildToggleTile(
               title: 'Report Recupero Mattutino (Recovery Score)',
@@ -244,19 +252,19 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
               onChanged: (val) => setState(() => _notifyHighStress = val),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
 
             // 3. Privacy & Sicurezza Dati
             const Text(
               'PRIVACY & CRITTOGRAFIA BIOMETRICA',
               style: TextStyle(
-                color: WhoopTheme.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
+                color: NatureColors.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
                 letterSpacing: 1.2,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
 
             _buildToggleTile(
               title: 'Archiviazione Locale SQLite Esclusiva',
@@ -266,9 +274,46 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
             ),
             _buildToggleTile(
               title: 'Crittografia Pacchetti BLE 96-Byte',
-              subtitle: 'Decodifica proprietaria sicura AES degli intervalli R-R',
+              subtitle: 'Decodifica protetta degli intervalli R-R',
               value: _privacyBiometricEncrypted,
               onChanged: (val) => setState(() => _privacyBiometricEncrypted = val),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Sezione Dati & Backup Storico
+            const Text(
+              'DATI & STORICO BASELINE',
+              style: TextStyle(
+                color: NatureColors.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              decoration: NatureTheme.organicCardDecoration(isDark: true),
+              child: ListTile(
+                onTap: () => WhoopImportScreen.show(context),
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: NatureColors.teal.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.file_upload_outlined, color: NatureColors.tealLight, size: 20),
+                ),
+                title: const Text(
+                  'Importa dati WHOOP',
+                  style: TextStyle(color: NatureColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                subtitle: const Text(
+                  'Importa archivio ZIP per personalizzare le baseline',
+                  style: TextStyle(color: NatureColors.textMuted, fontSize: 11),
+                ),
+                trailing: const Icon(Icons.chevron_right, color: NatureColors.textMuted, size: 18),
+              ),
             ),
 
             const SizedBox(height: 24),
@@ -283,14 +328,15 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
                     const SnackBar(content: Text('Firmware 50.39.1.0 aggiornato all\'ultima versione disponibile.')),
                   );
                 },
-                icon: const Icon(Icons.system_update, color: WhoopTheme.strainBlue),
+                icon: const Icon(Icons.system_update, color: NatureColors.teal, size: 18),
                 label: const Text(
                   'VERIFICA AGGIORNAMENTO FIRMWARE',
-                  style: TextStyle(color: WhoopTheme.strainBlue, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: NatureColors.teal, fontWeight: FontWeight.w700, fontSize: 12, letterSpacing: 0.5),
                 ),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: WhoopTheme.strainBlue),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  side: const BorderSide(color: NatureColors.borderSubtle),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  backgroundColor: NatureColors.surface,
                 ),
               ),
             ),
@@ -304,17 +350,21 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
                 onPressed: () {
                   _showResetDialog(context);
                 },
-                icon: const Icon(Icons.restart_alt, color: Colors.white),
+                icon: const Icon(Icons.restart_alt, color: NatureColors.terracotta, size: 18),
                 label: const Text(
-                  'RESET DI FABBRICA SENSORE WHOOP',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  'RESET DI FABBRICA SENSORE',
+                  style: TextStyle(color: NatureColors.terracotta, fontWeight: FontWeight.w700, fontSize: 12, letterSpacing: 0.5),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: WhoopTheme.recoveryRed,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  backgroundColor: NatureColors.terracotta.withValues(alpha: 0.12),
+                  elevation: 0,
+                  shadowColor: Colors.transparent,
+                  side: BorderSide(color: NatureColors.terracotta.withValues(alpha: 0.3)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
               ),
             ),
+            const SizedBox(height: 32),
           ],
         ),
       ),
@@ -327,18 +377,18 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    return Card(
-      color: WhoopTheme.cardSurface,
+    return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: Colors.transparent,
-        child: SwitchListTile(
-          title: Text(title, style: const TextStyle(color: WhoopTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-          subtitle: Text(subtitle, style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 11)),
-          value: value,
-          activeThumbColor: WhoopTheme.strainBlue,
-          onChanged: onChanged,
-        ),
+      decoration: NatureTheme.organicCardDecoration(isDark: true, elevated: false),
+      child: SwitchListTile(
+        title: Text(title, style: const TextStyle(color: NatureColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+        subtitle: Text(subtitle, style: const TextStyle(color: NatureColors.textMuted, fontSize: 11)),
+        value: value,
+        activeColor: NatureColors.teal,
+        activeTrackColor: NatureColors.teal.withValues(alpha: 0.4),
+        inactiveThumbColor: NatureColors.textMuted,
+        inactiveTrackColor: NatureColors.surfaceElevated,
+        onChanged: onChanged,
       ),
     );
   }
@@ -347,26 +397,34 @@ class _SettingsDeviceScreenState extends State<SettingsDeviceScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: WhoopTheme.cardSurface,
-        title: const Text('Conferma Reset di Fabbrica', style: TextStyle(color: WhoopTheme.recoveryRed, fontWeight: FontWeight.bold)),
+        backgroundColor: NatureColors.surfaceElevated,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: NatureColors.borderSubtle),
+        ),
+        title: const Text('Conferma Reset di Fabbrica', style: TextStyle(color: NatureColors.terracotta, fontWeight: FontWeight.w700, fontSize: 16)),
         content: const Text(
-          'Sei sicuro di voler effettuare il reset di fabbrica del sensore WHOOP 5.0 (ID 5A00479315)? Tutti i buffer circolare R-R non sincronizzati verranno azzerati.',
-          style: TextStyle(color: WhoopTheme.textPrimary, fontSize: 13),
+          'Sei sicuro di voler effettuare il reset di fabbrica del sensore? Tutti i buffer circolare R-R non sincronizzati verranno azzerati.',
+          style: TextStyle(color: NatureColors.textPrimary, fontSize: 13, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Annulla', style: TextStyle(color: WhoopTheme.textSecondary)),
+            child: const Text('Annulla', style: TextStyle(color: NatureColors.textSecondary, fontWeight: FontWeight.w600)),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Sensore WHOOP 5.0 riavviato e ripristinato!')),
+                const SnackBar(content: Text('Sensore biometrico riavviato e ripristinato!')),
               );
             },
-            style: ElevatedButton.styleFrom(backgroundColor: WhoopTheme.recoveryRed),
-            child: const Text('Reset Fabbrica', style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: NatureColors.terracotta,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Reset Fabbrica', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
           ),
         ],
       ),

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 import '../../data/ble/ble_connection_manager.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 
@@ -25,37 +25,37 @@ class BleStatusCard extends StatelessWidget {
 
     switch (state) {
       case BleState.connected:
-        statusColor = WhoopTheme.recoveryGreen;
-        statusText = 'CONNETTO A WHOOP';
+        statusColor = NatureColors.recoveryAccent;
+        statusText = 'CONNESSO AL DISPOSITIVO';
         break;
       case BleState.scanning:
-        statusColor = WhoopTheme.strainBlue;
+        statusColor = NatureColors.teal;
         statusText = 'SCANSIONE IN CORSO...';
         break;
       case BleState.connecting:
-        statusColor = WhoopTheme.strainBlue;
+        statusColor = NatureColors.teal;
         statusText = 'CONNESSIONE IN CORSO...';
         break;
       case BleState.bonding:
-        statusColor = WhoopTheme.recoveryYellow;
+        statusColor = NatureColors.amberWarm;
         statusText = 'PAIRING (BONDING)...';
         break;
       case BleState.reconnecting:
-        statusColor = WhoopTheme.recoveryYellow;
+        statusColor = NatureColors.amberWarm;
         statusText = 'RICONNESSIONE AUTOMATICA...';
         break;
       case BleState.error:
-        statusColor = WhoopTheme.recoveryRed;
-        statusText = 'ERRORE CONNETTO';
+        statusColor = NatureColors.terracotta;
+        statusText = 'ERRORE CONNESSIONE';
         break;
       default:
-        statusColor = WhoopTheme.textSecondary;
+        statusColor = NatureColors.textDarkMuted;
         statusText = 'DISCONNESSO';
         break;
     }
 
     return Container(
-      decoration: WhoopTheme.officialCardDecoration(),
+      decoration: NatureTheme.organicCardDecoration(isDark: true),
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -97,15 +97,29 @@ class BleStatusCard extends StatelessWidget {
                         }
                       },
                 icon: Icon(
-                  isConnected ? Icons.bluetooth_disabled : Icons.bluetooth_searching,
+                  isConnected ? Icons.bluetooth_disabled_rounded : Icons.bluetooth_searching_rounded,
                   size: 16,
+                  color: isConnected ? NatureColors.textDarkPrimary : Colors.white,
                 ),
-                label: Text(isConnected ? 'Disconnetti' : 'Connetti Whoop'),
+                label: Text(
+                  isConnected ? 'Disconnetti' : 'Connetti Dispositivo',
+                  style: TextStyle(
+                    color: isConnected ? NatureColors.textDarkPrimary : Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: isConnected ? WhoopTheme.surfaceRaised : WhoopTheme.strainBlue,
-                  foregroundColor: isConnected ? WhoopTheme.textPrimary : Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  backgroundColor: isConnected ? NatureColors.surfaceElevated : NatureColors.teal,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(
+                      color: isConnected ? NatureColors.border : Colors.transparent,
+                    ),
+                  ),
+                  elevation: 0,
+                  textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
@@ -115,12 +129,12 @@ class BleStatusCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               viewModel.bleStatusMessage!,
-              style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 11),
+              style: const TextStyle(color: NatureColors.textDarkMuted, fontSize: 11),
             ),
           ],
 
           const SizedBox(height: 16),
-          const Divider(color: WhoopTheme.cardBorder),
+          const Divider(color: NatureColors.borderSubtle),
           const SizedBox(height: 12),
 
           // Live Heart Rate & R-R Buffer Metrics
@@ -133,21 +147,22 @@ class BleStatusCard extends StatelessWidget {
                   const Text(
                     'BPM LIVE',
                     style: TextStyle(
-                      color: WhoopTheme.textSecondary,
+                      color: NatureColors.textDarkMuted,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.favorite, color: WhoopTheme.recoveryRed, size: 24),
+                      const Icon(Icons.favorite_rounded, color: NatureColors.terracotta, size: 22),
                       const SizedBox(width: 6),
                       Text(
                         viewModel.liveBpm > 0 ? '${viewModel.liveBpm}' : '--',
                         style: const TextStyle(
-                          color: WhoopTheme.textPrimary,
-                          fontSize: 28,
+                          color: NatureColors.textDarkPrimary,
+                          fontSize: 26,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -162,9 +177,10 @@ class BleStatusCard extends StatelessWidget {
                   const Text(
                     'VFC / HRV (rMSSD)',
                     style: TextStyle(
-                      color: WhoopTheme.textSecondary,
+                      color: NatureColors.textDarkMuted,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -173,9 +189,9 @@ class BleStatusCard extends StatelessWidget {
                         ? '${viewModel.liveHrvRmssd.toStringAsFixed(1)} ms'
                         : '-- ms',
                     style: const TextStyle(
-                      color: WhoopTheme.recoveryGreen,
+                      color: NatureColors.recoveryAccent,
                       fontSize: 22,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
@@ -187,18 +203,19 @@ class BleStatusCard extends StatelessWidget {
                   const Text(
                     'BUFFER R-R',
                     style: TextStyle(
-                      color: WhoopTheme.textSecondary,
+                      color: NatureColors.textDarkMuted,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '${viewModel.rrBuffer.length}/500',
                     style: const TextStyle(
-                      color: WhoopTheme.strainBlue,
+                      color: NatureColors.tealLight,
                       fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
@@ -213,19 +230,19 @@ class BleStatusCard extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: WhoopTheme.recoveryYellow.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: WhoopTheme.recoveryYellow.withValues(alpha: 0.4)),
+                color: NatureColors.amberWarm.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: NatureColors.amberWarm.withValues(alpha: 0.3)),
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.info_outline, color: WhoopTheme.recoveryYellow, size: 16),
+                  Icon(Icons.info_outline_rounded, color: NatureColors.amberWarm, size: 16),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Graceful Fallback Attivo: Streaming su Heart Rate Broadcast 0x2A37',
                       style: TextStyle(
-                        color: WhoopTheme.recoveryYellow,
+                        color: NatureColors.amberWarm,
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                       ),
@@ -240,8 +257,8 @@ class BleStatusCard extends StatelessWidget {
           if (viewModel.last96BytePacket != null && !viewModel.isFallbackMode) ...[
             const SizedBox(height: 12),
             Text(
-              'Proprietary Whoop Stream: Pacchetto #${viewModel.last96BytePacket!.sequenceNumber} (96 byte)',
-              style: const TextStyle(color: WhoopTheme.strainBlue, fontSize: 11),
+              'Telemetria Attiva: Pacchetto #${viewModel.last96BytePacket!.sequenceNumber} (96 byte)',
+              style: const TextStyle(color: NatureColors.tealLight, fontSize: 11),
             ),
           ],
         ],

@@ -8,7 +8,7 @@ import '../../core/utils/clock.dart';
 /// Gestisce le tabelle fondamentali + telemetria e segmenti sonno
 class DatabaseHelper {
   static const String _dbName = 'whoop_clone.db';
-  static const int _dbVersion = 19;
+  static const int _dbVersion = 22;
 
   // Nomi Tabelle
   static const String tableUtenteProfilo = 'utente_profilo';
@@ -25,6 +25,7 @@ class DatabaseHelper {
   static const String tableTelemetriaGrezza = 'telemetria_grezza';
   static const String tableSleepStageSegments = 'sleep_stage_segments';
   static const String tableTelemetryEpoch30s = 'telemetry_epoch_30s';
+  static const String tablePersonalBaselines = 'personal_baselines';
 
   static DatabaseHelper? _instance;
   static Database? _database;
@@ -139,6 +140,7 @@ class DatabaseHelper {
         strain_giornaliero REAL,
         recovery_score REAL,
         sleep_need_min INTEGER,
+        sonno_arretrato_min INTEGER,
         hrv_notte REAL,
         rhr_notte REAL,
         frequenza_respiratoria_rpm REAL,
@@ -186,6 +188,8 @@ class DatabaseHelper {
         efficienza_pct REAL,
         sleep_performance_pct REAL,
         regolarita_sonno_pct REAL,
+        sleep_need_min INTEGER,
+        sleep_debt_min INTEGER,
         provenance TEXT NOT NULL DEFAULT 'REAL'
       );
     ''');
@@ -338,6 +342,29 @@ class DatabaseHelper {
         valid_rr_count INTEGER NOT NULL DEFAULT 0,
         rmssd REAL,
         coverage_pct REAL NOT NULL DEFAULT 100.0
+      );
+    ''');
+
+    // 15. personal_baselines
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $tablePersonalBaselines (
+        metric_key TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        unit TEXT NOT NULL,
+        baseline_value REAL NOT NULL,
+        mean REAL NOT NULL,
+        median REAL NOT NULL,
+        std_dev REAL NOT NULL,
+        min_val REAL NOT NULL,
+        max_val REAL NOT NULL,
+        p10 REAL NOT NULL,
+        p25 REAL NOT NULL,
+        p75 REAL NOT NULL,
+        p90 REAL NOT NULL,
+        sample_count INTEGER NOT NULL,
+        calc_period TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        extra_stats_json TEXT
       );
     ''');
 
@@ -548,6 +575,78 @@ class DatabaseHelper {
         );
       ''');
       await _safeExecuteAlter(db, 'CREATE INDEX IF NOT EXISTS idx_telemetry_epoch_time ON $tableTelemetryEpoch30s (start_utc_ms, end_utc_ms);');
+    }
+    if (oldVersion < 20) {
+      await _safeExecuteAlter(db, '''
+        CREATE TABLE IF NOT EXISTS $tablePersonalBaselines (
+          metric_key TEXT PRIMARY KEY,
+          display_name TEXT NOT NULL,
+          unit TEXT NOT NULL,
+          baseline_value REAL NOT NULL,
+          mean REAL NOT NULL,
+          median REAL NOT NULL,
+          std_dev REAL NOT NULL,
+          min_val REAL NOT NULL,
+          max_val REAL NOT NULL,
+          p10 REAL NOT NULL,
+          p25 REAL NOT NULL,
+          p75 REAL NOT NULL,
+          p90 REAL NOT NULL,
+          sample_count INTEGER NOT NULL,
+          calc_period TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          extra_stats_json TEXT
+        );
+      ''');
+    }
+    if (oldVersion < 21) {
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableCicliFisiologici ADD COLUMN sonno_arretrato_min INTEGER;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableSonno ADD COLUMN sleep_need_min INTEGER;');
+      await _safeExecuteAlter(db, 'ALTER TABLE $tableSonno ADD COLUMN sleep_debt_min INTEGER;');
+    }
+    if (oldVersion < 22) {
+      // Migrazione controllata P0: Ripara score storici calcolati erroneamente a 100% o senza fabbisogno
+      // Regole stringenti:
+      // 1. Non modificare o cancellare mai sessioni con provenance 'WHOOP_IMPORT' o 'WHOOP_NAP'
+      // 2. Ricalcola soltanto sessioni interne non-WHOOP dove durata > 0 e sleep_need_min > 0
+      // 3. Se sleep_need_min è nullo o <= 0, imposta lo score a NULL invece di lasciare 100% fittizio
+      try {
+        final rows = await db.query(
+          tableSonno,
+          where: "provenance NOT IN ('WHOOP_IMPORT', 'WHOOP_NAP')",
+        );
+        for (final row in rows) {
+          final id = row['id'] as int?;
+          if (id == null) continue;
+          final dur = (row['durata_tot_min'] as num?)?.toDouble() ?? 0.0;
+          final need = (row['sleep_need_min'] as num?)?.toDouble();
+          final currentScore = (row['sleep_performance_pct'] as num?)?.toDouble();
+
+          if (dur > 0 && need != null && need > 0) {
+            final double expectedScore = double.parse(((dur / need) * 100.0).clamp(0.0, 100.0).toStringAsFixed(1));
+            if (currentScore == null || (currentScore - expectedScore).abs() > 0.5) {
+              await db.update(
+                tableSonno,
+                {'sleep_performance_pct': expectedScore},
+                where: 'id = ?',
+                whereArgs: [id],
+              );
+            }
+          } else if (need == null || need <= 0) {
+            // Senza bisogno valido, lo score non può essere 100% o inventato
+            if (currentScore != null && currentScore >= 99.0) {
+              await db.update(
+                tableSonno,
+                {'sleep_performance_pct': null},
+                where: 'id = ?',
+                whereArgs: [id],
+              );
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[DatabaseHelper] Upgrade v22 sleep score repair notice: $e');
+      }
     }
   }
 
@@ -835,6 +934,148 @@ class DatabaseHelper {
   }
 
   // ─────────────────────────────────────────────────────────────
+  // 5b. Personal Baselines CRUD & Batch Import Helpers
+  // ─────────────────────────────────────────────────────────────
+
+  Future<void> upsertPersonalBaseline(Map<String, dynamic> data) async {
+    final db = await database;
+    await db.insert(
+      tablePersonalBaselines,
+      data,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> savePersonalBaselinesBatch(List<Map<String, dynamic>> items) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final item in items) {
+        batch.insert(
+          tablePersonalBaselines,
+          item,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<Map<String, dynamic>?> getPersonalBaseline(String metricKey) async {
+    final db = await database;
+    final rows = await db.query(
+      tablePersonalBaselines,
+      where: 'metric_key = ?',
+      whereArgs: [metricKey],
+      limit: 1,
+    );
+    return rows.isNotEmpty ? rows.first : null;
+  }
+
+  Future<List<Map<String, dynamic>>> getAllPersonalBaselines() async {
+    final db = await database;
+    return await db.query(tablePersonalBaselines, orderBy: 'metric_key ASC');
+  }
+
+  Future<void> clearPersonalBaselines() async {
+    final db = await database;
+    await db.delete(tablePersonalBaselines);
+  }
+
+  Future<void> saveCicliFisiologiciBatch(List<Map<String, dynamic>> items) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final item in items) {
+        batch.insert(
+          tableCicliFisiologici,
+          item,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<void> saveSonnoBatch(List<Map<String, dynamic>> items) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final item in items) {
+        final oraInizio = item['ora_inizio'];
+        final dataIso = item['data_iso'];
+        final oraFine = item['ora_fine'];
+        if (oraInizio != null) {
+          await txn.delete(
+            tableSonno,
+            where: 'ora_inizio = ? OR (data_iso = ? AND ora_fine = ?)',
+            whereArgs: [oraInizio, dataIso, oraFine],
+          );
+        }
+      }
+      final batch = txn.batch();
+      for (final item in items) {
+        batch.insert(
+          tableSonno,
+          item,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<void> saveAllenamentiBatch(List<Map<String, dynamic>> items) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final item in items) {
+        final oraInizio = item['ora_inizio'];
+        final nome = item['nome_attivita'];
+        if (oraInizio != null && nome != null) {
+          await txn.delete(
+            tableAllenamenti,
+            where: 'ora_inizio = ? AND nome_attivita = ?',
+            whereArgs: [oraInizio, nome],
+          );
+        }
+      }
+      final batch = txn.batch();
+      for (final item in items) {
+        batch.insert(
+          tableAllenamenti,
+          item,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<void> saveVociDiarioBulk(List<Map<String, dynamic>> items) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final Set<String> dates = items
+          .map((i) => i['data_iso'] as String?)
+          .where((d) => d != null && d.isNotEmpty)
+          .cast<String>()
+          .toSet();
+
+      for (final d in dates) {
+        await txn.delete(tableVociDiario, where: 'data_iso = ?', whereArgs: [d]);
+      }
+
+      final batch = txn.batch();
+      for (final item in items) {
+        batch.insert(
+          tableVociDiario,
+          item,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // 6. Coach AI Messages CRUD
   // ─────────────────────────────────────────────────────────────
 
@@ -1015,6 +1256,8 @@ class DatabaseHelper {
     final ts = (timestamp ?? Clock.current.now()).toUtc();
     final ms = timestampUtcMs ?? ts.millisecondsSinceEpoch;
     final rxAt = (receivedAt ?? Clock.current.now()).toUtc();
+    final double? effectiveRmssd = rmssdMs ?? ((rrMs != null && rrMs > 0.0 && rrMs <= 250.0) ? rrMs : null);
+    final double? effectiveRr = (rrMs != null && rrMs >= 300.0 && rrMs <= 2000.0) ? rrMs : null;
     return await db.insert(tableTelemetriaGrezza, {
       'timestamp': ts.toIso8601String(),
       'timestamp_utc_ms': ms,
@@ -1033,8 +1276,8 @@ class DatabaseHelper {
       'source': source,
       'quality': quality,
       'bpm': bpm,
-      'rmssd_ms': rmssdMs,
-      'rr_ms': rrMs,
+      'rmssd_ms': effectiveRmssd,
+      'rr_ms': effectiveRr,
       'rr_intervals_json': rrIntervalsJson,
       'accel_enmo': accelEnmo,
       'motion_var': motionVar,

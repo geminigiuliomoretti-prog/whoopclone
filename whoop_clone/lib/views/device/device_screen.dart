@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 import '../../data/ble/ble_connection_manager.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 import '../screens/diagnostic_screen.dart';
@@ -48,27 +49,27 @@ class _DeviceScreenState extends State<DeviceScreen> with SingleTickerProviderSt
     final isScanning = viewModel.bleState == BleState.scanning;
 
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: NatureColors.background,
       appBar: AppBar(
-        backgroundColor: WhoopTheme.background,
+        backgroundColor: NatureColors.background,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 18),
+          icon: const Icon(Icons.chevron_left_rounded, color: NatureColors.textDarkPrimary, size: 28),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          'DISPOSITIVO WHOOP',
+          'DISPOSITIVO SALUTE',
           style: TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
+            color: NatureColors.textDarkPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
             letterSpacing: 1.2,
           ),
         ),
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.troubleshoot, color: WhoopTheme.strainBlue),
+            icon: const Icon(Icons.troubleshoot_rounded, color: NatureColors.tealLight),
             tooltip: 'Diagnostica BLE & Raw Capture',
             onPressed: () => DiagnosticScreen.navigateTo(context),
           ),
@@ -93,19 +94,19 @@ class _DeviceScreenState extends State<DeviceScreen> with SingleTickerProviderSt
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: WhoopTheme.recoveryGreen.withValues(alpha: 0.12),
+              color: NatureColors.recoveryAccent.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: WhoopTheme.recoveryGreen.withValues(alpha: 0.4)),
+              border: Border.all(color: NatureColors.recoveryAccent.withValues(alpha: 0.35)),
             ),
             child: Row(
               children: [
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: const BoxDecoration(
-                    color: WhoopTheme.recoveryGreen,
+                    color: NatureColors.recoveryAccent,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.bluetooth_connected, color: Colors.black, size: 24),
+                  child: const Icon(Icons.bluetooth_connected_rounded, color: Colors.white, size: 22),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -113,11 +114,11 @@ class _DeviceScreenState extends State<DeviceScreen> with SingleTickerProviderSt
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'WHOOP 5.0 CONNESSO',
+                        'DISPOSITIVO CONNESSO',
                         style: TextStyle(
-                          color: WhoopTheme.recoveryGreen,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
+                          color: NatureColors.recoveryLight,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
                           letterSpacing: 0.8,
                         ),
                       ),
@@ -125,8 +126,8 @@ class _DeviceScreenState extends State<DeviceScreen> with SingleTickerProviderSt
                       Text(
                         viewModel.connectedDevice?.platformName.isNotEmpty == true
                             ? viewModel.connectedDevice!.platformName
-                            : 'Sensore WHOOP - Connection Active',
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                            : 'Sensore Salute - Connessione Attiva',
+                        style: const TextStyle(color: NatureColors.textDarkSecondary, fontSize: 12),
                       ),
                     ],
                   ),
@@ -143,26 +144,26 @@ class _DeviceScreenState extends State<DeviceScreen> with SingleTickerProviderSt
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: WhoopTheme.officialCardDecoration(),
+                  decoration: NatureTheme.organicCardDecoration(isDark: true),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Row(
                         children: [
-                          Icon(Icons.battery_charging_full, color: WhoopTheme.recoveryGreen, size: 20),
+                          Icon(Icons.battery_charging_full_rounded, color: NatureColors.recoveryAccent, size: 20),
                           SizedBox(width: 6),
-                          Text('BATTERIA', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                          Text('BATTERIA', style: TextStyle(color: NatureColors.textDarkMuted, fontSize: 10, fontWeight: FontWeight.bold)),
                         ],
                       ),
                       const SizedBox(height: 10),
                       Text(
                         viewModel.batteryPct != null ? '${viewModel.batteryPct}%' : '--%',
-                        style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
+                        style: const TextStyle(color: NatureColors.textDarkPrimary, fontSize: 22, fontWeight: FontWeight.w900),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         viewModel.batteryPct != null ? 'GATT Service 0x180F' : 'In attesa segnale',
-                        style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 10),
+                        style: const TextStyle(color: NatureColors.textDarkMuted, fontSize: 10),
                       ),
                     ],
                   ),
@@ -172,26 +173,26 @@ class _DeviceScreenState extends State<DeviceScreen> with SingleTickerProviderSt
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: WhoopTheme.officialCardDecoration(),
+                  decoration: NatureTheme.organicCardDecoration(isDark: true),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Row(
                         children: [
-                          Icon(Icons.favorite, color: WhoopTheme.strainBlue, size: 20),
+                          Icon(Icons.favorite_rounded, color: NatureColors.terracotta, size: 20),
                           SizedBox(width: 6),
-                          Text('CARDIO LIVE', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                          Text('CARDIO LIVE', style: TextStyle(color: NatureColors.textDarkMuted, fontSize: 10, fontWeight: FontWeight.bold)),
                         ],
                       ),
                       const SizedBox(height: 10),
                       Text(
                         viewModel.liveBpm > 0 ? '${viewModel.liveBpm} BPM' : '-- BPM',
-                        style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
+                        style: const TextStyle(color: NatureColors.textDarkPrimary, fontSize: 22, fontWeight: FontWeight.w900),
                       ),
                       const SizedBox(height: 4),
                       const Text(
                         'Streaming 1Hz Attivo',
-                        style: TextStyle(color: WhoopTheme.textMuted, fontSize: 10),
+                        style: TextStyle(color: NatureColors.textDarkMuted, fontSize: 10),
                       ),
                     ],
                   ),
@@ -206,7 +207,7 @@ class _DeviceScreenState extends State<DeviceScreen> with SingleTickerProviderSt
           const Text(
             'DETTAGLI HARDWARE & DIAGNOSTICA',
             style: TextStyle(
-              color: WhoopTheme.textMuted,
+              color: NatureColors.textDarkMuted,
               fontSize: 11,
               fontWeight: FontWeight.w900,
               letterSpacing: 1.2,
@@ -216,7 +217,7 @@ class _DeviceScreenState extends State<DeviceScreen> with SingleTickerProviderSt
 
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: WhoopTheme.officialCardDecoration(),
+            decoration: NatureTheme.organicCardDecoration(isDark: true),
             child: Column(
               children: [
                 _buildInfoTile('Numero di Serie', 'WP5-98412-BLE'),
@@ -727,17 +728,17 @@ class _DeviceScreenState extends State<DeviceScreen> with SingleTickerProviderSt
   }
 
   Color _getRssiColor(int rssi) {
-    if (rssi > -65) return WhoopTheme.recoveryGreen;
-    if (rssi > -80) return WhoopTheme.recoveryYellow;
-    return WhoopTheme.recoveryRed;
+    if (rssi > -65) return NatureColors.recoveryAccent;
+    if (rssi > -80) return NatureColors.amberWarm;
+    return NatureColors.terracotta;
   }
 
   Widget _buildInfoTile(String label, String val) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 12)),
-        Text(val, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+        Text(label, style: const TextStyle(color: NatureColors.textDarkMuted, fontSize: 12)),
+        Text(val, style: const TextStyle(color: NatureColors.textDarkPrimary, fontSize: 12, fontWeight: FontWeight.bold)),
       ],
     );
   }

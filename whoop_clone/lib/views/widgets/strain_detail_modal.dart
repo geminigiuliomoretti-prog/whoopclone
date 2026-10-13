@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../core/constants/whoop_theme.dart';
 import '../../core/theme/nature_theme.dart';
-import 'nature/nature_scene.dart';
 
 /// Modulo 6 — Strain Detail Screen (Full Page)
 /// Riproduce fedelmente lo screenshot ufficiale "Strain - Pagina Sforzo Day Strain e Zone FC.jpeg":
@@ -138,15 +137,15 @@ class StrainDetailModal extends StatelessWidget {
           children: [
             const SizedBox(height: 10),
 
-            // 1. Grande Cerchio Strain in NatureScene
+            // 1. Grande Cerchio Strain (Zero atmospheric image)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: NatureScene(
-                mood: NatureMood.strain,
-                intensity: (dayStrain / 21.0).clamp(0.0, 1.0),
+              child: Container(
                 height: 270,
-                isDark: isDark,
-                borderRadius: BorderRadius.circular(28),
+                decoration: NatureTheme.organicCardDecoration(
+                  isDark: isDark,
+                  accentTint: NatureColors.strainAccent.withValues(alpha: 0.12),
+                ),
                 child: Center(
                   child: SizedBox(
                     width: 220,

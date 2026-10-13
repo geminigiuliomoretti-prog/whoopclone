@@ -1,4 +1,5 @@
 import 'dart:math';
+import '../models/personal_baseline.dart';
 
 enum VitalStatus {
   calibration, // < 7 misurazioni notturne nel DB
@@ -18,6 +19,7 @@ class VitalEvaluation {
   final double? maxRange;
   final int sampleCount;
   final VitalStatus status;
+  final bool isBaselinePersonal;
 
   VitalEvaluation({
     required this.key,
@@ -30,7 +32,11 @@ class VitalEvaluation {
     this.maxRange,
     required this.sampleCount,
     required this.status,
+    this.isBaselinePersonal = false,
   });
+
+  double? get currentValue => currentVal;
+  double? get baselineValue => mean30d;
 
   String get badgeText {
     switch (status) {
@@ -47,15 +53,20 @@ class VitalEvaluation {
 }
 
 class HealthVitalsEngine {
-  /// Valuta il parametro biologico rispetto alla baseline storica di 30 giorni (Min = mu - 1.5*std, Max = mu + 1.5*std).
+  /// Valuta il parametro biologico rispetto alla baseline storica o alla baseline personale calcolata.
   static VitalEvaluation evaluateVital({
     required String key,
     required String title,
     required double? currentValue,
     required List<double> historical30dValues,
     required String unit,
+    PersonalBaseline? personalBaseline,
   }) {
-    if (currentValue == null && historical30dValues.isEmpty) {
+    final int effectiveSampleCount = (personalBaseline != null && personalBaseline.sampleCount >= 7)
+        ? personalBaseline.sampleCount
+        : (historical30dValues.length >= 7 ? historical30dValues.length : (personalBaseline?.sampleCount ?? historical30dValues.length));
+
+    if (currentValue == null && effectiveSampleCount == 0) {
       return VitalEvaluation(
         key: key,
         title: title,
@@ -66,33 +77,53 @@ class HealthVitalsEngine {
       );
     }
 
-    final sampleCount = historical30dValues.length;
-
-    if (sampleCount < 7) {
+    if (effectiveSampleCount < 7) {
       return VitalEvaluation(
         key: key,
         title: title,
         currentVal: currentValue,
         unit: unit,
-        sampleCount: sampleCount,
+        sampleCount: effectiveSampleCount,
         status: VitalStatus.calibration,
       );
     }
 
     // Calcolo Media (mu) e Deviazione Standard (sigma)
-    final mean = historical30dValues.reduce((a, b) => a + b) / sampleCount;
-    final variance = historical30dValues
-            .map((x) => pow(x - mean, 2))
-            .reduce((a, b) => a + b) /
-        sampleCount;
-    double std = sqrt(variance);
-    if (std == 0) {
-      std = mean * 0.05;
-      if (std == 0) std = 1.0;
-    }
+    final double mean;
+    final double std;
+    final double minRange;
+    final double maxRange;
 
-    final minRange = mean - (1.5 * std);
-    final maxRange = mean + (1.5 * std);
+    if (personalBaseline != null && personalBaseline.sampleCount >= 7) {
+      mean = personalBaseline.mean;
+      std = personalBaseline.stdDev > 0 ? personalBaseline.stdDev : (mean * 0.05);
+      minRange = personalBaseline.normalRangeMin;
+      maxRange = personalBaseline.normalRangeMax;
+    } else if (historical30dValues.isNotEmpty) {
+      mean = historical30dValues.reduce((a, b) => a + b) / effectiveSampleCount;
+      final variance = historical30dValues
+              .map((x) => pow(x - mean, 2))
+              .reduce((a, b) => a + b) /
+          effectiveSampleCount;
+      double calcStd = sqrt(variance);
+      if (calcStd == 0) {
+        calcStd = mean * 0.05;
+        if (calcStd == 0) calcStd = 1.0;
+      }
+      std = calcStd;
+      minRange = mean - (1.5 * std);
+      maxRange = mean + (1.5 * std);
+    } else if (personalBaseline != null) {
+      mean = personalBaseline.mean;
+      std = personalBaseline.stdDev > 0 ? personalBaseline.stdDev : (mean * 0.05);
+      minRange = personalBaseline.normalRangeMin;
+      maxRange = personalBaseline.normalRangeMax;
+    } else {
+      mean = currentValue ?? 0.0;
+      std = 1.0;
+      minRange = mean - (1.5 * std);
+      maxRange = mean + (1.5 * std);
+    }
 
     if (currentValue == null) {
       return VitalEvaluation(
@@ -104,8 +135,9 @@ class HealthVitalsEngine {
         std30d: std,
         minRange: minRange,
         maxRange: maxRange,
-        sampleCount: sampleCount,
+        sampleCount: effectiveSampleCount,
         status: VitalStatus.noData,
+        isBaselinePersonal: personalBaseline != null,
       );
     }
 
@@ -120,8 +152,9 @@ class HealthVitalsEngine {
       std30d: std,
       minRange: minRange,
       maxRange: maxRange,
-      sampleCount: sampleCount,
+      sampleCount: effectiveSampleCount,
       status: inRange ? VitalStatus.inRange : VitalStatus.outOfRange,
+      isBaselinePersonal: personalBaseline != null,
     );
   }
 }

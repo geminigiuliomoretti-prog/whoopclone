@@ -466,6 +466,7 @@ class TelemetryIngestionService {
         LogTag.db,
         'Errore inserimento telemetria_grezza: $e',
       );
+      return IngestionResult.dropped(reason: 'DB_COMMIT_FAILED: $e');
     }
 
     // ─────────────────────────────────────────────────────────────

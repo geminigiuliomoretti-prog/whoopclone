@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../../../core/constants/whoop_theme.dart';
+import '../../../core/theme/nature_theme.dart';
 
 /// Mini-grafico Sparkline a 14 Giorni per visualizzare i trend storici (Architettura NOOP, CHT-01..04)
 /// Gestisce 4 stati espliciti: Caricamento, Vuoto, Dati parziali, Dati completi.
@@ -17,7 +17,7 @@ class Sparkline14d extends StatelessWidget {
     super.key,
     required this.dataPoints,
     this.baselineValue,
-    this.primaryColor = WhoopTheme.recoveryGreen,
+    this.primaryColor = NatureColors.tealLight,
     this.height = 45,
     this.width = double.infinity,
     this.label,
@@ -37,7 +37,7 @@ class Sparkline14d extends StatelessWidget {
             height: 16,
             child: CircularProgressIndicator(
               strokeWidth: 1.5,
-              valueColor: AlwaysStoppedAnimation<Color>(WhoopTheme.textSecondary),
+              valueColor: AlwaysStoppedAnimation<Color>(NatureColors.secondaryText),
             ),
           ),
         ),
@@ -56,16 +56,16 @@ class Sparkline14d extends StatelessWidget {
               ? const Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.timeline, color: WhoopTheme.textMuted, size: 20),
+                    Icon(Icons.timeline, color: NatureColors.mutedText, size: 20),
                     SizedBox(height: 4),
                     Text(
                       'Nessun dato registrato per questa finestra temporale',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: WhoopTheme.textMuted, fontSize: 11),
+                      style: TextStyle(color: NatureColors.mutedText, fontSize: 11),
                     ),
                   ],
                 )
-              : const Text('--', style: TextStyle(color: WhoopTheme.textMuted, fontSize: 11)),
+              : const Text('--', style: TextStyle(color: NatureColors.mutedText, fontSize: 11)),
         ),
       );
     }
@@ -77,7 +77,7 @@ class Sparkline14d extends StatelessWidget {
         child: Center(
           child: Text(
             '${validValues.first.toStringAsFixed(1)} (1 punto)',
-            style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 11),
+            style: const TextStyle(color: NatureColors.secondaryText, fontSize: 11),
           ),
         ),
       );
@@ -93,11 +93,11 @@ class Sparkline14d extends StatelessWidget {
       width: width,
       child: CustomPaint(
         painter: _SparklinePainter(
-          data: dataPoints,
-          baseline: baselineValue,
+          dataPoints: dataPoints,
           minVal: effectiveMin,
           maxVal: effectiveMax,
-          color: primaryColor,
+          baselineValue: baselineValue,
+          primaryColor: primaryColor,
         ),
       ),
     );
@@ -105,83 +105,99 @@ class Sparkline14d extends StatelessWidget {
 }
 
 class _SparklinePainter extends CustomPainter {
-  final List<double?> data;
-  final double? baseline;
+  final List<double?> dataPoints;
   final double minVal;
   final double maxVal;
-  final Color color;
+  final double? baselineValue;
+  final Color primaryColor;
 
   _SparklinePainter({
-    required this.data,
-    this.baseline,
+    required this.dataPoints,
     required this.minVal,
     required this.maxVal,
-    required this.color,
+    this.baselineValue,
+    required this.primaryColor,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final range = (maxVal - minVal) > 0 ? (maxVal - minVal) : 1.0;
-    final stepX = size.width / (data.length - 1 > 0 ? data.length - 1 : 1);
+    if (dataPoints.isEmpty) return;
 
-    // 1. Linea tratteggiata per la Baseline
-    if (baseline != null) {
-      final baselineY = size.height - (((baseline! - minVal) / range) * (size.height - 10)) - 5;
-      final dashedPaint = Paint()
-        ..color = WhoopTheme.textMuted.withValues(alpha: 0.4)
+    final range = (maxVal - minVal) > 0 ? (maxVal - minVal) : 1.0;
+    final stepX = size.width / (dataPoints.length - 1);
+
+    // 1. Linea di Baseline (se presente)
+    if (baselineValue != null) {
+      final baseY = size.height - ((baselineValue! - minVal) / range) * (size.height - 10) - 5;
+      final baselinePaint = Paint()
+        ..color = NatureColors.borderSubtle
         ..strokeWidth = 1.0
         ..style = PaintingStyle.stroke;
 
       double startX = 0;
+      const dashWidth = 4.0;
+      const dashSpace = 3.0;
       while (startX < size.width) {
         canvas.drawLine(
-          Offset(startX, baselineY),
-          Offset(startX + 4, baselineY),
-          dashedPaint,
+          Offset(startX, baseY),
+          Offset(startX + dashWidth, baseY),
+          baselinePaint,
         );
-        startX += 8;
+        startX += dashWidth + dashSpace;
       }
     }
 
-    // 2. Tracciamento Path dei punti validi
-    final path = Path();
-    bool hasStarted = false;
-
-    Offset? lastValidPoint;
-
-    for (int i = 0; i < data.length; i++) {
-      final val = data[i];
-      if (val == null) continue;
-
-      final x = i * stepX;
-      final y = size.height - (((val - minVal) / range) * (size.height - 12)) - 6;
-      final currentPoint = Offset(x, y.clamp(3.0, size.height - 3.0));
-
-      if (!hasStarted) {
-        path.moveTo(currentPoint.dx, currentPoint.dy);
-        hasStarted = true;
-      } else if (lastValidPoint != null) {
-        final controlX = (lastValidPoint.dx + currentPoint.dx) / 2;
-        path.cubicTo(controlX, lastValidPoint.dy, controlX, currentPoint.dy, currentPoint.dx, currentPoint.dy);
-      }
-      lastValidPoint = currentPoint;
-
-      // Disegna un piccolo punto circolare
-      final isLast = (i == data.length - 1);
-      final pointPaint = Paint()
-        ..color = isLast ? Colors.white : color
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(currentPoint, isLast ? 3.5 : 2.0, pointPaint);
-    }
-
+    // 2. Disegno Segmenti Sparkline (con gestione gap per valori nulli CHT-01)
     final strokePaint = Paint()
-      ..color = color
-      ..strokeWidth = 1.8
+      ..color = primaryColor
+      ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
-    canvas.drawPath(path, strokePaint);
+
+    final points = <Offset?>[];
+    for (int i = 0; i < dataPoints.length; i++) {
+      final v = dataPoints[i];
+      if (v == null) {
+        points.add(null);
+      } else {
+        final x = i * stepX;
+        final y = size.height - ((v - minVal) / range) * (size.height - 10) - 5;
+        points.add(Offset(x, y));
+      }
+    }
+
+    // Disegna segmenti continui separando sui gap
+    Path? currentPath;
+    for (int i = 0; i < points.length; i++) {
+      final pt = points[i];
+      if (pt != null) {
+        if (currentPath == null) {
+          currentPath = Path()..moveTo(pt.dx, pt.dy);
+        } else {
+          currentPath.lineTo(pt.dx, pt.dy);
+        }
+      } else {
+        if (currentPath != null) {
+          canvas.drawPath(currentPath, strokePaint);
+          currentPath = null;
+        }
+      }
+    }
+    if (currentPath != null) {
+      canvas.drawPath(currentPath, strokePaint);
+    }
+
+    // 3. Disegno dell'ultimo punto registrato (punto attivo più recente)
+    final lastValid = points.lastWhere((p) => p != null, orElse: () => null);
+    if (lastValid != null) {
+      canvas.drawCircle(lastValid, 4.0, Paint()..color = primaryColor);
+      canvas.drawCircle(lastValid, 2.0, Paint()..color = NatureColors.surface);
+    }
   }
 
   @override
-  bool shouldRepaint(covariant _SparklinePainter oldDelegate) => true;
+  bool shouldRepaint(covariant _SparklinePainter oldDelegate) =>
+      oldDelegate.dataPoints != dataPoints ||
+      oldDelegate.baselineValue != baselineValue ||
+      oldDelegate.primaryColor != primaryColor;
 }

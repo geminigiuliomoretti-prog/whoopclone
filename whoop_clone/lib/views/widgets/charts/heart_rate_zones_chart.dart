@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../core/constants/whoop_theme.dart';
+import '../../../core/theme/nature_theme.dart';
 
 /// Modello per una Zona Cardiaca
 class HrZoneData {
@@ -69,7 +69,7 @@ class HeartRateZonesChart extends StatelessWidget {
           rangeLabel: '90 - 100%',
           percentage: z5Pct,
           durationSeconds: ((z5Pct / 100.0) * totalSec).round(),
-          color: const Color(0xFFFF3B30), // Rosso picco
+          color: const Color(0xFFD9534F),
         ),
         HrZoneData(
           zoneIndex: 4,
@@ -77,7 +77,7 @@ class HeartRateZonesChart extends StatelessWidget {
           rangeLabel: '80 - 90%',
           percentage: z4Pct,
           durationSeconds: ((z4Pct / 100.0) * totalSec).round(),
-          color: const Color(0xFFFF9500), // Arancione soglia
+          color: const Color(0xFFDF7B52),
         ),
         HrZoneData(
           zoneIndex: 3,
@@ -85,7 +85,7 @@ class HeartRateZonesChart extends StatelessWidget {
           rangeLabel: '70 - 80%',
           percentage: z3Pct,
           durationSeconds: ((z3Pct / 100.0) * totalSec).round(),
-          color: const Color(0xFF34C759), // Verde aerobico
+          color: const Color(0xFFD69E45),
         ),
         HrZoneData(
           zoneIndex: 2,
@@ -93,7 +93,7 @@ class HeartRateZonesChart extends StatelessWidget {
           rangeLabel: '60 - 70%',
           percentage: z2Pct,
           durationSeconds: ((z2Pct / 100.0) * totalSec).round(),
-          color: const Color(0xFF007AFF), // Blu fondo
+          color: const Color(0xFF38B27E),
         ),
         HrZoneData(
           zoneIndex: 1,
@@ -101,7 +101,7 @@ class HeartRateZonesChart extends StatelessWidget {
           rangeLabel: '50 - 60%',
           percentage: z1Pct,
           durationSeconds: ((z1Pct / 100.0) * totalSec).round(),
-          color: const Color(0xFF8E8E93), // Grigio recupero
+          color: const Color(0xFF439EB8),
         ),
       ],
     );
@@ -118,18 +118,60 @@ class HeartRateZonesChart extends StatelessWidget {
     final z3Pct = (map['z3_pct'] as num?)?.toDouble() ?? 0.0;
     final z4Pct = (map['z4_pct'] as num?)?.toDouble() ?? 0.0;
     final z5Pct = (map['z5_pct'] as num?)?.toDouble() ?? 0.0;
-    final totalSec = (map['total_seconds'] as num?)?.toInt() ??
-        ((map['total_samples'] as num?)?.toInt() ?? 0);
 
-    return HeartRateZonesChart.fromPercentages(
-      z1Pct: z1Pct,
-      z2Pct: z2Pct,
-      z3Pct: z3Pct,
-      z4Pct: z4Pct,
-      z5Pct: z5Pct,
-      totalMinutes: (totalSec / 60.0).round(),
+    final z1Sec = (map['z1_sec'] as num?)?.toInt() ?? 0;
+    final z2Sec = (map['z2_sec'] as num?)?.toInt() ?? 0;
+    final z3Sec = (map['z3_sec'] as num?)?.toInt() ?? 0;
+    final z4Sec = (map['z4_sec'] as num?)?.toInt() ?? 0;
+    final z5Sec = (map['z5_sec'] as num?)?.toInt() ?? 0;
+    final totalSec = (map['total_sec'] as num?)?.toInt() ?? (z1Sec + z2Sec + z3Sec + z4Sec + z5Sec);
+
+    return HeartRateZonesChart(
       isLoading: isLoading,
       isPartial: isPartial,
+      totalDurationSeconds: totalSec,
+      zones: [
+        HrZoneData(
+          zoneIndex: 5,
+          name: 'Zona 5',
+          rangeLabel: '90 - 100%',
+          percentage: z5Pct,
+          durationSeconds: z5Sec,
+          color: const Color(0xFFD9534F),
+        ),
+        HrZoneData(
+          zoneIndex: 4,
+          name: 'Zona 4',
+          rangeLabel: '80 - 90%',
+          percentage: z4Pct,
+          durationSeconds: z4Sec,
+          color: const Color(0xFFDF7B52),
+        ),
+        HrZoneData(
+          zoneIndex: 3,
+          name: 'Zona 3',
+          rangeLabel: '70 - 80%',
+          percentage: z3Pct,
+          durationSeconds: z3Sec,
+          color: const Color(0xFFD69E45),
+        ),
+        HrZoneData(
+          zoneIndex: 2,
+          name: 'Zona 2',
+          rangeLabel: '60 - 70%',
+          percentage: z2Pct,
+          durationSeconds: z2Sec,
+          color: const Color(0xFF38B27E),
+        ),
+        HrZoneData(
+          zoneIndex: 1,
+          name: 'Zona 1',
+          rangeLabel: '50 - 60%',
+          percentage: z1Pct,
+          durationSeconds: z1Sec,
+          color: const Color(0xFF439EB8),
+        ),
+      ],
     );
   }
 
@@ -140,17 +182,13 @@ class HeartRateZonesChart extends StatelessWidget {
       return Container(
         height: 220,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: const Color(0xFF141920),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: WhoopTheme.cardBorder),
-        ),
+        decoration: NatureTheme.organicCardDecoration(isDark: true),
         child: const SizedBox(
-          width: 24,
-          height: 24,
+          width: 22,
+          height: 22,
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            valueColor: AlwaysStoppedAnimation<Color>(WhoopTheme.textSecondary),
+            valueColor: AlwaysStoppedAnimation<Color>(NatureColors.secondaryText),
           ),
         ),
       );
@@ -162,20 +200,16 @@ class HeartRateZonesChart extends StatelessWidget {
         height: 120,
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF141920),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: WhoopTheme.cardBorder),
-        ),
+        decoration: NatureTheme.organicCardDecoration(isDark: true),
         child: const Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.bar_chart_outlined, color: WhoopTheme.textMuted, size: 24),
+            Icon(Icons.bar_chart_outlined, color: NatureColors.mutedText, size: 24),
             SizedBox(height: 8),
             Text(
               'Nessun dato registrato per questa finestra temporale',
               textAlign: TextAlign.center,
-              style: TextStyle(color: WhoopTheme.textMuted, fontSize: 12),
+              style: TextStyle(color: NatureColors.secondaryText, fontSize: 12),
             ),
           ],
         ),
@@ -184,11 +218,7 @@ class HeartRateZonesChart extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF141920),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: WhoopTheme.cardBorder),
-      ),
+      decoration: NatureTheme.organicCardDecoration(isDark: true),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -198,20 +228,20 @@ class HeartRateZonesChart extends StatelessWidget {
               const Text(
                 'DISTRIBUZIONE ZONE CARDIACHE',
                 style: TextStyle(
-                  color: WhoopTheme.textSecondary,
+                  color: NatureColors.secondaryText,
                   fontSize: 11,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w700,
                   letterSpacing: 1.1,
                 ),
               ),
               if (isPartial)
                 const Row(
                   children: [
-                    Icon(Icons.warning_amber_rounded, size: 12, color: Color(0xFFFF9F0A)),
+                    Icon(Icons.warning_amber_rounded, size: 12, color: NatureColors.amberWarm),
                     SizedBox(width: 4),
                     Text(
                       'Dati parziali',
-                      style: TextStyle(color: Color(0xFFFF9F0A), fontSize: 10, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: NatureColors.amberWarm, fontSize: 10, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
@@ -219,62 +249,97 @@ class HeartRateZonesChart extends StatelessWidget {
           ),
           const SizedBox(height: 14),
 
-          ...zones.map((zone) => _buildZoneBar(zone)),
+          // Barre orizzontali per ogni zona (dalla 5 alla 1)
+          ...zones.map((zone) => _buildZoneRow(zone)),
         ],
       ),
     );
   }
 
-  Widget _buildZoneBar(HrZoneData zone) {
+  Widget _buildZoneRow(HrZoneData zone) {
+    final widthFactor = (zone.percentage / 100.0).clamp(0.0, 1.0);
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: Column(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: BoxDecoration(color: zone.color, shape: BoxShape.circle),
+          // Nome Zona e Range
+          SizedBox(
+            width: 70,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  zone.name,
+                  style: const TextStyle(
+                    color: NatureColors.primaryText,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    zone.name,
-                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  zone.rangeLabel,
+                  style: const TextStyle(
+                    color: NatureColors.mutedText,
+                    fontSize: 9,
                   ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '(${zone.rangeLabel})',
-                    style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 10),
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  Text(
-                    '${zone.percentage.toStringAsFixed(0)}%',
-                    style: TextStyle(color: zone.color, fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    zone.durationFormatted,
-                    style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 11),
-                  ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: (zone.percentage / 100.0).clamp(0.0, 1.0),
-              minHeight: 6,
-              backgroundColor: const Color(0xFF1F2833),
-              valueColor: AlwaysStoppedAnimation<Color>(zone.color),
+          const SizedBox(width: 8),
+
+          // Barra Proporzionale con animazione morbida
+          Expanded(
+            child: Stack(
+              children: [
+                Container(
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: NatureColors.borderSubtle,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                ),
+                if (widthFactor > 0)
+                  FractionallySizedBox(
+                    widthFactor: widthFactor,
+                    child: Container(
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: zone.color,
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+
+          // Percentuale e Durata
+          SizedBox(
+            width: 80,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '${zone.percentage.toStringAsFixed(0)}%',
+                  style: TextStyle(
+                    color: zone.percentage > 0 ? NatureColors.primaryText : NatureColors.mutedText,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                Text(
+                  zone.durationFormatted,
+                  style: const TextStyle(
+                    color: NatureColors.secondaryText,
+                    fontSize: 9.5,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
             ),
           ),
         ],

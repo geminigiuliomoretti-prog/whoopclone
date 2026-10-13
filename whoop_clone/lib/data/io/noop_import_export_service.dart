@@ -395,6 +395,9 @@ class NoopImportExportService {
         hrRestBaseline: rhrMean.round(),
         sleepBaselineMin: avgSleepMin,
         isBootstrapCompleted: true,
+        baselineSource: currentProfile.baselineSource == 'INITIAL_PROFILE'
+            ? 'ROLLING_DEVICE_HISTORY'
+            : currentProfile.baselineSource,
         baselineSampleCount: hrvList.length,
       );
       await repository.userRepository.updateProfile(updatedProfile);

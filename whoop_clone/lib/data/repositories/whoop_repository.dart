@@ -2,6 +2,7 @@ import '../models/ciclo_fisiologico.dart';
 import '../models/allenamento.dart';
 import '../models/voce_diario.dart';
 import '../models/sonno.dart';
+import '../models/personal_baseline.dart';
 
 /// Interfaccia astratta del Repository per l'accesso ai dati Whoop
 abstract class WhoopRepository {
@@ -26,4 +27,9 @@ abstract class WhoopRepository {
   Future<List<Sonno>> getSonnoLogs();
   Future<Sonno?> getSonnoPerCiclo(String oraInizioCiclo);
   Future<void> insertSonno(Sonno sonno);
+
+  // Baseline Personali
+  Future<List<PersonalBaseline>> getPersonalBaselines() => Future.value([]);
+  Future<PersonalBaseline?> getPersonalBaseline(String metricKey) => Future.value(null);
+  Future<void> savePersonalBaselines(List<PersonalBaseline> baselines) => Future.value();
 }

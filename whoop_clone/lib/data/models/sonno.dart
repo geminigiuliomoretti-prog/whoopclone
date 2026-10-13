@@ -16,7 +16,16 @@ class Sonno {
   final double? efficienzaPct;
   final double? sleepPerformancePct;
   final double? regolaritaSonnoPctVal;
+  final int? sleepNeedMin;
+  final int? sleepDebtMin;
   final String provenance; // REAL, BOOTSTRAP, MANUAL
+
+  /// Percentuale effettiva ore dormite rispetto al bisogno calcolato per questa sessione
+  double? get actualVsNeededPct {
+    if (durataTotMin <= 0 || sleepNeedMin == null || sleepNeedMin! <= 0) return null;
+    final pct = (durataTotMin / sleepNeedMin!) * 100.0;
+    return double.parse(pct.clamp(0.0, 100.0).toStringAsFixed(1));
+  }
 
   const Sonno({
     this.id,
@@ -29,6 +38,8 @@ class Sonno {
     this.efficienzaPct,
     this.sleepPerformancePct,
     this.regolaritaSonnoPctVal,
+    this.sleepNeedMin,
+    this.sleepDebtMin,
     this.provenance = 'REAL',
   });
 
@@ -47,6 +58,8 @@ class Sonno {
   double? get efficienzaSonnoPct => efficienzaPct;
   double? get andamentoSonnoPct => sleepPerformancePct;
   double? get regolaritaSonnoPct => regolaritaSonnoPctVal;
+  double? get sonnoRichiestoMin => sleepNeedMin?.toDouble();
+  double? get sonnoArretratoMin => sleepDebtMin?.toDouble();
   bool get riposoBreve => false;
 
   int get tempoALettoMin {
@@ -74,6 +87,8 @@ class Sonno {
       'efficienza_pct': efficienzaPct,
       'sleep_performance_pct': sleepPerformancePct,
       'regolarita_sonno_pct': regolaritaSonnoPctVal,
+      if (sleepNeedMin != null) 'sleep_need_min': sleepNeedMin,
+      if (sleepDebtMin != null) 'sleep_debt_min': sleepDebtMin,
       'provenance': provenance,
     };
     if (id != null) map['id'] = id;
@@ -101,7 +116,41 @@ class Sonno {
       efficienzaPct: (map['efficienza_pct'] ?? map['efficienza_sonno_pct'] as num?)?.toDouble(),
       sleepPerformancePct: (map['sleep_performance_pct'] ?? map['andamento_sonno_pct'] as num?)?.toDouble(),
       regolaritaSonnoPctVal: (map['regolarita_sonno_pct'] as num?)?.toDouble(),
+      sleepNeedMin: (map['sleep_need_min'] ?? map['sonno_richiesto_min'] as num?)?.toInt(),
+      sleepDebtMin: (map['sleep_debt_min'] ?? map['sonno_arretrato_min'] as num?)?.toInt(),
       provenance: map['provenance'] as String? ?? 'REAL',
+    );
+  }
+
+  Sonno copyWith({
+    int? id,
+    String? dataIso,
+    String? oraInizio,
+    String? oraFine,
+    int? durataTotMin,
+    int? sonnoProfondoMin,
+    int? sonnoRemMin,
+    double? efficienzaPct,
+    double? sleepPerformancePct,
+    double? regolaritaSonnoPctVal,
+    int? sleepNeedMin,
+    int? sleepDebtMin,
+    String? provenance,
+  }) {
+    return Sonno(
+      id: id ?? this.id,
+      dataIso: dataIso ?? this.dataIso,
+      oraInizio: oraInizio ?? this.oraInizio,
+      oraFine: oraFine ?? this.oraFine,
+      durataTotMin: durataTotMin ?? this.durataTotMin,
+      sonnoProfondoMin: sonnoProfondoMin ?? this.sonnoProfondoMin,
+      sonnoRemMin: sonnoRemMin ?? this.sonnoRemMin,
+      efficienzaPct: efficienzaPct ?? this.efficienzaPct,
+      sleepPerformancePct: sleepPerformancePct ?? this.sleepPerformancePct,
+      regolaritaSonnoPctVal: regolaritaSonnoPctVal ?? this.regolaritaSonnoPctVal,
+      sleepNeedMin: sleepNeedMin ?? this.sleepNeedMin,
+      sleepDebtMin: sleepDebtMin ?? this.sleepDebtMin,
+      provenance: provenance ?? this.provenance,
     );
   }
 }

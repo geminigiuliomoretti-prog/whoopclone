@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 import '../models/allenamento.dart';
 
@@ -69,14 +70,47 @@ class NoopAnalyticsEngine {
     final rowsToUse = lowMotionRows.length >= 60 ? lowMotionRows : telemetryRows;
 
     final rrList = <double>[];
+    final measuredRmssdList = <double>[];
+
     for (final r in rowsToUse) {
-      final rr = (r['rr_ms'] as num?)?.toDouble();
-      if (rr != null && rr >= 300.0 && rr <= 1500.0) {
-        rrList.add(rr);
+      if (r['rr_intervals_json'] != null) {
+        try {
+          final decoded = jsonDecode(r['rr_intervals_json'].toString());
+          if (decoded is List) {
+            for (final v in decoded) {
+              final rr = (v as num).toDouble();
+              if (rr >= 300.0 && rr <= 1500.0) {
+                rrList.add(rr);
+              }
+            }
+          }
+        } catch (_) {}
+      } else if (r['rr_ms'] != null) {
+        final rr = (r['rr_ms'] as num).toDouble();
+        if (rr >= 300.0 && rr <= 1500.0) {
+          rrList.add(rr);
+        }
+      }
+
+      final rmssd = (r['rmssd_ms'] ?? r['rmssd'] ?? r['hrv_ms'] as num?)?.toDouble();
+      if (rmssd != null && rmssd >= 5.0 && rmssd <= 300.0) {
+        measuredRmssdList.add(rmssd);
       }
     }
 
-    return calculateRmssd(rrList);
+    // Priorità 1: Se sono presenti veri intervalli R-R discreti, calcola l'rMSSD matematico Task Force 1996
+    if (rrList.length >= 2) {
+      return calculateRmssd(rrList);
+    }
+
+    // Priorità 2: Se la telemetria fornisce direttamente l'rMSSD misurato dal sensore (es. WHOOP 96-byte)
+    if (measuredRmssdList.isNotEmpty) {
+      final sumSq = measuredRmssdList.map((x) => x * x).reduce((a, b) => a + b);
+      final pooled = sqrt(sumSq / measuredRmssdList.length);
+      return double.parse(pooled.toStringAsFixed(1));
+    }
+
+    return null;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

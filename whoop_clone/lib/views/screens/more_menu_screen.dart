@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/constants/whoop_theme.dart';
 import '../../core/theme/nature_theme.dart';
 import 'coach_screen.dart';
 import 'trends_screen.dart';
@@ -12,6 +11,7 @@ import 'customizable_dashboard_screen.dart';
 import 'activity_details_screen.dart';
 import 'health_screen.dart';
 import '../breathe/haptic_breathe_screen.dart';
+import 'whoop_import_screen.dart';
 
 /// Modulo 19 — Menu "Altro": Hub di Navigazione a tutti i 25 Moduli
 class MoreMenuScreen extends StatelessWidget {
@@ -39,10 +39,10 @@ class MoreMenuScreen extends StatelessWidget {
 
               _buildNavTile(
                 context: context,
-                icon: Icons.show_chart,
+                icon: Icons.show_chart_rounded,
                 title: 'Trends & Calendario',
                 subtitle: 'VFC, Recupero, Sonno — 7D / 30D / 6M / 1Y',
-                color: WhoopTheme.strainBlue,
+                color: NatureColors.teal,
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const TrendsScreen())),
               ),
@@ -51,7 +51,7 @@ class MoreMenuScreen extends StatelessWidget {
                 icon: Icons.book_outlined,
                 title: 'Journal & Impact Analytics',
                 subtitle: 'Diario comportamenti e analisi cross-data +/- %',
-                color: WhoopTheme.strainBlue,
+                color: NatureColors.teal,
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const JournalScreen())),
               ),
@@ -60,16 +60,16 @@ class MoreMenuScreen extends StatelessWidget {
                 icon: Icons.monitor_heart_outlined,
                 title: 'Health Monitor',
                 subtitle: '5 parametri vitali, baseline 30 gg, referto PDF',
-                color: WhoopTheme.strainBlue,
+                color: NatureColors.teal,
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const HealthScreen())),
               ),
               _buildNavTile(
                 context: context,
-                icon: Icons.directions_run,
+                icon: Icons.directions_run_rounded,
                 title: 'Ultima Attività (Activity Details)',
                 subtitle: 'Tracciato GPS, 5 Zone FC, calorie, strain sessione',
-                color: WhoopTheme.strainBlue,
+                color: NatureColors.terracotta,
                 onTap: () => ActivityDetailsScreen.show(context),
               ),
               _buildNavTile(
@@ -77,8 +77,16 @@ class MoreMenuScreen extends StatelessWidget {
                 icon: Icons.spa_outlined,
                 title: 'Respirazione Aptica & Biofeedback',
                 subtitle: 'Relax (4-6), Coerenza Cardiaca, Box Breathing con impulsi BLE',
-                color: WhoopTheme.recoveryGreen,
+                color: NatureColors.recoveryAccent,
                 onTap: () => HapticBreatheScreen.show(context),
+              ),
+              _buildNavTile(
+                context: context,
+                icon: Icons.file_upload_outlined,
+                title: 'Importa Dati WHOOP',
+                subtitle: 'Importa archivio ZIP storico e personalizza le baseline',
+                color: NatureColors.teal,
+                onTap: () => WhoopImportScreen.show(context),
               ),
 
               const SizedBox(height: 20),
@@ -90,18 +98,18 @@ class MoreMenuScreen extends StatelessWidget {
               _buildNavTile(
                 context: context,
                 icon: Icons.psychology_outlined,
-                title: 'WHOOP Coach AI V5.4',
+                title: 'Coach AI',
                 subtitle: 'Chat contestuale, Daily Outlook, La Mia Memoria',
-                color: WhoopTheme.strainBlue,
+                color: NatureColors.teal,
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const CoachScreen())),
               ),
               _buildNavTile(
                 context: context,
-                icon: Icons.person_outline,
+                icon: Icons.person_outline_rounded,
                 title: 'Profilo Atleta',
                 subtitle: 'Dati anagrafici, FCmax, Baseline biometriche',
-                color: WhoopTheme.strainBlue,
+                color: NatureColors.teal,
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -114,24 +122,10 @@ class MoreMenuScreen extends StatelessWidget {
                 icon: Icons.dashboard_customize_outlined,
                 title: 'Dashboard Personalizzabile',
                 subtitle: 'Scegli e ordina le metriche biometriche in Home',
-                color: WhoopTheme.strainBlue,
+                color: NatureColors.teal,
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(
                         builder: (_) => const CustomizableDashboardScreen())),
-              ),
-              _buildNavTile(
-                context: context,
-                icon: Icons.share_outlined,
-                title: 'Programma Referral',
-                subtitle: 'Invita amici e ottieni 1 mese gratuito di WHOOP',
-                color: WhoopTheme.recoveryGreen,
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text(
-                            'Codice Referral: WHOOP-GM13 — Condividi!')),
-                  );
-                },
               ),
 
               const SizedBox(height: 20),
@@ -143,9 +137,9 @@ class MoreMenuScreen extends StatelessWidget {
               _buildNavTile(
                 context: context,
                 icon: Icons.watch_outlined,
-                title: 'Gestione Sensore WHOOP 5.0',
+                title: 'Gestione Sensore & Dispositivo',
                 subtitle: 'ID 5A00479315 • Firmware 50.39.1.0 • Batteria 77%',
-                color: WhoopTheme.strainBlue,
+                color: NatureColors.teal,
                 onTap: () => SettingsDeviceScreen.show(context),
               ),
               _buildNavTile(
@@ -154,7 +148,7 @@ class MoreMenuScreen extends StatelessWidget {
                 title: 'Integrazioni Ecosistemi Esterni',
                 subtitle:
                     'Apple Health, Health Connect, Strava, Withings, TrainingPeaks',
-                color: WhoopTheme.strainBlue,
+                color: NatureColors.teal,
                 onTap: () => IntegrationsScreen.show(context),
               ),
               _buildNavTile(
@@ -162,38 +156,18 @@ class MoreMenuScreen extends StatelessWidget {
                 icon: Icons.tune_outlined,
                 title: 'Onboarding & Calibrazione 4 Giorni',
                 subtitle: 'Guida primo utilizzo, associazione BLE, baseline',
-                color: WhoopTheme.strainBlue,
+                color: NatureColors.teal,
                 onTap: () => OnboardingScreen.show(context),
-              ),
-
-              const SizedBox(height: 20),
-
-              // ── Sezione: Profilo ─────────────────────────────────────
-              _buildSectionLabel('PROFILO ATLETA'),
-              const SizedBox(height: 10),
-
-              _buildNavTile(
-                context: context,
-                icon: Icons.person_outline,
-                title: 'Profilo & Record Personali',
-                subtitle: 'Livello 13 • 175 gg streak • Statistiche All-Time',
-                color: WhoopTheme.strainBlue,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const ProfilePlanScreen(initialTab: 0),
-                  ),
-                ),
               ),
 
               const SizedBox(height: 32),
 
               Center(
                 child: Text(
-                  'WHOOP 5.0 Clone • v1.0.0 • Tutti i dati sono archiviati\nlocalmente nel database SQLite crittografato.',
+                  'Wellness Companion • v1.0.0 • Tutti i dati sono archiviati\nlocalmente nel database SQLite crittografato.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: WhoopTheme.textMuted,
+                    color: NatureColors.textDarkMuted,
                     fontSize: 10,
                     height: 1.5,
                   ),
@@ -217,7 +191,7 @@ class MoreMenuScreen extends StatelessWidget {
       ),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: WhoopTheme.officialCardDecoration(),
+        decoration: NatureTheme.organicCardDecoration(isDark: true),
         child: Row(
           children: [
             Container(
@@ -225,23 +199,17 @@ class MoreMenuScreen extends StatelessWidget {
               height: 50,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Theme.of(context).brightness == Brightness.light
-                    ? NatureColors.sageBackground
-                    : NatureColors.forestDeep,
+                color: NatureColors.forestDeep,
                 border: Border.all(
-                  color: Theme.of(context).brightness == Brightness.light
-                      ? NatureColors.sage.withOpacity(0.4)
-                      : NatureColors.sageLight,
+                  color: NatureColors.sageLight,
                   width: 1.5,
                 ),
               ),
-              child: Center(
+              child: const Center(
                 child: Text(
                   'GM',
                   style: TextStyle(
-                    color: Theme.of(context).brightness == Brightness.light
-                        ? NatureColors.sageDark
-                        : Colors.white,
+                    color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
                   ),
@@ -256,7 +224,7 @@ class MoreMenuScreen extends StatelessWidget {
                   const Text(
                     'Giulio Moretti',
                     style: TextStyle(
-                      color: WhoopTheme.textPrimary,
+                      color: NatureColors.textDarkPrimary,
                       fontSize: 17,
                       fontWeight: FontWeight.bold,
                     ),
@@ -264,7 +232,7 @@ class MoreMenuScreen extends StatelessWidget {
                   const Text(
                     '@Giulio_moretti',
                     style: TextStyle(
-                        color: WhoopTheme.textSecondary, fontSize: 12),
+                        color: NatureColors.textDarkSecondary, fontSize: 12),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
@@ -280,7 +248,7 @@ class MoreMenuScreen extends StatelessWidget {
               ),
             ),
             const Icon(Icons.chevron_right,
-                color: WhoopTheme.textSecondary, size: 20),
+                color: NatureColors.textDarkMuted, size: 20),
           ],
         ),
       ),
@@ -310,7 +278,7 @@ class MoreMenuScreen extends StatelessWidget {
     return Text(
       label,
       style: const TextStyle(
-        color: WhoopTheme.textSecondary,
+        color: NatureColors.textDarkMuted,
         fontSize: 11,
         fontWeight: FontWeight.bold,
         letterSpacing: 1.4,
@@ -335,7 +303,7 @@ class MoreMenuScreen extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-            decoration: WhoopTheme.officialCardDecoration(),
+            decoration: NatureTheme.organicCardDecoration(isDark: true),
             child: Row(
               children: [
                 Container(
@@ -354,7 +322,7 @@ class MoreMenuScreen extends StatelessWidget {
                       Text(
                         title,
                         style: const TextStyle(
-                          color: WhoopTheme.textPrimary,
+                          color: NatureColors.textDarkPrimary,
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
                         ),
@@ -363,7 +331,7 @@ class MoreMenuScreen extends StatelessWidget {
                       Text(
                         subtitle,
                         style: const TextStyle(
-                          color: WhoopTheme.textMuted,
+                          color: NatureColors.textDarkMuted,
                           fontSize: 11,
                         ),
                       ),
@@ -371,7 +339,7 @@ class MoreMenuScreen extends StatelessWidget {
                   ),
                 ),
                 const Icon(Icons.chevron_right,
-                    color: WhoopTheme.textMuted, size: 18),
+                    color: NatureColors.textDarkMuted, size: 18),
               ],
             ),
           ),

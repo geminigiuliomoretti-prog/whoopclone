@@ -111,19 +111,15 @@ class _HomeScreenState extends State<HomeScreen> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
-        color: isDark ? NatureColors.darkSurface : Colors.white,
+        color: NatureColors.surface,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: isDark
-              ? NatureColors.darkBorderSubtle
-              : accentColor.withValues(alpha: 0.18),
+          color: NatureColors.border,
           width: 0.85,
         ),
         boxShadow: [
           BoxShadow(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.20)
-                : const Color(0xFF1E2832).withValues(alpha: 0.03),
+            color: Colors.black.withValues(alpha: 0.20),
             blurRadius: 12,
             offset: const Offset(0, 3),
           ),
@@ -219,8 +215,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final strain = ciclo?.sforzoGiornaliero ?? 0.0;
     final recovery = ciclo?.punteggioRecuperoPct ?? 0.0;
     final double sleepDurationMin = (sonno?.durataTotMin ?? 0).toDouble();
-    final double sleep = (sleepDurationMin > 0 && sonno?.sleepPerformancePct != null)
-        ? sonno!.sleepPerformancePct!
+    final double sleep = (sleepDurationMin > 0 && viewModel.sleepPerformance != null)
+        ? viewModel.sleepPerformance!.toDouble()
         : 0.0;
 
     return RefreshIndicator(
@@ -231,113 +227,119 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Official Header (GM avatar, flame 175, < OGGI >, 62% battery, WHOOP logo)
-            WhoopHeader(
-              currentDateLabel: _formatDateLabel(viewModel.selectedDate),
-              selectedRingIndex: _selectedRingIndex,
-              showRingSelectors: false,
-              userInitials: viewModel.userName.length >= 2
-                  ? viewModel.userName.substring(0, 2).toUpperCase()
-                  : 'GM',
-              streakDays: viewModel.streakDays,
-              batteryPct: viewModel.batteryPct,
-              bleConnected: viewModel.bleState == BleState.connected || viewModel.liveBpm > 0,
-              onRingSelected: (idx) {
-                setState(() => _selectedRingIndex = idx);
-              },
-              onAvatarTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ProfilePlanScreen()),
-              ),
-              onPreviousDate: () {
-                viewModel.setSelectedDate(viewModel.selectedDate.subtract(const Duration(days: 1)));
-              },
-              onNextDate: _isToday(viewModel.selectedDate)
-                  ? null
-                  : () {
-                      viewModel.setSelectedDate(viewModel.selectedDate.add(const Duration(days: 1)));
-                    },
-              onDateTap: () => RecoveryCalendarModal.show(context),
-              onBatteryTap: () => DiagnosticScreen.navigateTo(context),
-            ),
-
-            const SizedBox(height: 8),
-
-            // 2. Hero Nature Landscape & 3 Metric Rings Display (Ridotto del 10-15%)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: NatureScene(
-                mood: _getNatureMoodForRing(_selectedRingIndex, recovery),
-                intensity: (recovery > 0 ? (recovery / 100.0) : 0.70),
-                height: 235,
-                isDark: isDark,
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Center(
-                  child: TriRingDial(
-                    strainScore: strain,
-                    recoveryPct: recovery,
-                    sleepPct: sleep,
-                    liveBpm: viewModel.liveBpm,
-                    calories: ciclo?.energiaBruciataCal ?? 0,
-                    onTapRecovery: () => RecoveryDetailModal.show(
-                      context,
-                      recoveryPct: recovery,
-                      hrvMs: (ciclo?.vfcMs != null && ciclo!.vfcMs! > 0) ? ciclo.vfcMs! : 0.0,
-                      fcrBpm: (ciclo?.fcrBpm != null && ciclo!.fcrBpm! > 0) ? ciclo.fcrBpm! : 0,
-                      respRateRpm: (ciclo?.frequenzaRespiratoriaRpm != null && ciclo!.frequenzaRespiratoriaRpm! > 0)
-                          ? ciclo.frequenzaRespiratoriaRpm!
-                          : 0.0,
-                      spo2Pct: ciclo?.spo2Pct ?? 0.0,
-                      tempDeltaC: ciclo?.tempCutaneaC ?? 0.0,
-                      hrvBaseline: (viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.hrvBaselineMean > 0)
-                          ? viewModel.userProfile.hrvBaselineMean.toDouble()
-                          : null,
-                      fcrBaseline: (viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.hrRestBaseline > 0)
-                          ? viewModel.userProfile.hrRestBaseline
-                          : null,
-                      respRateBaseline: viewModel.userProfile.baselineSampleCount >= 4 ? 13.6 : null,
-                      sleepPerformancePct: ciclo?.andamentoSonnoPct ?? (sleep > 0 ? sleep : null),
-                      sleepPerfBaseline: viewModel.userProfile.baselineSampleCount >= 4 ? 75.0 : null,
-                      historicalCicli: viewModel.cicliList,
-                      provenance: ciclo?.provenance ?? 'REAL',
-                    ),
-                    onTapSleep: () => SleepDetailModal.show(
-                      context,
-                      startTime: sonno?.inizioSonno,
-                      endTime: sonno?.inizioRisveglio,
-                      sleepPct: sleep > 0 ? sleep : (sonno?.sleepPerformancePct ?? 0.0),
-                      durationMin: (sonno?.durataTotMin != null && sonno!.durataTotMin > 0)
-                          ? sonno.durataTotMin.toDouble()
-                          : 0.0,
-                      sleepNeedMin: ciclo?.sonnoRichiestoMin ?? viewModel.currentSleepNeedMinutes,
-                      sleepDebtMin: ciclo?.sonnoArretratoMin ?? viewModel.accumulatedSleepDebtMinutes,
-                      lightSleepMin: sonno?.sonnoLeggeroMin ?? 0.0,
-                      deepSleepMin: sonno?.sonnoProfondoMinDouble ?? 0.0,
-                      remSleepMin: sonno?.sonnoRemMinDouble ?? 0.0,
-                      awakeMin: sonno?.vegliaMin ?? 0.0,
-                      efficiencyPct: sonno?.efficienzaPct ??
-                          ((sonno != null && sonno.tempoALettoMin > 0)
-                              ? ((sonno.durataTotMin / sonno.tempoALettoMin) * 100).clamp(0.0, 100.0)
-                              : 0.0),
-                      consistencyPct: sonno?.regolaritaSonnoPct ?? 0.0,
-                      baselineDurationMin: (viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.sleepBaselineMin > 0)
-                          ? viewModel.userProfile.sleepBaselineMin.toDouble()
-                          : null,
-                      baselinePerformancePct: viewModel.userProfile.baselineSampleCount >= 4 ? 80.0 : null,
-                      historicalSonno: viewModel.sonnoList,
-                      provenance: sonno?.provenance ?? (ciclo?.provenance ?? 'REAL'),
-                    ),
-                    onTapStrain: () => StrainDetailModal.show(
-                      context,
-                      dayStrain: strain,
-                      fcMaxBpm: ciclo?.fcMaxBpm ?? (viewModel.liveBpm > 0 ? viewModel.liveBpm : 0),
-                      fcMediaBpm: ciclo?.fcMediaBpm ?? (viewModel.liveBpm > 0 ? viewModel.liveBpm : 0),
-                      caloriesTotal: ciclo?.energiaBruciataCal ?? 0,
-                      steps: null,
-                    ),
-                  ),
+            // 1 & 2. Hero Nature Landscape & 3 Metric Rings Display (Atmospheric Environmental Layer)
+            Stack(
+              children: [
+                NatureScene(
+                  mood: _getNatureMoodForRing(_selectedRingIndex, recovery),
+                  intensity: (recovery > 0 ? (recovery / 100.0) : 0.70),
+                  height: 330,
+                  isDark: isDark,
                 ),
-              ),
+                Column(
+                  children: [
+                    WhoopHeader(
+                      currentDateLabel: _formatDateLabel(viewModel.selectedDate),
+                      selectedRingIndex: _selectedRingIndex,
+                      showRingSelectors: false,
+                      userInitials: viewModel.userName.length >= 2
+                          ? viewModel.userName.substring(0, 2).toUpperCase()
+                          : 'GM',
+                      streakDays: viewModel.streakDays,
+                      batteryPct: viewModel.batteryPct,
+                      bleConnected: viewModel.bleState == BleState.connected || viewModel.liveBpm > 0,
+                      onRingSelected: (idx) {
+                        setState(() => _selectedRingIndex = idx);
+                      },
+                      onAvatarTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ProfilePlanScreen()),
+                      ),
+                      onPreviousDate: () {
+                        viewModel.setSelectedDate(viewModel.selectedDate.subtract(const Duration(days: 1)));
+                      },
+                      onNextDate: _isToday(viewModel.selectedDate)
+                          ? null
+                          : () {
+                              viewModel.setSelectedDate(viewModel.selectedDate.add(const Duration(days: 1)));
+                            },
+                      onDateTap: () => RecoveryCalendarModal.show(context),
+                      onBatteryTap: () => DiagnosticScreen.navigateTo(context),
+                    ),
+                    const SizedBox(height: 10),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: TriRingDial(
+                        strainScore: strain,
+                        recoveryPct: recovery,
+                        sleepPct: sleep,
+                        liveBpm: viewModel.liveBpm,
+                        calories: ciclo?.energiaBruciataCal ?? 0,
+                        onTapRecovery: () => RecoveryDetailModal.show(
+                          context,
+                          recoveryPct: recovery,
+                          hrvMs: (ciclo?.vfcMs != null && ciclo!.vfcMs! > 0) ? ciclo.vfcMs! : 0.0,
+                          fcrBpm: (ciclo?.fcrBpm != null && ciclo!.fcrBpm! > 0) ? ciclo.fcrBpm! : 0,
+                          respRateRpm: (ciclo?.frequenzaRespiratoriaRpm != null && ciclo!.frequenzaRespiratoriaRpm! > 0)
+                              ? ciclo.frequenzaRespiratoriaRpm!
+                              : 0.0,
+                          spo2Pct: ciclo?.spo2Pct ?? 0.0,
+                          tempDeltaC: ciclo?.tempCutaneaC ?? 0.0,
+                          hrvBaseline: viewModel.getPersonalBaseline('hrv')?.mean ??
+                              ((viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.hrvBaselineMean > 0)
+                                  ? viewModel.userProfile.hrvBaselineMean.toDouble()
+                                  : null),
+                          fcrBaseline: viewModel.getPersonalBaseline('rhr')?.mean.round() ??
+                              ((viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.hrRestBaseline > 0)
+                                  ? viewModel.userProfile.hrRestBaseline
+                                  : null),
+                          respRateBaseline: viewModel.getPersonalBaseline('respiratory_rate')?.mean ??
+                              (viewModel.userProfile.baselineSampleCount >= 4 ? 13.6 : null),
+                          sleepPerformancePct: ciclo?.andamentoSonnoPct ?? (sleep > 0 ? sleep : null),
+                          sleepPerfBaseline: viewModel.getPersonalBaseline('sleep_performance')?.mean,
+                          historicalCicli: viewModel.cicliList,
+                          provenance: ciclo?.provenance ?? 'REAL',
+                        ),
+                        onTapSleep: () => SleepDetailModal.show(
+                          context,
+                          startTime: sonno?.inizioSonno,
+                          endTime: sonno?.inizioRisveglio,
+                          sleepPct: sleep > 0 ? sleep : (sonno?.sleepPerformancePct ?? 0.0),
+                          durationMin: (sonno?.durataTotMin != null && sonno!.durataTotMin > 0)
+                              ? sonno.durataTotMin.toDouble()
+                              : 0.0,
+                          sleepNeedMin: ciclo?.sonnoRichiestoMin ?? (sonno?.sleepNeedMin?.toDouble()) ?? (viewModel.isToday ? viewModel.currentSleepNeedMinutes : 0.0),
+                          sleepDebtMin: ciclo?.sonnoArretratoMin ?? (sonno?.sleepDebtMin?.toDouble()) ?? (viewModel.isToday ? viewModel.accumulatedSleepDebtMinutes : 0.0),
+                          lightSleepMin: sonno?.sonnoLeggeroMin ?? 0.0,
+                          deepSleepMin: sonno?.sonnoProfondoMinDouble ?? 0.0,
+                          remSleepMin: sonno?.sonnoRemMinDouble ?? 0.0,
+                          awakeMin: sonno?.vegliaMin ?? 0.0,
+                          efficiencyPct: sonno?.efficienzaPct ??
+                              ((sonno != null && sonno.tempoALettoMin > 0)
+                                  ? ((sonno.durataTotMin / sonno.tempoALettoMin) * 100).clamp(0.0, 100.0)
+                                  : 0.0),
+                          consistencyPct: sonno?.regolaritaSonnoPct ?? viewModel.calculateSleepConsistencyForSelectedDate() ?? 0.0,
+                          baselineDurationMin: viewModel.getPersonalBaseline('sleep_duration')?.mean ??
+                              ((viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.sleepBaselineMin > 0)
+                                  ? viewModel.userProfile.sleepBaselineMin.toDouble()
+                                  : null),
+                          baselinePerformancePct: viewModel.getPersonalBaseline('sleep_performance')?.mean,
+                          historicalSonno: viewModel.sonnoList,
+                          provenance: sonno?.provenance ?? (ciclo?.provenance ?? 'REAL'),
+                        ),
+                        onTapStrain: () => StrainDetailModal.show(
+                          context,
+                          dayStrain: strain,
+                          fcMaxBpm: ciclo?.fcMaxBpm ?? (viewModel.liveBpm > 0 ? viewModel.liveBpm : 0),
+                          fcMediaBpm: ciclo?.fcMediaBpm ?? (viewModel.liveBpm > 0 ? viewModel.liveBpm : 0),
+                          caloriesTotal: ciclo?.energiaBruciataCal ?? 0,
+                          steps: null,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
 
             if (ciclo != null && ciclo.provenance.isNotEmpty) ...[
@@ -685,7 +687,6 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Banner Prospettive Giornaliere — naviga a CoachScreen
   Widget _buildDailyProspectsBanner(dynamic ciclo) {
     final hasRecovery = ciclo?.punteggioRecuperoPct != null;
-    final isLight = Theme.of(context).brightness == Brightness.light;
 
     return GestureDetector(
       onTap: () => Navigator.push(
@@ -694,24 +695,18 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: isLight
-            ? BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: NatureColors.sandBorder, width: 0.85),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x06182228),
-                    blurRadius: 10,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              )
-            : BoxDecoration(
-                color: NatureColors.darkCard,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: WhoopTheme.cardBorder, width: 0.85),
-              ),
+        decoration: BoxDecoration(
+          color: NatureColors.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: NatureColors.border, width: 0.85),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.20),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
         child: Row(
           children: [
             Container(
@@ -719,15 +714,15 @@ class _HomeScreenState extends State<HomeScreen> {
               height: 36,
               decoration: BoxDecoration(
                 color: hasRecovery
-                    ? (isLight ? NatureColors.amberBackground : const Color(0xFF332B22))
-                    : (isLight ? NatureColors.creamLight : const Color(0xFF1B2329)),
+                    ? NatureColors.amberBackground
+                    : NatureColors.surfaceElevated,
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 hasRecovery ? Icons.wb_sunny_outlined : Icons.schedule,
                 color: hasRecovery
-                    ? (isLight ? NatureColors.amberWarm : const Color(0xFFE5B17B))
-                    : WhoopTheme.textMuted,
+                    ? NatureColors.amberWarm
+                    : NatureColors.textMuted,
                 size: 18,
               ),
             ),
@@ -741,8 +736,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     hasRecovery ? 'PROSPETTIVE GIORNALIERE' : 'IN ATTESA DI CALCOLO',
                     style: TextStyle(
                       color: hasRecovery
-                          ? (isLight ? NatureColors.amberWarm : const Color(0xFFE5B17B))
-                          : WhoopTheme.textMuted,
+                          ? NatureColors.amberWarm
+                          : NatureColors.textMuted,
                       fontSize: 10,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0.9,
@@ -752,7 +747,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     hasRecovery ? 'Guida e previsioni per oggi' : 'In attesa di calcolo del sonno',
                     style: const TextStyle(
-                      color: WhoopTheme.textPrimary,
+                      color: NatureColors.textPrimary,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
@@ -763,9 +758,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            Icon(
+            const Icon(
               Icons.chevron_right,
-              color: isLight ? NatureColors.textLightMuted : const Color(0xFFC7B39E),
+              color: NatureColors.textSecondary,
               size: 20,
             ),
           ],
@@ -776,7 +771,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Card Calorie Bruciate e Target Giornaliero (Stile Ufficiale Whoop 5.0)
   Widget _buildCaloriesCard(int calories, {int? targetCal}) {
-    final isLight = Theme.of(context).brightness == Brightness.light;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: WhoopTheme.officialCardDecoration(),
@@ -788,13 +782,13 @@ class _HomeScreenState extends State<HomeScreen> {
               Container(
                 width: 32,
                 height: 32,
-                decoration: BoxDecoration(
-                  color: isLight ? NatureColors.terracottaBackground : const Color(0xFF261D1A),
+                decoration: const BoxDecoration(
+                  color: NatureColors.strainBackground,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
+                child: const Icon(
                   Icons.local_fire_department_outlined,
-                  color: isLight ? NatureColors.terracotta : WhoopTheme.textSecondary,
+                  color: NatureColors.strain,
                   size: 18,
                 ),
               ),
@@ -847,7 +841,6 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Card Attività di Oggi (Stile Ufficiale Whoop 5.0)
   Widget _buildTodayActivitiesCard(BuildContext context, dynamic ciclo, double sleep, WhoopViewModel viewModel) {
     final allenamenti = viewModel.allenamentiList;
-    final isLight = Theme.of(context).brightness == Brightness.light;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -886,8 +879,8 @@ class _HomeScreenState extends State<HomeScreen> {
               final int sleepHours = hasSleep ? (sleepMin / 60).floor() : 0;
               final int sleepRemMin = hasSleep ? (sleepMin % 60).round() : 0;
               final String sleepFormattedText = hasSleep ? '$sleepHours:${sleepRemMin.toString().padLeft(2, '0')}' : '--:--';
-              final double sleepPct = (hasSleep && sonno?.sleepPerformancePct != null)
-                  ? sonno!.sleepPerformancePct!
+              final double sleepPct = (hasSleep && viewModel.sleepPerformance != null)
+                  ? viewModel.sleepPerformance!.toDouble()
                   : 0.0;
               final String startHourStr = (hasSleep && sonno != null && sonno.oraInizio.isNotEmpty)
                   ? '${sonno.inizioSonno.hour}:${sonno.inizioSonno.minute.toString().padLeft(2, '0')}'
@@ -903,8 +896,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   endTime: sonno?.inizioRisveglio,
                   sleepPct: sleepPct,
                   durationMin: sleepMin,
-                  sleepNeedMin: ciclo?.sonnoRichiestoMin ?? viewModel.currentSleepNeedMinutes,
-                  sleepDebtMin: ciclo?.sonnoArretratoMin ?? viewModel.accumulatedSleepDebtMinutes,
+                  sleepNeedMin: ciclo?.sonnoRichiestoMin ?? (sonno?.sleepNeedMin?.toDouble()) ?? (viewModel.isToday ? viewModel.currentSleepNeedMinutes : 0.0),
+                  sleepDebtMin: ciclo?.sonnoArretratoMin ?? (sonno?.sleepDebtMin?.toDouble()) ?? (viewModel.isToday ? viewModel.accumulatedSleepDebtMinutes : 0.0),
                   lightSleepMin: sonno?.sonnoLeggeroMin ?? 0.0,
                   deepSleepMin: sonno?.sonnoProfondoMinDouble ?? 0.0,
                   remSleepMin: sonno?.sonnoRemMinDouble ?? 0.0,
@@ -913,21 +906,22 @@ class _HomeScreenState extends State<HomeScreen> {
                       ((sonno != null && sonno.tempoALettoMin > 0)
                           ? ((sonno.durataTotMin / sonno.tempoALettoMin) * 100).clamp(0.0, 100.0)
                           : 0.0),
-                  consistencyPct: sonno?.regolaritaSonnoPct ?? 0.0,
-                  baselineDurationMin: (viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.sleepBaselineMin > 0)
-                      ? viewModel.userProfile.sleepBaselineMin.toDouble()
-                      : null,
-                  baselinePerformancePct: viewModel.userProfile.baselineSampleCount >= 4 ? 80.0 : null,
+                  consistencyPct: sonno?.regolaritaSonnoPct ?? viewModel.calculateSleepConsistencyForSelectedDate() ?? 0.0,
+                  baselineDurationMin: viewModel.getPersonalBaseline('sleep_duration')?.mean ??
+                      ((viewModel.userProfile.baselineSampleCount >= 4 && viewModel.userProfile.sleepBaselineMin > 0)
+                          ? viewModel.userProfile.sleepBaselineMin.toDouble()
+                          : null),
+                  baselinePerformancePct: viewModel.getPersonalBaseline('sleep_performance')?.mean,
                   historicalSonno: viewModel.sonnoList,
                   provenance: sonno?.provenance ?? (ciclo?.provenance ?? 'REAL'),
                 ),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
-                    color: isLight ? NatureColors.creamLight : const Color(0xFF161E24),
+                    color: NatureColors.surfaceElevated,
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: isLight ? NatureColors.sandBorderSubtle : const Color(0xFF26333D),
+                      color: NatureColors.borderSubtle,
                       width: 0.85,
                     ),
                   ),
@@ -937,26 +931,26 @@ class _HomeScreenState extends State<HomeScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: isLight ? NatureColors.tealBackground : const Color(0xFF5D849E),
+                          color: NatureColors.sleepBackground,
                           borderRadius: BorderRadius.circular(8),
-                          border: isLight ? Border.all(color: NatureColors.teal.withOpacity(0.3), width: 0.8) : null,
+                          border: Border.all(color: NatureColors.sleep.withValues(alpha: 0.35), width: 0.85),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
                               Icons.nightlight_round,
-                              color: isLight ? NatureColors.tealDark : Colors.white,
+                              color: NatureColors.sleep,
                               size: 14,
                             ),
                             const SizedBox(width: 5),
                             Text(
                               sleepFormattedText,
-                              style: TextStyle(
-                                color: isLight ? NatureColors.tealDark : Colors.white,
+                              style: const TextStyle(
+                                color: NatureColors.sleepLight,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w800,
-                                fontFeatures: const [FontFeature.tabularFigures()],
+                                fontFeatures: [FontFeature.tabularFigures()],
                               ),
                             ),
                           ],
@@ -999,7 +993,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           Container(
                             width: 1,
                             height: 6,
-                            color: isLight ? NatureColors.sandBorder : WhoopTheme.cardBorder,
+                            color: NatureColors.border,
                             margin: const EdgeInsets.symmetric(vertical: 2),
                           ),
                           Text(
@@ -1045,10 +1039,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
-                    color: isLight ? NatureColors.creamLight : const Color(0xFF161E24),
+                    color: NatureColors.surfaceElevated,
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: isLight ? NatureColors.sandBorderSubtle : WhoopTheme.strainBlue.withOpacity(0.35),
+                      color: NatureColors.borderSubtle,
                       width: 0.85,
                     ),
                   ),
@@ -1057,16 +1051,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       Row(
                         children: [
-                          Icon(
+                          const Icon(
                             Icons.fitness_center,
-                            color: isLight ? NatureColors.amberWarm : WhoopTheme.strainBlue,
+                            color: NatureColors.amberWarm,
                             size: 18,
                           ),
                           const SizedBox(width: 10),
                           Text(
                             a.nomeAttivita.toUpperCase(),
                             style: const TextStyle(
-                              color: WhoopTheme.textPrimary,
+                              color: NatureColors.textPrimary,
                               fontSize: 12,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.8,
@@ -1075,17 +1069,17 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(width: 8),
                           Text(
                             '${a.durataMin} min',
-                            style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 11),
+                            style: const TextStyle(color: NatureColors.textSecondary, fontSize: 11),
                           ),
                         ],
                       ),
                       Text(
                         'Sforzo ${strainVal.toStringAsFixed(1)}',
-                        style: TextStyle(
-                          color: isLight ? NatureColors.amberWarm : WhoopTheme.strainBlue,
+                        style: const TextStyle(
+                          color: NatureColors.amberWarm,
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
-                          fontFeatures: const [FontFeature.tabularFigures()],
+                          fontFeatures: [FontFeature.tabularFigures()],
                         ),
                       ),
                     ],
@@ -1107,21 +1101,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
-                      color: isLight ? Colors.white : const Color(0xFF222B32),
+                      color: NatureColors.surfaceElevated,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: isLight ? NatureColors.sandBorder : const Color(0xFF2E3842),
+                        color: NatureColors.border,
                         width: 0.85,
                       ),
-                      boxShadow: isLight
-                          ? const [
-                              BoxShadow(
-                                color: Color(0x06182228),
-                                blurRadius: 4,
-                                offset: Offset(0, 1),
-                              ),
-                            ]
-                          : null,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.20),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
                     child: const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 4),
@@ -1130,12 +1122,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.add, size: 14, color: WhoopTheme.textPrimary),
+                            Icon(Icons.add, size: 14, color: NatureColors.textPrimary),
                             SizedBox(width: 6),
                             Text(
                               'AGGIUNGI ATTIVITÀ',
                               style: TextStyle(
-                                color: WhoopTheme.textPrimary,
+                                color: NatureColors.textPrimary,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.8,
@@ -1156,21 +1148,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
-                      color: isLight ? Colors.white : const Color(0xFF222B32),
+                      color: NatureColors.surfaceElevated,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: isLight ? NatureColors.sandBorder : const Color(0xFF2E3842),
+                        color: NatureColors.border,
                         width: 0.85,
                       ),
-                      boxShadow: isLight
-                          ? const [
-                              BoxShadow(
-                                color: Color(0x06182228),
-                                blurRadius: 4,
-                                offset: Offset(0, 1),
-                              ),
-                            ]
-                          : null,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.20),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
                     child: const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 4),
@@ -1179,12 +1169,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.timer_outlined, size: 14, color: WhoopTheme.textPrimary),
+                            Icon(Icons.timer_outlined, size: 14, color: NatureColors.textPrimary),
                             SizedBox(width: 6),
                             Text(
                               'INIZIA ATTIVITÀ',
                               style: TextStyle(
-                                color: WhoopTheme.textPrimary,
+                                color: NatureColors.textPrimary,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.8,
@@ -1207,7 +1197,6 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Sezione Diario — naviga a JournalScreen
   Widget _buildJournalSection() {
     final viewModel = Provider.of<WhoopViewModel>(context);
-    final isLight = Theme.of(context).brightness == Brightness.light;
     final now = DateTime.now();
     final todayIso = now.toIso8601String().substring(0, 10);
 
@@ -1224,7 +1213,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const JournalScreen()),
+        MaterialPageRoute(
+          builder: (_) => JournalScreen(
+            targetDateIso: viewModel.selectedDate.toIso8601String().substring(0, 10),
+          ),
+        ),
       ),
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -1273,16 +1266,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: isCompleted
-                            ? (isLight ? NatureColors.sage : WhoopTheme.recoveryGreen)
+                            ? NatureColors.recovery
                             : (isToday
-                                ? (isLight ? NatureColors.creamLight : NatureColors.darkCard)
+                                ? NatureColors.surfaceElevated
                                 : Colors.transparent),
                         border: Border.all(
                           color: isCompleted
-                              ? (isLight ? NatureColors.sageDark : WhoopTheme.recoveryGreen)
+                              ? NatureColors.recoveryDark
                               : (isToday
-                                  ? WhoopTheme.textPrimary
-                                  : (isLight ? NatureColors.sandBorder : WhoopTheme.cardBorder)),
+                                  ? NatureColors.teal
+                                  : NatureColors.border),
                           width: isToday || isCompleted ? 1.5 : 1.0,
                         ),
                       ),
@@ -1297,7 +1290,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     height: 8,
                                     decoration: const BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: WhoopTheme.textPrimary,
+                                      color: NatureColors.tealLight,
                                     ),
                                   ),
                                 )
@@ -1313,25 +1306,30 @@ class _HomeScreenState extends State<HomeScreen> {
             OutlinedButton.icon(
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const JournalScreen()),
+                MaterialPageRoute(
+                  builder: (_) => JournalScreen(
+                    targetDateIso: viewModel.selectedDate.toIso8601String().substring(0, 10),
+                  ),
+                ),
               ),
-              icon: const Icon(Icons.lightbulb_outline, size: 16, color: WhoopTheme.textPrimary),
+              icon: const Icon(Icons.lightbulb_outline, size: 16, color: NatureColors.textPrimary),
               label: const Text(
                 'APPROFONDIMENTI SUL COMPORTAMENTO',
                 style: TextStyle(
-                  color: WhoopTheme.textPrimary,
+                  color: NatureColors.textPrimary,
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.5,
                 ),
               ),
               style: OutlinedButton.styleFrom(
-                side: BorderSide(
-                  color: isLight ? NatureColors.sandBorder : WhoopTheme.cardBorder,
+                backgroundColor: NatureColors.surfaceElevated,
+                side: const BorderSide(
+                  color: NatureColors.border,
                   width: 0.85,
                 ),
                 minimumSize: const Size(double.infinity, 44),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
             ),
           ],
@@ -1358,31 +1356,42 @@ class _HomeScreenState extends State<HomeScreen> {
     final profile = viewModel.userProfile;
     final bool isCalibrated = profile.baselineSampleCount >= 4;
 
+    final hrvBaseVal = viewModel.getPersonalBaseline('hrv')?.mean ?? (isCalibrated ? profile.hrvBaselineMean : null);
+    final rhrBaseVal = viewModel.getPersonalBaseline('rhr')?.mean ?? (isCalibrated ? profile.hrRestBaseline.toDouble() : null);
+    final respBaseVal = viewModel.getPersonalBaseline('respiratory_rate')?.mean ?? (isCalibrated ? 14.0 : null);
+    final spo2BaseVal = viewModel.getPersonalBaseline('spo2')?.mean ?? (isCalibrated ? 96.0 : null);
+    final tempBaseVal = viewModel.getPersonalBaseline('skin_temp')?.mean;
+    final sleepDurBaseVal = viewModel.getPersonalBaseline('sleep_duration')?.mean ?? (isCalibrated ? profile.sleepBaselineMin.toDouble() : null);
+    final sleepNeedBaseVal = viewModel.getPersonalBaseline('sleep_need')?.mean ?? sleepDurBaseVal;
+    final sleepEffBaseVal = viewModel.getPersonalBaseline('sleep_efficiency')?.mean;
+    final deepSleepBaseVal = viewModel.getPersonalBaseline('deep_sleep_duration')?.mean;
+    final remSleepBaseVal = viewModel.getPersonalBaseline('rem_sleep_duration')?.mean;
+
     final allMetrics = [
       {
         'key': 'vfc',
         'title': 'VARIABILITÀ DELLA FREQUENZA CARDIACA',
         'metricName': 'Variabilità FC (VFC)',
         'val': hasData && vfcMs > 0 ? '${vfcMs.toInt()}' : '--',
-        'base': isCalibrated ? '${profile.hrvBaselineMean.toInt()} ms' : 'In calibrazione',
-        'arrow': hasData && vfcMs > 0 && isCalibrated ? (vfcMs >= profile.hrvBaselineMean ? '▲' : '▼') : '•',
-        'color': hasData && vfcMs > 0 && isCalibrated ? (vfcMs >= profile.hrvBaselineMean ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
+        'base': hrvBaseVal != null ? '${hrvBaseVal.round()} ms' : 'In calibrazione',
+        'arrow': hasData && vfcMs > 0 && hrvBaseVal != null ? (vfcMs >= hrvBaseVal ? '▲' : '▼') : '•',
+        'color': hasData && vfcMs > 0 && hrvBaseVal != null ? (vfcMs >= hrvBaseVal ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
       },
       {
         'key': 'fcr',
         'title': 'FREQUENZA CARDIACA A RIPOSO',
         'metricName': 'FC a Riposo (FCR)',
         'val': hasData && fcrBpm > 0 ? '$fcrBpm' : '--',
-        'base': isCalibrated ? '${profile.hrRestBaseline} bpm' : 'In calibrazione',
-        'arrow': hasData && fcrBpm > 0 && isCalibrated ? (fcrBpm <= profile.hrRestBaseline ? '▼' : '▲') : '•',
-        'color': hasData && fcrBpm > 0 && isCalibrated ? (fcrBpm <= profile.hrRestBaseline ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
+        'base': rhrBaseVal != null ? '${rhrBaseVal.round()} bpm' : 'In calibrazione',
+        'arrow': hasData && fcrBpm > 0 && rhrBaseVal != null ? (fcrBpm <= rhrBaseVal ? '▼' : '▲') : '•',
+        'color': hasData && fcrBpm > 0 && rhrBaseVal != null ? (fcrBpm <= rhrBaseVal ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
       },
       {
         'key': 'steps',
         'title': 'PASSI GIORNALIERI',
         'metricName': 'Passi Giornalieri',
         'val': '--',
-        'base': 'Nessun pedometro hardware',
+        'base': 'Passi WHOOP non disponibili',
         'arrow': '•',
         'color': WhoopTheme.textSecondary,
       },
@@ -1427,7 +1436,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'title': 'FABBISOGNO DI SONNO',
         'metricName': 'Fabbisogno di Sonno',
         'val': hasData && sonnoRichiestoMin > 0 ? '${(sonnoRichiestoMin / 60).floor()}:${(sonnoRichiestoMin % 60).round().toString().padLeft(2, '0')}' : '--',
-        'base': isCalibrated ? '${(profile.sleepBaselineMin / 60).floor()}h ${(profile.sleepBaselineMin % 60)}m' : 'In calibrazione',
+        'base': sleepNeedBaseVal != null ? '${(sleepNeedBaseVal / 60).floor()}h ${(sleepNeedBaseVal % 60).round()}m' : 'In calibrazione',
         'arrow': '•',
         'color': WhoopTheme.textSecondary,
       },
@@ -1454,7 +1463,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'title': 'FREQUENZA RESPIRATORIA',
         'metricName': 'Frequenza Respiratoria',
         'val': hasData && frequenzaRespiratoriaRpm > 0 ? '${frequenzaRespiratoriaRpm.toStringAsFixed(1)} rpm' : '--',
-        'base': isCalibrated ? '14.0 rpm' : 'In calibrazione',
+        'base': respBaseVal != null ? '${respBaseVal.toStringAsFixed(1)} rpm' : 'In calibrazione',
         'arrow': '•',
         'color': WhoopTheme.textPrimary,
       },
@@ -1463,7 +1472,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'title': 'TEMPERATURA CUTANEA',
         'metricName': 'Temperatura Cutanea',
         'val': (hasData && ciclo?.tempCutaneaC != null) ? '${ciclo!.tempCutaneaC! >= 0 ? '+' : ''}${ciclo.tempCutaneaC!.toStringAsFixed(1)} °C' : '--',
-        'base': isCalibrated ? '0.0 °C' : 'In calibrazione',
+        'base': tempBaseVal != null ? '${tempBaseVal.toStringAsFixed(1)} °C' : (isCalibrated ? '0.0 °C' : 'In calibrazione'),
         'arrow': '•',
         'color': WhoopTheme.textPrimary,
       },
@@ -1472,7 +1481,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'title': 'OSSIGENO NEL SANGUE (SPO₂)',
         'metricName': 'Ossigeno nel Sangue (SpO₂)',
         'val': (hasData && ciclo?.spo2Pct != null && ciclo!.spo2Pct! > 0) ? '${ciclo.spo2Pct!.round()}%' : '--',
-        'base': isCalibrated ? '96%' : 'In calibrazione',
+        'base': spo2BaseVal != null ? '${spo2BaseVal.round()}%' : 'In calibrazione',
         'arrow': '•',
         'color': WhoopTheme.strainBlue,
       },
@@ -1481,7 +1490,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'title': 'SONNO PROFONDO (SWS)',
         'metricName': 'Sonno Profondo (SWS)',
         'val': hasData && sonnoProfondoMin > 0 ? '${(sonnoProfondoMin / 60).floor()}h ${(sonnoProfondoMin % 60).round()}m' : '--',
-        'base': 'Target 1h 30m',
+        'base': deepSleepBaseVal != null ? '${(deepSleepBaseVal / 60).floor()}h ${(deepSleepBaseVal % 60).round()}m' : 'Target 1h 30m',
         'arrow': '•',
         'color': WhoopTheme.strainBlue,
       },
@@ -1490,7 +1499,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'title': 'SONNO REM',
         'metricName': 'Sonno REM',
         'val': hasData && sonnoRemMin > 0 ? '${(sonnoRemMin / 60).floor()}h ${(sonnoRemMin % 60).round()}m' : '--',
-        'base': 'Target 2h 00m',
+        'base': remSleepBaseVal != null ? '${(remSleepBaseVal / 60).floor()}h ${(remSleepBaseVal % 60).round()}m' : 'Target 2h 00m',
         'arrow': '•',
         'color': WhoopTheme.strainBlue,
       },
@@ -1499,7 +1508,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'title': 'EFFICIENZA SONNO',
         'metricName': 'Efficienza del Sonno',
         'val': hasData && efficienzaSonnoPct > 0 ? '${efficienzaSonnoPct.toInt()}%' : '--',
-        'base': 'Target 90%',
+        'base': sleepEffBaseVal != null ? '${sleepEffBaseVal.round()}%' : 'Target 90%',
         'arrow': '•',
         'color': WhoopTheme.recoveryGreen,
       },

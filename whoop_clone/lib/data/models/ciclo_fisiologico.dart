@@ -19,6 +19,7 @@ class CicloFisiologico {
   final int? fcMediaBpmVal;
   final int? calorieTot;
   final double? valoreStressNotteVal;
+  final int? sonnoArretratoMinVal;
   final String provenance; // REAL, DERIVED, BOOTSTRAP, CACHED, MANUAL
 
   const CicloFisiologico({
@@ -35,13 +36,15 @@ class CicloFisiologico {
     int? fcMediaBpm,
     this.calorieTot,
     double? valoreStressNotte,
+    int? sonnoArretratoMin,
     this.provenance = 'REAL',
   })  : frequenzaRespiratoriaRpmVal = frequenzaRespiratoriaRpm,
         tempCutaneaCVal = tempCutaneaC,
         spo2PctVal = spo2Pct,
         fcMaxBpmVal = fcMaxBpm,
         fcMediaBpmVal = fcMediaBpm,
-        valoreStressNotteVal = valoreStressNotte;
+        valoreStressNotteVal = valoreStressNotte,
+        sonnoArretratoMinVal = sonnoArretratoMin;
 
   // Getters di compatibilità per la UI
   DateTime get oraInizioCiclo {
@@ -90,7 +93,7 @@ class CicloFisiologico {
   double? get durataRisveglioMin => null;
   double? get efficienzaSonnoPct => null;
   double? get regolaritaSonnoPct => null;
-  double? get sonnoArretratoMin => null;
+  double? get sonnoArretratoMin => sonnoArretratoMinVal?.toDouble();
 
   Map<String, dynamic> toMap() {
     return {
@@ -107,6 +110,7 @@ class CicloFisiologico {
       'fc_media_bpm': fcMediaBpmVal,
       'calorie_tot': calorieTot,
       'valore_stress_notte': valoreStressNotteVal,
+      if (sonnoArretratoMinVal != null) 'sonno_arretrato_min': sonnoArretratoMinVal,
       'provenance': provenance,
     };
   }
@@ -129,6 +133,7 @@ class CicloFisiologico {
       fcMediaBpm: (map['fc_media_bpm'] as num?)?.toInt(),
       calorieTot: (map['calorie_tot'] ?? map['energia_bruciata_cal'] as num?)?.toInt(),
       valoreStressNotte: (map['valore_stress_notte'] as num?)?.toDouble(),
+      sonnoArretratoMin: (map['sonno_arretrato_min'] ?? map['sleep_debt_min'] as num?)?.toInt(),
       provenance: map['provenance'] as String? ?? 'REAL',
     );
   }
@@ -147,6 +152,7 @@ class CicloFisiologico {
     int? fcMediaBpm,
     int? calorieTot,
     double? valoreStressNotte,
+    int? sonnoArretratoMin,
     String? provenance,
   }) {
     return CicloFisiologico(
@@ -163,6 +169,7 @@ class CicloFisiologico {
       fcMediaBpm: fcMediaBpm ?? this.fcMediaBpmVal,
       calorieTot: calorieTot ?? this.calorieTot,
       valoreStressNotte: valoreStressNotte ?? this.valoreStressNotteVal,
+      sonnoArretratoMin: sonnoArretratoMin ?? this.sonnoArretratoMinVal,
       provenance: provenance ?? this.provenance,
     );
   }

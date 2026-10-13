@@ -1,46 +1,46 @@
 import 'package:flutter/material.dart';
 import '../theme/nature_theme.dart';
 
-/// Natural Hex Color Palette & Design System Constants
-/// Serena, organica, data-driven.
+/// AppColors — Bridge per il Design System Globale "Deep Navy / Teal / Natural"
 class AppColors {
-  // Main Theme Backgrounds (Luminosa identità Bright Nature)
-  static const Color background = NatureColors.offWhite;
-  static const Color surface = Colors.white;
-  static const Color surfaceLight = NatureColors.creamLight;
-  static const Color cardBorder = NatureColors.sandBorder;
+  // Main Theme Backgrounds
+  static const Color background = NatureColors.background;
+  static const Color backgroundSecondary = NatureColors.secondaryBackground;
+  static const Color surface = NatureColors.surface;
+  static const Color surfaceLight = NatureColors.elevatedSurface;
+  static const Color cardBorder = NatureColors.border;
 
-  // Varianti Dark di riserva
-  static const Color backgroundDark = NatureColors.darkCanvas;
-  static const Color surfaceDark = NatureColors.darkSurface;
-  static const Color cardBorderDark = NatureColors.darkBorder;
+  // Varianti Dark
+  static const Color backgroundDark = NatureColors.background;
+  static const Color surfaceDark = NatureColors.surface;
+  static const Color cardBorderDark = NatureColors.border;
 
-  // Accento Primario Sereno (Powder Blue & Alpine Mist)
-  static const Color brandBlue = NatureColors.powderBlue;
-  static const Color brandBlueLight = NatureColors.mist;
-  static const Color strainBlue = NatureColors.powderBlue;
-  static const Color sleepSlate = NatureColors.teal;
+  // Accento Primario Sereno
+  static const Color brandBlue = NatureColors.teal;
+  static const Color brandBlueLight = NatureColors.tealLight;
+  static const Color strainBlue = NatureColors.teal;
+  static const Color sleepSlate = NatureColors.sleep;
 
-  // Core Metric Colors (Tonalità Naturali Morbide, Zero Neon)
-  static const Color recoveryGreen = NatureColors.sage;
+  // Core Metric Colors
+  static const Color recoveryGreen = NatureColors.recovery;
   static const Color recoveryYellow = NatureColors.amberWarm;
-  static const Color recoveryRed = NatureColors.terracotta;
-  static const Color strainHigh = NatureColors.terracotta;
+  static const Color recoveryRed = NatureColors.strain;
+  static const Color strainHigh = NatureColors.strain;
 
-  // Sleep & Fasi Sonno (Teal Sereno, Pino Notturno & Heather)
+  // Sleep & Fasi Sonno
   static const Color sleepPurple = NatureColors.lavender;
-  static const Color lightSleep = NatureColors.tealLight;
-  static const Color remSleep = NatureColors.mist;
+  static const Color lightSleep = NatureColors.sleepLight;
+  static const Color remSleep = NatureColors.mistLight;
 
   // Stress Monitor (Scala Fluida Salvia / Ambra / Terracotta)
-  static const Color stressLow = NatureColors.sage;
+  static const Color stressLow = NatureColors.recovery;
   static const Color stressMedium = NatureColors.amberWarm;
-  static const Color stressHigh = NatureColors.terracotta;
+  static const Color stressHigh = NatureColors.strain;
 
-  // Text Colors (Gerarchia di contrasto pulita e leggibile)
-  static const Color textPrimary = NatureColors.textLightPrimary;
-  static const Color textSecondary = NatureColors.textLightSecondary;
-  static const Color textMuted = NatureColors.textLightMuted;
+  // Text Colors
+  static const Color textPrimary = NatureColors.textPrimary;
+  static const Color textSecondary = NatureColors.textSecondary;
+  static const Color textMuted = NatureColors.textMuted;
 
   static Color getRecoveryColor(double recoveryPct) {
     return NatureColors.getRecoveryColor(recoveryPct);

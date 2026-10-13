@@ -4,6 +4,7 @@ import '../models/ciclo_fisiologico.dart';
 import '../models/allenamento.dart';
 import '../models/voce_diario.dart';
 import '../models/sonno.dart';
+import '../models/personal_baseline.dart';
 import 'whoop_repository.dart';
 import 'user_repository.dart';
 import 'physiology_repository.dart';
@@ -122,27 +123,46 @@ class SqliteWhoopRepository implements WhoopRepository {
     await sleepRepository.insertOrUpdateSleep(sonno);
   }
 
+  // --- Baseline Personali ---
+
+  @override
+  Future<List<PersonalBaseline>> getPersonalBaselines() async {
+    return await userRepository.getPersonalBaselines();
+  }
+
+  @override
+  Future<PersonalBaseline?> getPersonalBaseline(String metricKey) async {
+    return await userRepository.getPersonalBaseline(metricKey);
+  }
+
+  @override
+  Future<void> savePersonalBaselines(List<PersonalBaseline> baselines) async {
+    await userRepository.savePersonalBaselines(baselines);
+  }
+
   Future<int> getStreakDays() async {
     final cicli = await getCicliFisiologici();
     return calculateStreakDays(cicli);
   }
 
-  /// Calcola i giorni di striscia (streak) consecutivi attivi terminanti oggi o ieri
+  /// Verifica se un ciclo fisiologico storico rappresenta un giorno con dati validi (DAY COMPLETED)
+  static bool isDayCompleted(CicloFisiologico c) {
+    // Un giorno completato ha dati fisiologici autentici registrati:
+    // recovery notturno calcolato (oppure sia HRV che RHR misurati), oppure attività diurna registrata
+    final bool hasValidNight = c.recoveryScore != null || (c.hrvNotte != null && c.rhrNotte != null);
+    final bool hasValidDay = (c.strainGiornaliero != null && c.strainGiornaliero! >= 4.0) ||
+        (c.calorieTot != null && c.calorieTot! > 500);
+    return hasValidNight || hasValidDay;
+  }
+
+  /// Verifica se il giorno corrente (in corso) è attivamente tracciato
+  static bool isTodayActive(CicloFisiologico c) {
+    return c.recoveryScore != null || (c.hrvNotte != null && c.rhrNotte != null) || (c.strainGiornaliero != null && c.strainGiornaliero! >= 4.0);
+  }
+
+  /// Calcola i giorni di striscia (streak) consecutivi basandosi sullo stato DAY COMPLETED
   static int calculateStreakDays(List<CicloFisiologico> cicli) {
     if (cicli.isEmpty) return 0;
-
-    final Set<String> activeDates = {};
-    for (final c in cicli) {
-      final hasData = (c.strainGiornaliero != null && c.strainGiornaliero! > 0) ||
-          c.recoveryScore != null ||
-          c.hrvNotte != null ||
-          c.rhrNotte != null;
-      if (hasData) {
-        activeDates.add(c.dataIso);
-      }
-    }
-
-    if (activeDates.isEmpty) return 0;
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -154,17 +174,34 @@ class SqliteWhoopRepository implements WhoopRepository {
     final todayStr = formatIso(today);
     final yesterdayStr = formatIso(yesterday);
 
+    final Map<String, CicloFisiologico> cycleByDate = {
+      for (final c in cicli) c.dataIso: c,
+    };
+
     DateTime checkDate;
-    if (activeDates.contains(todayStr)) {
+    final todayCycle = cycleByDate[todayStr];
+    final yesterdayCycle = cycleByDate[yesterdayStr];
+
+    if (todayCycle != null && isTodayActive(todayCycle)) {
       checkDate = today;
-    } else if (activeDates.contains(yesterdayStr)) {
+    } else if (yesterdayCycle != null && isDayCompleted(yesterdayCycle)) {
       checkDate = yesterday;
     } else {
       return 0;
     }
 
     int streak = 0;
-    while (activeDates.contains(formatIso(checkDate))) {
+    while (true) {
+      final dateStr = formatIso(checkDate);
+      final cycle = cycleByDate[dateStr];
+      if (cycle == null) break;
+
+      if (dateStr == todayStr) {
+        if (!isTodayActive(cycle)) break;
+      } else {
+        if (!isDayCompleted(cycle)) break;
+      }
+
       streak++;
       checkDate = checkDate.subtract(const Duration(days: 1));
     }
@@ -191,7 +228,7 @@ class SqliteWhoopRepository implements WhoopRepository {
       if (c.spo2Pct != null && c.spo2Pct! >= 80.0 && c.spo2Pct! <= 100.0) {
         vitals['spo2']!.add(c.spo2Pct!);
       }
-      if (c.tempCutaneaC != null && c.tempCutaneaC!.abs() <= 3.0) {
+      if (c.tempCutaneaC != null && (c.tempCutaneaC!.abs() <= 3.0 || (c.tempCutaneaC! >= 25.0 && c.tempCutaneaC! <= 45.0))) {
         vitals['temp']!.add(c.tempCutaneaC!);
       }
     }

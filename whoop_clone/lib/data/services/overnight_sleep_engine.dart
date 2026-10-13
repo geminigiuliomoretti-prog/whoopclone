@@ -150,14 +150,17 @@ SleepStage classifyEpoch({
     return SleepStage.wake;
   }
 
-  // 2. REGOLA SONNO PROFONDO (SWS):
-  // Assenza di moto (enmo < 0.008), frequenza ai minimi (hrRatio <= 1.05 con RSA o <= 0.98 senza RSA),
-  // e respirazione regolare. Nota: in adulti sani, SWS si concentra nella prima metà/due terzi della notte.
+  // 2. REGOLA SONNO PROFONDO (SWS / N3):
+  // Assenza di moto (enmo < 0.006g), frequenza cardiaca al nadir (hrRatio <= 0.98 con RSA regolare o <= 0.90 senza RSA),
+  // e respirazione altamente stabile. SWS fisiologico si concentra nei primi cicli (prima del 70% della notte con RSA,
+  // prima del 45% senza RSA per evitare sovrastima sistematica di sonno leggero N2).
   final bool hasExplicitRsa = respVar <= 0.151 && respVar > 0.0;
-  final bool isDeepCandidate = enmo < 0.008 &&
-      ((hasExplicitRsa && hrRatio <= 1.05) || (enmo < 0.006 && hrRatio <= 0.98));
+  final bool isDeepCandidate = hasExplicitRsa
+      ? (enmo < 0.006 && hrRatio <= 0.98)
+      : (enmo < 0.005 && hrRatio <= 0.95);
 
-  if (isDeepCandidate && (epochIndex < (totalEpochs * 0.70) || (hasExplicitRsa && respVar <= 0.08))) {
+  final double maxDeepProgress = hasExplicitRsa ? 0.70 : 0.45;
+  if (isDeepCandidate && (epochIndex < (totalEpochs * maxDeepProgress) || (hasExplicitRsa && respVar <= 0.08))) {
     return SleepStage.deepSws;
   }
 
@@ -169,7 +172,7 @@ SleepStage classifyEpoch({
     return SleepStage.rem;
   }
 
-  // 4. STATO BASE: Sonno Leggero (Light Sleep)
+  // 4. STATO BASE: Sonno Leggero (Light Sleep / N1-N2)
   return SleepStage.light;
 }
 
@@ -600,39 +603,64 @@ class OvernightSleepEngine {
     int startIndex = -1;
     int endIndex = -1;
 
-    const int startSustainSamples = 10;
-    const int endSustainSamples = 8;
+    // Regole di rilevamento addormentamento ed estrazione confini del sonno:
+    // Non avviare il sonno all'inizio della sessione o per semplice immobilità serale sul divano.
+    // Richiede una finestra mobile sostenuta di almeno 10 minuti di quiete motoria (ENMO ridotto)
+    // combinata con un andamento cardiaco coerente (decadimento verso o sotto la baseline a riposo).
+    // Usa isteresi per separare addormentamento e risveglio finale.
+    const int minOnsetEpochs = 20; // 20 campioni/epoche (10 minuti se 30s)
+    const int wakeConfirmEpochs = 16; // 8 minuti di attività motoria sostenuta per confermare risveglio
 
-    for (int i = 0; i < records.length - startSustainSamples; i++) {
-      bool isQuietWindow = true;
-      for (int j = 0; j < startSustainSamples; j++) {
+    // Soglia cardiaca di sonno adattata: sul divano la FC serale è tipicamente daytimeMeanHr (65-75 bpm).
+    // Il sonno reale richiede che la FC scenda stabilmente vicino alla baseline di riposo (rhrBaseline + margine ristretto).
+    final double sleepHrCeiling = math.min(daytimeMeanHr * 0.85, rhrBaseline + 10.0);
+
+    for (int i = 0; i <= records.length - minOnsetEpochs; i++) {
+      bool isConsistentSleepOnset = true;
+      int quietMotionCount = 0;
+      int lowHrCount = 0;
+
+      for (int j = 0; j < minOnsetEpochs; j++) {
         final r = records[i + j];
-        final motion = (r['motion_var'] ?? r['motion'] ?? r['enmo'] ?? 0.050).toDouble();
+        final motion = (r['motion_var'] ?? r['motion'] ?? r['enmo'] ?? r['accel_enmo'] ?? 0.050).toDouble();
         final hr = (r['hr'] ?? r['bpm'] ?? 100.0).toDouble();
-        if (motion > 0.015 || hr > (daytimeMeanHr * 0.90)) {
-          isQuietWindow = false;
+
+        if (motion <= 0.012) quietMotionCount++;
+        if (hr <= sleepHrCeiling) lowHrCount++;
+
+        // Se c'è un picco di movimento evidente o FC di veglia attiva, l'inizio non è valido
+        if (motion > 0.025 || hr > (daytimeMeanHr * 0.95)) {
+          isConsistentSleepOnset = false;
           break;
         }
       }
-      if (isQuietWindow) {
+
+      // Richiede che almeno il 90% della finestra soddisfi sia la quiete motoria che la FC basale
+      if (isConsistentSleepOnset && quietMotionCount >= (minOnsetEpochs * 0.9) && lowHrCount >= (minOnsetEpochs * 0.85)) {
         startIndex = i;
         break;
       }
     }
 
     if (startIndex != -1) {
-      for (int i = startIndex + startSustainSamples; i < records.length - endSustainSamples; i++) {
-        bool isWakeWindow = true;
-        for (int j = 0; j < endSustainSamples; j++) {
+      for (int i = startIndex + minOnsetEpochs; i <= records.length - wakeConfirmEpochs; i++) {
+        bool isSustainedWake = true;
+        int activeMotionCount = 0;
+
+        for (int j = 0; j < wakeConfirmEpochs; j++) {
           final r = records[i + j];
-          final motion = (r['motion_var'] ?? r['motion'] ?? r['enmo'] ?? 0.0).toDouble();
+          final motion = (r['motion_var'] ?? r['motion'] ?? r['enmo'] ?? r['accel_enmo'] ?? 0.0).toDouble();
           final hr = (r['hr'] ?? r['bpm'] ?? 0.0).toDouble();
-          if (motion < 0.080 && hr < (rhrBaseline + 20.0)) {
-            isWakeWindow = false;
+
+          if (motion >= 0.040 || hr >= (rhrBaseline + 18.0)) {
+            activeMotionCount++;
+          } else {
+            isSustainedWake = false;
             break;
           }
         }
-        if (isWakeWindow) {
+
+        if (isSustainedWake && activeMotionCount >= (wakeConfirmEpochs * 0.75)) {
           endIndex = i;
           break;
         }
@@ -676,15 +704,21 @@ class OvernightSleepEngine {
         if (dbPoints.isNotEmpty) {
           processedRecords = dbPoints.map((p) {
             final bpm = (p['bpm'] as num).toDouble();
-            final rr = p['rr_ms'] != null ? (p['rr_ms'] as num).toDouble() : null;
-            final motion = (p['motion_var'] as num?)?.toDouble() ?? 0.002;
+            final rawRr = p['rr_ms'] != null ? (p['rr_ms'] as num).toDouble() : null;
+            final rr = (rawRr != null && rawRr >= 300.0 && rawRr <= 2000.0) ? rawRr : null;
+            final rmssd = (p['rmssd_ms'] as num?)?.toDouble() ??
+                (p['rmssd'] as num?)?.toDouble() ??
+                ((rawRr != null && rawRr > 0.0 && rawRr <= 250.0) ? rawRr : null);
+            final motion = (p['motion_var'] as num?)?.toDouble() ?? 0.0;
             return {
               'timestamp': p['timestamp'],
               'timestamp_utc_ms': p['timestamp_utc_ms'],
               'hr': bpm,
               'bpm': bpm,
-              'rmssd': rr,
+              'rmssd': rmssd,
+              'rmssd_ms': rmssd,
               'rr_ms': rr,
+              'rr_intervals_json': p['rr_intervals_json'],
               'motion_var': motion,
               'accel_enmo': p['accel_enmo'] ?? motion,
               'resp_power': (p['resp_power'] as num?)?.toDouble(),
@@ -707,7 +741,9 @@ class OvernightSleepEngine {
     if (processedRecords.isEmpty) {
       if (windowStart != null && windowEnd != null) {
         final double totalManualSleepMin = (windowEnd.difference(windowStart).inSeconds / 60.0).clamp(0.0, 1440.0);
-        final double sleepPerfPct = ((totalManualSleepMin / sleepNeedMin) * 100.0).clamp(0.0, 100.0);
+        final double? sleepPerfPct = sleepNeedMin > 0
+            ? ((totalManualSleepMin / sleepNeedMin) * 100.0).clamp(0.0, 100.0)
+            : null;
         final String dateIso = targetDateIso ?? windowEnd.toIso8601String().substring(0, 10);
 
         await _persistOvernightResults(
@@ -729,7 +765,7 @@ class OvernightSleepEngine {
           isManual: true,
         );
 
-        debugPrint('[OvernightSleepEngine] Salvata sessione manuale ($dateIso): ${totalManualSleepMin.toInt()} min, Perf: ${sleepPerfPct.toInt()}%, Vitali: --');
+        debugPrint('[OvernightSleepEngine] Salvata sessione manuale ($dateIso): ${totalManualSleepMin.toInt()} min, Perf: ${sleepPerfPct != null ? '${sleepPerfPct.toInt()}%' : '--'}, Vitali: --');
 
         return {
           'has_data': true,
@@ -916,6 +952,14 @@ class OvernightSleepEngine {
             .toIso8601String()
             .substring(0, 10);
 
+    DateTime? actualSleepOnset;
+    DateTime? actualWakeTime;
+    final sleepEpochs = epochs30s.where((e) => e.stage == 'LIGHT' || e.stage == 'SWS' || e.stage == 'REM').toList();
+    if (sleepEpochs.isNotEmpty) {
+      actualSleepOnset = sleepEpochs.first.timestamp;
+      actualWakeTime = sleepEpochs.last.timestamp.add(const Duration(seconds: 30));
+    }
+
     if (totalSleepMin > 0) {
       await _persistOvernightResults(
         dateIso: dateIso,
@@ -935,6 +979,8 @@ class OvernightSleepEngine {
         nightlyStressPoints: nightlyStressPoints,
         windowStart: effectiveWindowStart ?? (epochs30s.isNotEmpty ? epochs30s.first.timestamp : null),
         windowEnd: effectiveWindowEnd ?? (epochs30s.isNotEmpty ? epochs30s.last.timestamp : null),
+        actualSleepOnset: actualSleepOnset,
+        actualWakeTime: actualWakeTime,
         epochs: epochs30s,
       );
     }
@@ -999,10 +1045,27 @@ class OvernightSleepEngine {
         final respPower = (r['resp_power'] as num?)?.toDouble() ?? 0.0;
         final respRate = (r['resp_rate'] as num?)?.toDouble() ?? 0.0;
         final rmssdVar = (r['rmssd_var'] as num?)?.toDouble() ?? 0.0;
-        final hrFluc = (r['hr_fluc'] as num?)?.toInt() ?? 0;
-        final List<double> pp = r['pp_intervals'] != null
-            ? List<double>.from(r['pp_intervals'])
-            : (r['rr_ms'] != null ? [(r['rr_ms'] as num).toDouble() / 1000.0] : []);
+        final hrFluc = (r['hr_fluctuations'] as num?)?.toInt() ?? 0;
+        List<double> pp = [];
+        if (r['pp_intervals'] != null) {
+          pp = List<double>.from(r['pp_intervals']);
+        } else if (r['rr_intervals_json'] != null) {
+          try {
+            final decoded = jsonDecode(r['rr_intervals_json'].toString());
+            if (decoded is List) {
+              pp = decoded
+                  .map((e) => (e as num).toDouble())
+                  .where((e) => e >= 300.0 && e <= 2000.0)
+                  .map((e) => e / 1000.0)
+                  .toList();
+            }
+          } catch (_) {}
+        } else if (r['rr_ms'] != null) {
+          final val = (r['rr_ms'] as num).toDouble();
+          if (val >= 300.0 && val <= 2000.0) {
+            pp = [val / 1000.0];
+          }
+        }
 
         list.add(Epoch30s(
           index: i,
@@ -1081,8 +1144,7 @@ class OvernightSleepEngine {
 
           final rmssdVal = (r['rmssd_ms'] as num?)?.toDouble() ??
               (r['rmssd'] as num?)?.toDouble() ??
-              (r['hrv_ms'] as num?)?.toDouble() ??
-              ((r['rr_ms'] as num?) != null && (r['rr_ms'] as num) < 250.0 ? (r['rr_ms'] as num).toDouble() : null);
+              (r['hrv_ms'] as num?)?.toDouble();
           if (rmssdVal != null && rmssdVal > 0) {
             rmssdSum += rmssdVal;
             rmssdCount++;
@@ -1308,6 +1370,13 @@ class OvernightSleepEngine {
     // Calcolo VFC (rMSSD) esatto per epoca nel blocco SWS con filtraggio fisiologico ed ectopico
     final List<double> epochRmssdList = [];
 
+    // Tracciamento: se abbiamo calcolato l'RMSSD sommando differenze al quadrato da intervalli R-R reali
+    // (ppIntervals), il pooling quadratico è matematicamente corretto.
+    // Se invece le epoche contengono già RMSSD pre-calcolato dal sensore/firmware (WHOOP 96-byte),
+    // la media corretta della finestra SWS è la media lineare (aritmetica) dei valori validi,
+    // altrimenti la RMS (Root Mean Square) di valori già aggregati produce un bias verso l'alto (sovrastima da 66ms a 72ms).
+    bool usedDiscretePp = false;
+
     for (final ep in evalSws) {
       if (ep.motionVar > 0.025) {
         // Scarta epoche con rumore accelerometrico elevato
@@ -1339,6 +1408,7 @@ class OvernightSleepEngine {
             final epochVal = math.sqrt(sumSq / count);
             if (epochVal >= 10.0 && epochVal <= 250.0) {
               epochRmssdList.add(epochVal);
+              usedDiscretePp = true;
             }
           }
         }
@@ -1348,10 +1418,15 @@ class OvernightSleepEngine {
     }
 
     double? computedRmssd;
-    // Jensen's inequality correction (HRV-01):
-    // Calcola la media quadratica (Root Mean Square) degli RMSSD delle epoche
     if (epochRmssdList.isNotEmpty) {
-      computedRmssd = calculateSwsPooledRmssd(epochRmssdList);
+      if (usedDiscretePp) {
+        computedRmssd = calculateSwsPooledRmssd(epochRmssdList);
+      } else {
+        // Media lineare autentica per valori RMSSD già pre-calcolati dal firmware WHOOP:
+        // Evita l'inflazione derivante dal ri-applicare una radice quadrata di quadrati a valori già aggregati.
+        final sumVal = epochRmssdList.reduce((a, b) => a + b);
+        computedRmssd = sumVal / epochRmssdList.length;
+      }
     }
 
     return {
@@ -1614,11 +1689,27 @@ class OvernightSleepEngine {
 
     // 3. Estrazione RSA su finestre mobili di intervalli R-R se disponibili nei record grezzi scaricati
     if (calculatedRpmList.isEmpty) {
-      final validRrs = records
-          .map((r) => (r['rr_ms'] as num?)?.toDouble())
-          .where((rr) => rr != null && rr >= 300.0 && rr <= 1500.0)
-          .map((rr) => rr!)
-          .toList();
+      final validRrs = <double>[];
+      for (final r in records) {
+        if (r['rr_intervals_json'] != null) {
+          try {
+            final decoded = jsonDecode(r['rr_intervals_json'].toString());
+            if (decoded is List) {
+              for (final val in decoded) {
+                final d = (val as num).toDouble();
+                if (d >= 300.0 && d <= 1500.0) {
+                  validRrs.add(d);
+                }
+              }
+            }
+          } catch (_) {}
+        } else if (r['rr_ms'] != null) {
+          final d = (r['rr_ms'] as num).toDouble();
+          if (d >= 300.0 && d <= 1500.0) {
+            validRrs.add(d);
+          }
+        }
+      }
 
       if (validRrs.length >= 25) {
         const windowSize = 35;
@@ -1633,19 +1724,39 @@ class OvernightSleepEngine {
       }
     }
 
-    // 4. Fallback su oscillazione della frequenza cardiaca (BPM) con trasformata spettrale
+    // 4. Fallback su oscillazione della frequenza cardiaca (BPM) a 1 Hz con trasformata spettrale
     if (calculatedRpmList.isEmpty) {
       final bpms = records
           .map((r) => (r['hr'] ?? r['bpm']) as num?)
-          .where((b) => b != null && b > 30)
+          .where((b) => b != null && b > 30 && b < 200)
           .map((b) => b!.toDouble())
           .toList();
 
-      if (bpms.length >= 45) {
-        final intervalsFromBpm = bpms.map((b) => 60.0 / b).toList();
-        final rsaRpm = _estimateRsaPeakFromIntervalsSec(intervalsFromBpm);
-        if (rsaRpm != null) {
-          calculatedRpmList.add(rsaRpm);
+      if (bpms.length >= 60) {
+        final meanBpm = bpms.reduce((a, b) => a + b) / bpms.length;
+        final centered = bpms.map((b) => b - meanBpm).toList();
+        final n = centered.length;
+        double maxPower = 0.0;
+        double bestFreq = 0.0;
+        for (double f = 0.15; f <= 0.40; f += 0.005) {
+          double realSum = 0.0;
+          double imagSum = 0.0;
+          for (int t = 0; t < n; t++) {
+            final angle = 2.0 * math.pi * f * t; // 1 Hz sampling rate
+            realSum += centered[t] * math.cos(angle);
+            imagSum -= centered[t] * math.sin(angle);
+          }
+          final power = (realSum * realSum + imagSum * imagSum) / n;
+          if (power > maxPower) {
+            maxPower = power;
+            bestFreq = f;
+          }
+        }
+        if (bestFreq > 0.0 && maxPower > 0.01) {
+          final rpm = bestFreq * 60.0;
+          if (rpm >= 8.0 && rpm <= 24.0) {
+            calculatedRpmList.add(rpm);
+          }
         }
       }
     }
@@ -1791,6 +1902,8 @@ class OvernightSleepEngine {
     List<Map<String, dynamic>> nightlyStressPoints = const [],
     DateTime? windowStart,
     DateTime? windowEnd,
+    DateTime? actualSleepOnset,
+    DateTime? actualWakeTime,
     List<Epoch30s> epochs = const [],
     bool isManual = false,
   }) async {
@@ -1811,6 +1924,7 @@ class OvernightSleepEngine {
             'strain_giornaliero': existingMap['strain_giornaliero'],
             'recovery_score': recoveryScore ?? existingMap['recovery_score'],
             'sleep_need_min': existingMap['sleep_need_min'],
+            'sonno_arretrato_min': existingMap['sonno_arretrato_min'],
             'hrv_notte': hrvRmssd ?? existingMap['hrv_notte'],
             'rhr_notte': rhrBpm ?? existingMap['rhr_notte'],
             'frequenza_respiratoria_rpm': respRate ?? existingMap['frequenza_respiratoria_rpm'],
@@ -1825,11 +1939,23 @@ class OvernightSleepEngine {
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
 
-        // 2. Persistenza punti campionati di Stress Notturno su misurazioni_stress
-        final now = DateTime.now();
-        final sleepStart = windowStart ?? now.subtract(Duration(minutes: totalSleepMin + wasoMin));
-        final sleepEnd = windowEnd ?? now;
+        // 2. Determina l'inizio e la fine effettivi del sonno
+        DateTime? detectedOnset = actualSleepOnset;
+        DateTime? detectedWake = actualWakeTime;
 
+        if (detectedOnset == null && epochs.isNotEmpty) {
+          final sleepEpochs = epochs.where((e) => e.stage == 'LIGHT' || e.stage == 'SWS' || e.stage == 'REM').toList();
+          if (sleepEpochs.isNotEmpty) {
+            detectedOnset = sleepEpochs.first.timestamp;
+            detectedWake = sleepEpochs.last.timestamp.add(const Duration(seconds: 30));
+          }
+        }
+
+        final now = DateTime.now();
+        final sleepStart = detectedOnset ?? windowStart ?? now.subtract(Duration(minutes: totalSleepMin + wasoMin));
+        final sleepEnd = detectedWake ?? windowEnd ?? now;
+
+        // Persistenza punti campionati di Stress Notturno su misurazioni_stress
         if (nightlyStressPoints.isNotEmpty) {
           await txn.delete(
             DatabaseHelper.tableMisurazioniStress,
@@ -1853,10 +1979,55 @@ class OvernightSleepEngine {
         // 3. Upsert Sonno e pulizia vecchi segmenti ipnogramma per questa data
         final existingSonnoRows = await txn.query(
           DatabaseHelper.tableSonno,
-          columns: ['id'],
           where: 'data_iso = ?',
           whereArgs: [dateIso],
         );
+        final existingSonno = existingSonnoRows.isNotEmpty ? existingSonnoRows.first : null;
+
+        // PROTEZIONE STORICO: Non sovrascrivere mai dati autentici WHOOP_IMPORT o sessioni valide con sessioni vuote o parziali
+        if (existingSonno != null) {
+          final existingProv = existingSonno['provenance'] as String?;
+          final existingDur = (existingSonno['durata_tot_min'] as num?)?.toInt() ?? 0;
+          if ((existingProv == 'WHOOP_IMPORT' || existingProv == 'WHOOP_NAP') && !isManual) {
+            debugPrint('[OvernightSleepEngine] Preservata sessione WHOOP_IMPORT per $dateIso: nessuna sovrascrittura automatica.');
+            return;
+          }
+          if (existingDur > 0 && totalSleepMin <= 0 && !isManual) {
+            debugPrint('[OvernightSleepEngine] Preservata sessione valida ($existingDur min) per $dateIso: rifiutata sovrascrittura con 0 min.');
+            return;
+          }
+          // Se la nuova elaborazione parziale ha meno del 50% della durata già registrata e valida, preserva la precedente
+          if (existingDur > 120 && totalSleepMin < (existingDur * 0.50) && !isManual) {
+            debugPrint('[OvernightSleepEngine] Preservata sessione precedente ($existingDur min) per $dateIso: rifiutata sovrascrittura da dati parziali ($totalSleepMin min).');
+            return;
+          }
+        }
+
+        final double? regolarita = existingSonno != null ? (existingSonno['regolarita_sonno_pct'] as num?)?.toDouble() : null;
+        final int? sleepNeed = existingSonno != null ? (existingSonno['sleep_need_min'] as num?)?.toInt() : null;
+        final int? sleepDebt = existingSonno != null ? (existingSonno['sleep_debt_min'] as num?)?.toInt() : null;
+
+        // Efficienza del sonno: tempo effettivamente dormito / tempo totale a letto * 100.
+        // Se l'intervallo a letto è determinabile, usa la differenza tra sleepStart e sleepEnd;
+        // altrimenti usa (totalSleepMin + wasoMin), escludendo i gap di dati mancanti.
+        final int inBedMinutes = sleepEnd.difference(sleepStart).inMinutes;
+        final double effDenominator = inBedMinutes > 0
+            ? inBedMinutes.toDouble()
+            : (totalSleepMin + wasoMin > 0 ? (totalSleepMin + wasoMin).toDouble() : 0.0);
+        final double? effPct = (isManual || effDenominator <= 0 || totalSleepMin <= 0)
+            ? null
+            : (((totalSleepMin / effDenominator) * 100).clamp(0.0, 100.0));
+
+        // Non forzare mai fallback a 480.0! Usa il valore passato o calcola rispetto al fabbisogno se disponibile, altrimenti null
+        final double? perfPct = sleepPerformancePct ??
+            ((sleepNeed != null && sleepNeed > 0 && totalSleepMin > 0)
+                ? WhoopAnalyticsEngine.calculateSleepPerformancePct(
+                    actualDurationMin: totalSleepMin.toDouble(),
+                    sleepNeedMin: sleepNeed.toDouble(),
+                  )
+                : null);
+
+        // Pulizia atomica dei vecchi segmenti ed eliminazione della sessione precedente all'interno della stessa transazione
         for (final oldRow in existingSonnoRows) {
           final oldId = oldRow['id'] as int?;
           if (oldId != null) {
@@ -1868,11 +2039,6 @@ class OvernightSleepEngine {
           }
         }
 
-        final denominator = totalSleepMin + wasoMin > 0 ? totalSleepMin + wasoMin : 1;
-        final double? effPct = isManual ? null : (((totalSleepMin / denominator) * 100).clamp(0.0, 100.0));
-        final perfPct = sleepPerformancePct ?? (((totalSleepMin / 480.0) * 100).clamp(0.0, 100.0));
-
-        // Cancella qualsiasi sessione sonno preesistente per questa data prima di inserire quella nuova/ricalcolata
         await txn.delete(
           DatabaseHelper.tableSonno,
           where: 'data_iso = ?',
@@ -1890,7 +2056,10 @@ class OvernightSleepEngine {
             'sonno_rem_min': isManual ? 0 : remMin,
             'efficienza_pct': effPct,
             'sleep_performance_pct': perfPct,
-            'provenance': isManual ? 'USER_ENTERED' : 'REAL',
+            'regolarita_sonno_pct': regolarita,
+            'sleep_need_min': sleepNeed,
+            'sleep_debt_min': sleepDebt,
+            'provenance': isManual ? 'USER_ENTERED' : (existingSonno?['provenance'] ?? 'REAL'),
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
         );

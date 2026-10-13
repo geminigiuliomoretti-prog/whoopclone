@@ -7,8 +7,8 @@ import 'screens/more_menu_screen.dart';
 import 'screens/coach_screen.dart';
 import 'widgets/nature/coach_emblem.dart';
 
-/// Navigation Screen Principale WHOOP 5.0
-/// Floating Frosted Glass Capsule Bar: Home | Salute | Altro | Coach AI
+/// Navigation Screen Principale — Floating Frosted Capsule Bar
+/// Destinazioni: Home (0) | Salute (1) | Altro (2) | Coach AI (3)
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
@@ -23,15 +23,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     HomeScreen(),        // 0 — Dashboard Principale
     HealthScreen(),      // 1 — Monitoraggio Salute & Parametri Vitali
     MoreMenuScreen(),    // 2 — Hub Menu Completo
-    CoachScreen(),       // 3 — Coach AI (Pulsante Orb)
+    CoachScreen(),       // 3 — Coach AI Guida
   ];
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
-      backgroundColor: isDark ? NatureColors.darkCanvas : NatureColors.offWhite,
+      backgroundColor: NatureColors.background,
+      extendBody: true, // Permette alla barra floating di sovrapporsi con sfocatura
 
       // IndexedStack preserva lo stato di tutte le schermate
       body: IndexedStack(
@@ -39,33 +38,29 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         children: _screens,
       ),
 
-      // Floating Frosted Glass Navigation Bar (Bright Nature Capsule)
+      // Floating Frosted Glass Capsule Navigation Bar
       bottomNavigationBar: SafeArea(
         child: Container(
-          height: 68,
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          height: 66,
+          margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(36),
+            borderRadius: BorderRadius.circular(34),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 18.0, sigmaY: 18.0),
+              filter: ImageFilter.blur(sigmaX: 20.0, sigmaY: 20.0),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: isDark
-                      ? NatureColors.darkSurface.withValues(alpha: 0.88)
-                      : Colors.white.withValues(alpha: 0.94),
-                  borderRadius: BorderRadius.circular(36),
+                  color: NatureColors.surfaceTranslucent,
+                  borderRadius: BorderRadius.circular(34),
                   border: Border.all(
-                    color: isDark ? NatureColors.darkBorderSubtle : NatureColors.sandBorder,
-                    width: 1.0,
+                    color: NatureColors.border,
+                    width: 0.85,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: isDark
-                          ? Colors.black.withValues(alpha: 0.40)
-                          : const Color(0xFF2C3E50).withValues(alpha: 0.08),
-                      blurRadius: 20,
-                      offset: const Offset(0, 6),
+                      color: Colors.black.withValues(alpha: 0.40),
+                      blurRadius: 22,
+                      offset: const Offset(0, 8),
                     )
                   ],
                 ),
@@ -78,7 +73,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         icon: Icons.home_outlined,
                         activeIcon: Icons.home_rounded,
                         label: 'Home',
-                        isDark: isDark,
                       ),
                     ),
                     // 2. Salute
@@ -88,61 +82,59 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         icon: Icons.favorite_border_rounded,
                         activeIcon: Icons.favorite_rounded,
                         label: 'Salute',
-                        isDark: isDark,
                       ),
                     ),
-                    // 3. Altro (Hub di Navigazione)
+                    // 3. Altro (Hub Menu)
                     Expanded(
                       child: _buildNavItem(
                         index: 2,
-                        icon: Icons.menu_rounded,
-                        activeIcon: Icons.menu_open_rounded,
+                        icon: Icons.grid_view_outlined,
+                        activeIcon: Icons.grid_view_rounded,
                         label: 'Altro',
-                        isDark: isDark,
                       ),
                     ),
 
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 6),
 
-                    // 4. Coach AI — Pulsante Circolare Orb con Simbolo Originale CoachEmblem
+                    // 4. Coach AI — Orb Circolare con Simbolo Originale CoachEmblem
                     GestureDetector(
                       onTap: () {
                         setState(() {
-                          _currentIndex = 3; // Coach AI screen
+                          _currentIndex = 3;
                         });
                       },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        width: 48,
-                        height: 48,
+                        width: 44,
+                        height: 44,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: _currentIndex == 3
-                              ? (isDark ? NatureColors.darkSurfaceRaised : NatureColors.creamLight)
-                              : (isDark ? NatureColors.darkSurface : Colors.white),
+                              ? NatureColors.surfaceElevated
+                              : NatureColors.surface,
                           border: Border.all(
                             color: _currentIndex == 3
-                                ? (isDark ? NatureColors.tealLight : NatureColors.sage)
-                                : (isDark ? NatureColors.darkBorderSubtle : NatureColors.sandBorder),
-                            width: 1.8,
+                                ? NatureColors.teal
+                                : NatureColors.border,
+                            width: 1.5,
                           ),
                           boxShadow: [
                             BoxShadow(
                               color: (_currentIndex == 3
-                                      ? (isDark ? NatureColors.tealLight : NatureColors.sage)
-                                      : (isDark ? Colors.black : const Color(0xFF2C3E50)))
-                                  .withValues(alpha: _currentIndex == 3 ? 0.35 : 0.06),
-                              blurRadius: 10,
-                              spreadRadius: 1,
+                                      ? NatureColors.teal
+                                      : Colors.black)
+                                  .withValues(alpha: _currentIndex == 3 ? 0.35 : 0.15),
+                              blurRadius: _currentIndex == 3 ? 12 : 6,
+                              spreadRadius: _currentIndex == 3 ? 1 : 0,
                             ),
                           ],
                         ),
                         child: Center(
                           child: CoachEmblem(
-                            size: 22,
+                            size: 20,
                             color: _currentIndex == 3
-                                ? (isDark ? NatureColors.tealLight : NatureColors.sageDark)
-                                : (isDark ? NatureColors.textDarkMuted : NatureColors.textLightMuted),
+                                ? NatureColors.tealLight
+                                : NatureColors.textMuted,
                           ),
                         ),
                       ),
@@ -162,13 +154,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     required IconData icon,
     required IconData activeIcon,
     required String label,
-    required bool isDark,
   }) {
     final isSelected = _currentIndex == index;
-    final activeColor = isDark ? NatureColors.tealLight : NatureColors.sageDark;
-    final itemColor = isSelected
-        ? activeColor
-        : (isDark ? NatureColors.textDarkMuted : NatureColors.textLightMuted);
+    final itemColor = isSelected ? NatureColors.tealLight : NatureColors.textMuted;
 
     return InkWell(
       onTap: () {
@@ -176,17 +164,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           _currentIndex = index;
         });
       },
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(22),
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Morbida Pill attiva retroilluminata
           if (isSelected)
             Container(
-              margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
               decoration: BoxDecoration(
-                color: (isDark ? NatureColors.tealLight : NatureColors.sage)
-                    .withValues(alpha: isDark ? 0.16 : 0.12),
+                color: NatureColors.teal.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(18),
               ),
             ),
@@ -196,15 +182,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               Icon(
                 isSelected ? activeIcon : icon,
                 color: itemColor,
-                size: 22,
+                size: 20,
               ),
-              const SizedBox(height: 3),
+              const SizedBox(height: 2),
               Text(
                 label,
                 style: TextStyle(
-                  color: itemColor,
-                  fontSize: 10.5,
-                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  color: isSelected ? NatureColors.textPrimary : NatureColors.textMuted,
+                  fontSize: 10.0,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                   letterSpacing: 0.2,
                 ),
               ),

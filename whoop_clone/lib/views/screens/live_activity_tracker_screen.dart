@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 import '../../data/ble/ble_connection_manager.dart';
 import '../../data/database/database_helper.dart';
 import '../../data/models/allenamento.dart';
@@ -132,10 +133,13 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         decoration: const BoxDecoration(
-          color: WhoopTheme.cardSurface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          color: NatureColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border(
+            top: BorderSide(color: NatureColors.border, width: 0.8),
+          ),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -143,15 +147,20 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
           children: [
             Center(
               child: Container(
-                width: 40,
+                width: 44,
                 height: 4,
-                decoration: BoxDecoration(color: WhoopTheme.cardBorder, borderRadius: BorderRadius.circular(2)),
+                decoration: BoxDecoration(color: NatureColors.border, borderRadius: BorderRadius.circular(2)),
               ),
             ),
             const SizedBox(height: 16),
             const Text(
               'RIEPILOGO ATTIVITÀ REGISTRATA',
-              style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+              style: TextStyle(
+                color: NatureColors.textDarkPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.0,
+              ),
             ),
             const SizedBox(height: 16),
             _buildSummaryRow('Tipo Disciplina', _selectedActivity.toUpperCase()),
@@ -170,11 +179,11 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
                       Navigator.pop(context); // Chiudi tracker
                     },
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: WhoopTheme.recoveryRed),
+                      side: BorderSide(color: NatureColors.terracotta.withValues(alpha: 0.6)),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    child: const Text('SCARTA', style: TextStyle(color: WhoopTheme.recoveryRed, fontWeight: FontWeight.bold)),
+                    child: const Text('SCARTA', style: TextStyle(color: NatureColors.coralLight, fontWeight: FontWeight.w700)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -185,12 +194,13 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
                       await _finishSession();
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: WhoopTheme.strainBlue,
+                      backgroundColor: NatureColors.terracotta,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                       padding: const EdgeInsets.symmetric(vertical: 12),
+                      elevation: 0,
                     ),
-                    child: const Text('SALVA NEL DB', style: TextStyle(fontWeight: FontWeight.w900)),
+                    child: const Text('SALVA NEL DB', style: TextStyle(fontWeight: FontWeight.w800)),
                   ),
                 ),
               ],
@@ -207,8 +217,8 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 12)),
-          Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+          Text(label, style: const TextStyle(color: NatureColors.textDarkMuted, fontSize: 12)),
+          Text(value, style: const TextStyle(color: NatureColors.textDarkPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -307,7 +317,7 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
     final isBleConnected = viewModel.bleState == BleState.connected || viewModel.isFallbackMode;
 
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: NatureColors.background,
       body: Stack(
         children: [
           // Renderizza mappa solo se GPS è attivo
@@ -317,7 +327,7 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
               painter: _GpsMapBackgroundPainter(),
             )
           else
-            Container(color: WhoopTheme.background),
+            Container(color: NatureColors.background),
 
           // Header Top Bar
           SafeArea(
@@ -327,7 +337,7 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                    icon: const Icon(Icons.close_rounded, color: NatureColors.textDarkPrimary, size: 28),
                     onPressed: () => Navigator.pop(context),
                   ),
 
@@ -341,22 +351,27 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
                       );
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0F1A24),
+                        color: NatureColors.surface.withValues(alpha: 0.9),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: WhoopTheme.cardBorder),
+                        border: Border.all(color: NatureColors.border),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.directions_run, color: Colors.white, size: 18),
-                          const SizedBox(width: 6),
+                          const Icon(Icons.directions_run_rounded, color: NatureColors.terracotta, size: 18),
+                          const SizedBox(width: 8),
                           Text(
                             _selectedActivity.toUpperCase(),
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                            style: const TextStyle(
+                              color: NatureColors.textDarkPrimary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                              letterSpacing: 0.8,
+                            ),
                           ),
                           const SizedBox(width: 4),
-                          const Icon(Icons.arrow_drop_down, color: Colors.white, size: 18),
+                          const Icon(Icons.keyboard_arrow_down_rounded, color: NatureColors.textDarkSecondary, size: 18),
                         ],
                       ),
                     ),
@@ -366,11 +381,20 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
                     children: [
                       const Text(
                         'GPS',
-                        style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: NatureColors.textDarkSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.8,
+                        ),
                       ),
+                      const SizedBox(width: 4),
                       Switch(
                         value: _trackRoute,
-                        activeThumbColor: WhoopTheme.strainBlue,
+                        activeColor: NatureColors.teal,
+                        activeTrackColor: NatureColors.teal.withValues(alpha: 0.3),
+                        inactiveThumbColor: NatureColors.textDarkMuted,
+                        inactiveTrackColor: NatureColors.border,
                         onChanged: (val) => setState(() => _trackRoute = val),
                       ),
                     ],
@@ -386,40 +410,62 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 140,
-                  height: 140,
+                  width: 148,
+                  height: 148,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0F1A24).withValues(alpha: 0.85),
+                    color: NatureColors.surface.withValues(alpha: 0.85),
                     shape: BoxShape.circle,
-                    border: Border.all(color: WhoopTheme.strainBlue, width: 3),
+                    border: Border.all(color: NatureColors.terracotta.withValues(alpha: 0.7), width: 2.5),
                     boxShadow: [
                       BoxShadow(
-                        color: WhoopTheme.strainBlue.withValues(alpha: 0.3),
-                        blurRadius: 20,
-                        spreadRadius: 4,
+                        color: NatureColors.terracotta.withValues(alpha: 0.18),
+                        blurRadius: 28,
+                        spreadRadius: 2,
                       ),
                     ],
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.favorite, color: WhoopTheme.strainBlue, size: 28),
+                      const Icon(Icons.favorite_rounded, color: NatureColors.terracotta, size: 26),
                       const SizedBox(height: 4),
                       Text(
                         isBleConnected && liveBpm > 0 ? '$liveBpm' : '--',
-                        style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w900),
+                        style: const TextStyle(
+                          color: NatureColors.textDarkPrimary,
+                          fontSize: 38,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                        ),
                       ),
                       Text(
                         isBleConnected ? 'BPM LIVE' : 'IN ASCOLTO...',
-                        style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          color: NatureColors.textDarkMuted,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.0,
+                        ),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text(
-                  isBleConnected ? 'Sensore WHOOP 5.0 Connesso' : 'In attesa del segnale sensore BLE...',
-                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: NatureColors.surfaceElevated.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: NatureColors.border),
+                  ),
+                  child: Text(
+                    isBleConnected ? 'Sensore Salute Connesso' : 'In attesa del segnale sensore...',
+                    style: const TextStyle(
+                      color: NatureColors.textDarkSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -431,10 +477,13 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
             left: 0,
             right: 0,
             child: Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
               decoration: const BoxDecoration(
-                color: Color(0xFF0F1A24),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                color: NatureColors.surface,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                border: Border(
+                  top: BorderSide(color: NatureColors.border, width: 0.8),
+                ),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -444,11 +493,19 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
                     children: [
                       const Text(
                         'OBIETTIVO SFORZO DINAMICO',
-                        style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                        style: TextStyle(
+                          color: NatureColors.textDarkSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.8,
+                        ),
                       ),
                       Switch(
                         value: _strainGoalOn,
-                        activeThumbColor: WhoopTheme.strainBlue,
+                        activeColor: NatureColors.terracotta,
+                        activeTrackColor: NatureColors.terracotta.withValues(alpha: 0.3),
+                        inactiveThumbColor: NatureColors.textDarkMuted,
+                        inactiveTrackColor: NatureColors.border,
                         onChanged: (val) => setState(() => _strainGoalOn = val),
                       ),
                     ],
@@ -461,14 +518,18 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
                     child: ElevatedButton(
                       onPressed: _startLiveSession,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: WhoopTheme.strainBlue,
+                        backgroundColor: NatureColors.terracotta,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-                        elevation: 6,
+                        elevation: 0,
                       ),
                       child: const Text(
                         'AVVIA ATTIVITÀ',
-                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1.2),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                          letterSpacing: 1.2,
+                        ),
                       ),
                     ),
                   ),
@@ -487,14 +548,19 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
     final currentBpm = viewModel.liveBpm;
 
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: NatureColors.background,
       appBar: AppBar(
-        backgroundColor: WhoopTheme.background,
+        backgroundColor: NatureColors.background,
         elevation: 0,
         automaticallyImplyLeading: false,
         title: Text(
           _selectedActivity.toUpperCase(),
-          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+          style: const TextStyle(
+            color: NatureColors.textDarkPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.2,
+          ),
         ),
         centerTitle: true,
         actions: [
@@ -502,17 +568,30 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
             margin: const EdgeInsets.only(right: 16),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: _isRunning ? WhoopTheme.recoveryGreen.withValues(alpha: 0.2) : WhoopTheme.recoveryYellow.withValues(alpha: 0.2),
+              color: _isRunning
+                  ? NatureColors.recoveryAccent.withValues(alpha: 0.15)
+                  : NatureColors.amberWarm.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _isRunning ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow),
+              border: Border.all(
+                color: _isRunning ? NatureColors.recoveryAccent : NatureColors.amberWarm,
+                width: 0.8,
+              ),
             ),
             child: Row(
               children: [
-                Icon(Icons.circle, size: 8, color: _isRunning ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow),
+                Icon(
+                  Icons.circle,
+                  size: 7,
+                  color: _isRunning ? NatureColors.recoveryAccent : NatureColors.amberWarm,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   _isRunning ? 'IN REGISTRAZIONE' : 'IN PAUSA',
-                  style: TextStyle(color: _isRunning ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow, fontSize: 10, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: _isRunning ? NatureColors.recoveryAccent : NatureColors.amberWarm,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ],
             ),
@@ -527,14 +606,30 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 24),
-              decoration: WhoopTheme.officialCardDecoration(tint: WhoopTheme.strainBlue),
+              decoration: NatureTheme.organicCardDecoration(
+                accentTint: NatureColors.strainAccent.withValues(alpha: 0.1),
+              ),
               child: Column(
                 children: [
-                  const Text('TEMPO TRASCORSO', style: TextStyle(color: WhoopTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                  const Text(
+                    'TEMPO TRASCORSO',
+                    style: TextStyle(
+                      color: NatureColors.textDarkMuted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Text(
                     _formatDuration(_secondsElapsed),
-                    style: const TextStyle(color: Colors.white, fontSize: 52, fontWeight: FontWeight.w900, letterSpacing: 2.0, height: 1.0),
+                    style: const TextStyle(
+                      color: NatureColors.textDarkPrimary,
+                      fontSize: 52,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.5,
+                      height: 1.0,
+                    ),
                   ),
                 ],
               ),
@@ -548,42 +643,69 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: WhoopTheme.officialCardDecoration(),
+                    decoration: NatureTheme.organicCardDecoration(),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Row(
                           children: [
-                            Icon(Icons.favorite, color: WhoopTheme.strainBlue, size: 16),
+                            Icon(Icons.favorite_rounded, color: NatureColors.terracotta, size: 16),
                             SizedBox(width: 6),
-                            Text('BPM LIVE', style: TextStyle(color: WhoopTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
+                            Text(
+                              'BPM LIVE',
+                              style: TextStyle(
+                                color: NatureColors.textDarkMuted,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 10),
-                        Text(currentBpm > 0 ? '$currentBpm' : '--', style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w900)),
+                        Text(
+                          currentBpm > 0 ? '$currentBpm' : '--',
+                          style: const TextStyle(
+                            color: NatureColors.textDarkPrimary,
+                            fontSize: 32,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: WhoopTheme.officialCardDecoration(tint: WhoopTheme.strainBlue),
+                    decoration: NatureTheme.organicCardDecoration(
+                      accentTint: NatureColors.strainAccent.withValues(alpha: 0.1),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Row(
                           children: [
-                            Icon(Icons.bolt, color: WhoopTheme.strainBlue, size: 16),
+                            Icon(Icons.bolt_rounded, color: NatureColors.terracotta, size: 16),
                             SizedBox(width: 6),
-                            Text('STRAIN ACCUMULATO', style: TextStyle(color: WhoopTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
+                            Text(
+                              'STRAIN ATTIVITÀ',
+                              style: TextStyle(
+                                color: NatureColors.textDarkMuted,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 10),
                         Text(
                           _accumulatedStrain.toStringAsFixed(1),
-                          style: const TextStyle(color: WhoopTheme.strainBlue, fontSize: 34, fontWeight: FontWeight.w900),
+                          style: const TextStyle(
+                            color: NatureColors.coralLight,
+                            fontSize: 32,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ],
                     ),
@@ -597,18 +719,32 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
             // Card Calorie Bruciate
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: WhoopTheme.officialCardDecoration(),
+              decoration: NatureTheme.organicCardDecoration(),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Row(
                     children: [
-                      Icon(Icons.local_fire_department, color: WhoopTheme.strainHigh, size: 20),
+                      Icon(Icons.local_fire_department_rounded, color: NatureColors.amberWarm, size: 20),
                       SizedBox(width: 10),
-                      Text('CALORIE BRUCIATE', style: TextStyle(color: WhoopTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.bold)),
+                      Text(
+                        'CALORIE BRUCIATE',
+                        style: TextStyle(
+                          color: NatureColors.textDarkMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ],
                   ),
-                  Text('$_caloriesBurned kcal', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+                  Text(
+                    '$_caloriesBurned kcal',
+                    style: const TextStyle(
+                      color: NatureColors.textDarkPrimary,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -622,39 +758,48 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
                 GestureDetector(
                   onTap: _isRunning ? _pauseSession : _resumeSession,
                   child: Container(
-                    width: 72,
-                    height: 72,
+                    width: 68,
+                    height: 68,
                     decoration: BoxDecoration(
-                      color: _isRunning ? WhoopTheme.recoveryYellow : WhoopTheme.recoveryGreen,
+                      color: _isRunning ? NatureColors.surfaceElevated : NatureColors.recoveryAccent,
                       shape: BoxShape.circle,
+                      border: Border.all(
+                        color: _isRunning ? NatureColors.amberWarm : NatureColors.recoveryLight,
+                        width: 1.5,
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: (_isRunning ? WhoopTheme.recoveryYellow : WhoopTheme.recoveryGreen).withValues(alpha: 0.3),
+                          color: (_isRunning ? NatureColors.amberWarm : NatureColors.recoveryAccent).withValues(alpha: 0.2),
                           blurRadius: 16,
                           spreadRadius: 2,
                         ),
                       ],
                     ),
-                    child: Icon(_isRunning ? Icons.pause : Icons.play_arrow, color: Colors.black, size: 36),
+                    child: Icon(
+                      _isRunning ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      color: _isRunning ? NatureColors.amberWarm : Colors.white,
+                      size: 32,
+                    ),
                   ),
                 ),
                 GestureDetector(
                   onTap: _onStopPressed,
                   child: Container(
-                    width: 72,
-                    height: 72,
+                    width: 68,
+                    height: 68,
                     decoration: BoxDecoration(
-                      color: WhoopTheme.recoveryRed,
+                      color: NatureColors.surfaceElevated,
                       shape: BoxShape.circle,
+                      border: Border.all(color: NatureColors.terracotta, width: 1.5),
                       boxShadow: [
                         BoxShadow(
-                          color: WhoopTheme.recoveryRed.withValues(alpha: 0.3),
+                          color: NatureColors.terracotta.withValues(alpha: 0.2),
                           blurRadius: 16,
                           spreadRadius: 2,
                         ),
                       ],
                     ),
-                    child: const Icon(Icons.stop, color: Colors.white, size: 36),
+                    child: const Icon(Icons.stop_rounded, color: NatureColors.coralLight, size: 32),
                   ),
                 ),
               ],
@@ -668,15 +813,15 @@ class _LiveActivityTrackerScreenState extends State<LiveActivityTrackerScreen> {
   }
 }
 
-// Custom Painter per Mappa GPS
+// Custom Painter per Mappa GPS (Dark Mode Terrain)
 class _GpsMapBackgroundPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final bgPaint = Paint()..color = const Color(0xFFC7E3C8);
+    final bgPaint = Paint()..color = NatureColors.secondaryBackground;
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
 
     final roadPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.8)
+      ..color = NatureColors.surfaceElevated.withValues(alpha: 0.6)
       ..strokeWidth = 3.0
       ..style = PaintingStyle.stroke;
 

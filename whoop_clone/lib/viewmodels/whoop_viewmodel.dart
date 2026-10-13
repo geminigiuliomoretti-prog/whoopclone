@@ -5,6 +5,9 @@ import '../data/models/allenamento.dart';
 import '../data/models/voce_diario.dart';
 import '../data/models/sonno.dart';
 import '../data/models/utente_profilo.dart';
+import '../data/models/personal_baseline.dart';
+import '../data/services/baseline_calculator.dart';
+import '../data/services/whoop_archive_importer.dart';
 import '../data/repositories/whoop_repository.dart';
 import '../data/repositories/sqlite_whoop_repository.dart';
 import '../data/repositories/user_repository.dart';
@@ -62,7 +65,9 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   List<Allenamento> _allenamentiList = [];
   List<VoceDiario> _vociDiarioList = [];
   List<Sonno> _sonnoList = [];
+  List<Sonno> _allSonnoList = [];
   Set<String> _completedDiaryDates = {};
+  List<PersonalBaseline> _personalBaselines = [];
 
   // Profile Baseline User Settings (Popolate da DB utente_profilo)
   UtenteProfilo _userProfile = const UtenteProfilo(
@@ -143,13 +148,20 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       restHr: _userProfile.hrRestBaseline.toDouble(),
       hrvBaseline: _userProfile.hrvBaselineMean,
       sleepEngine: _overnightSleepEngine,
-      userBaselineProvider: () => {
-        'rhr_mean': _userProfile.rhrBaselineMean,
-        'rmssd_mean': _userProfile.hrvBaselineMean,
-        'rmssd_std': _userProfile.hrvBaselineStd,
-        'baseline_temp_celsius': _userProfile.baselineSampleCount >= 4 ? 36.5 : null,
-        'sleep_baseline_min': _userProfile.sleepBaselineMin,
-        'sleep_need_min': currentSleepNeedMinutes,
+      userBaselineProvider: () {
+        final rhrBase = getPersonalBaseline('rhr');
+        final hrvBase = getPersonalBaseline('hrv');
+        final skinBase = getPersonalBaseline('skin_temp');
+        final sleepBase = getPersonalBaseline('sleep_need') ?? getPersonalBaseline('sleep_duration');
+        return {
+          'rhr_mean': rhrBase?.mean ?? _userProfile.rhrBaselineMean,
+          'rhr_std': rhrBase?.stdDev ?? _userProfile.rhrBaselineStd,
+          'rmssd_mean': hrvBase?.mean ?? _userProfile.hrvBaselineMean,
+          'rmssd_std': hrvBase?.stdDev ?? _userProfile.hrvBaselineStd,
+          'baseline_temp_celsius': skinBase?.mean ?? (_userProfile.baselineSampleCount >= 4 ? 36.5 : null),
+          'sleep_baseline_min': sleepBase?.mean.round() ?? _userProfile.sleepBaselineMin,
+          'sleep_need_min': currentSleepNeedMinutes,
+        };
       },
     );
 
@@ -230,17 +242,81 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   List<VoceDiario> get vociDiarioList => _vociDiarioList;
   Set<String> get completedDiaryDates => _completedDiaryDates;
   List<Sonno> get sonnoList => _sonnoList;
+  List<Sonno> get allSonnoList => _allSonnoList;
   Sonno? get ultimoSonno => _sonnoList.isNotEmpty ? _sonnoList.first : null;
   WhoopBiometricEngine get biometricEngine => _biometricEngine;
   UtenteProfilo get userProfile => _userProfile;
+  List<PersonalBaseline> get personalBaselines => _personalBaselines;
+  Map<String, PersonalBaseline> get personalBaselinesMap => {
+        for (final b in _personalBaselines) b.metricKey: b,
+      };
+  PersonalBaseline? getPersonalBaseline(String metricKey) =>
+      personalBaselinesMap[metricKey];
+
+  bool get isToday {
+    final now = DateTime.now();
+    return _selectedDate.year == now.year &&
+        _selectedDate.month == now.month &&
+        _selectedDate.day == now.day;
+  }
 
   int? get recoveryScore => _ultimoCiclo?.punteggioRecuperoPct?.round();
+
+  /// Sleep Performance risolto con gerarchia univoca e trasparente:
+  /// 1. Se sonno salvato da WHOOP_IMPORT con score esplicito => score importato WHOOP
+  /// 2. Se calcolato internamente con durata e bisogno validi => (durata / bisogno) * 100
+  /// 3. Se sonno salvato possiede sleepPerformancePct verificato (e congruo) => score salvato
+  /// 4. Se bisogno assente o sonno non valido => null
   int? get sleepPerformance {
     final sonno = _sonnoList.isNotEmpty ? _sonnoList.first : null;
     final double sleepMin = (sonno?.durataTotMin ?? 0).toDouble();
-    if (sleepMin <= 0 || sonno?.sleepPerformancePct == null) return null;
-    return sonno!.sleepPerformancePct!.round();
+    if (sleepMin <= 0) return null;
+
+    final need = _ultimoCiclo?.sonnoRichiestoMin ??
+        (sonno?.sleepNeedMin?.toDouble()) ??
+        (isToday ? currentSleepNeedMinutes : null);
+
+    // 1. Se importato da WHOOP, il valore ufficiale storico WHOOP ha priorità
+    if (sonno != null && (sonno.provenance == 'WHOOP_IMPORT' || sonno.provenance == 'WHOOP_NAP')) {
+      if (sonno.sleepPerformancePct != null && sonno.sleepPerformancePct! > 0) {
+        return sonno.sleepPerformancePct!.round();
+      }
+    }
+
+    // 2. Calcolo centralizzato deterministico da input reali della sessione
+    if (need != null && need > 0) {
+      return WhoopAnalyticsEngine.calculateSleepPerformancePct(
+        actualDurationMin: sleepMin,
+        sleepNeedMin: need,
+      ).round();
+    }
+
+    // 3. Fallback a score persistito valido solo se non è un valore anomalo non supportato da bisogno
+    if (sonno?.sleepPerformancePct != null && sonno!.sleepPerformancePct! > 0) {
+      return sonno.sleepPerformancePct!.round();
+    }
+
+    return null;
   }
+
+  /// Rapporto effettivo Ore Dormite vs Ore Necessarie (%)
+  double? get actualVsNeededPct {
+    final sonno = _sonnoList.isNotEmpty ? _sonnoList.first : null;
+    final double sleepMin = (sonno?.durataTotMin ?? 0).toDouble();
+    final need = _ultimoCiclo?.sonnoRichiestoMin ??
+        (sonno?.sleepNeedMin?.toDouble()) ??
+        (isToday ? currentSleepNeedMinutes : null);
+    return WhoopAnalyticsEngine.calculateActualVsNeededPct(
+      actualDurationMin: sleepMin > 0 ? sleepMin : null,
+      sleepNeedMin: need != null && need > 0 ? need : null,
+    );
+  }
+
+  double? get sleepEfficiencyPct {
+    final sonno = _sonnoList.isNotEmpty ? _sonnoList.first : null;
+    return sonno?.efficienzaPct;
+  }
+  double? get sleepConsistency => calculateSleepConsistencyForSelectedDate();
   double? get hrv => _ultimoCiclo?.vfcMs;
   double? get restingHr => _ultimoCiclo?.rhrNotte;
   double? get respiratoryRate => _ultimoCiclo?.frequenzaRespiratoriaRpm;
@@ -249,8 +325,11 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
 
   String get userName => _userProfile.nome;
   int get userMaxHr => _userProfile.hrMax;
-  int get userBaselineRhr => _userProfile.hrRestBaseline;
-  double get userBaselineHrv => _userProfile.hrvBaselineMean;
+  int get userBaselineRhr => getPersonalBaseline('rhr')?.mean.round() ?? _userProfile.hrRestBaseline;
+  double get userBaselineHrv => getPersonalBaseline('hrv')?.mean ?? _userProfile.hrvBaselineMean;
+  double get userBaselineRespRate => getPersonalBaseline('respiratory_rate')?.mean ?? 14.0;
+  double? get userBaselineSleepPerf => getPersonalBaseline('sleep_performance')?.mean;
+  double get userBaselineSleepDur => getPersonalBaseline('sleep_duration')?.mean ?? _userProfile.sleepBaselineMin.toDouble();
   List<String> get enabledTileKeys => _enabledTileKeys;
   List<String> get debugLogs => _bleManager.debugLogs;
   Stream<List<String>> get debugLogsStream => _bleManager.debugLogsStream;
@@ -356,6 +435,8 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
 
   List<VitalEvaluation> get vitalEvaluations {
     final current = _ultimoCiclo;
+    final baselines = personalBaselinesMap;
+
     final historical30dHrv = _cicliList.where((c) => c.vfcMs != null).map((c) => c.vfcMs!).toList();
     final historical30dRhr = _cicliList.where((c) => c.fcrBpm != null).map((c) => c.fcrBpm!.toDouble()).toList();
     final historical30dResp = _cicliList
@@ -366,18 +447,32 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
         .where((c) => c.spo2Pct != null && c.spo2Pct! >= 85.0 && c.spo2Pct! <= 100.0)
         .map((c) => c.spo2Pct!.toDouble())
         .toList();
+
+    final skinTempBaseline = baselines['skin_temp']?.mean;
     final historical30dTemp = _cicliList
-        .where((c) => c.tempCutaneaC != null && c.tempCutaneaC!.abs() <= 3.0)
-        .map((c) => c.tempCutaneaC!)
+        .where((c) => c.tempCutaneaC != null)
+        .map((c) {
+          final t = c.tempCutaneaC!;
+          if (skinTempBaseline != null && t >= 25.0) {
+            return t - skinTempBaseline;
+          }
+          return t.abs() <= 3.0 ? t : 0.0;
+        })
         .toList();
 
     final respVal = (current?.frequenzaRespiratoriaRpm != null && current!.frequenzaRespiratoriaRpm! >= 7.0 && current.frequenzaRespiratoriaRpm! <= 24.0)
         ? current.frequenzaRespiratoriaRpm
         : null;
 
-    final tempVal = (current?.tempCutaneaC != null && current!.tempCutaneaC!.abs() <= 3.0)
-        ? current.tempCutaneaC
-        : null;
+    double? tempVal;
+    if (current?.tempCutaneaC != null) {
+      final t = current!.tempCutaneaC!;
+      if (skinTempBaseline != null && t >= 25.0) {
+        tempVal = t - skinTempBaseline;
+      } else if (t.abs() <= 3.0) {
+        tempVal = t;
+      }
+    }
 
     final spo2Val = (current?.spo2Pct != null && current!.spo2Pct! >= 85.0 && current.spo2Pct! <= 100.0)
         ? current.spo2Pct!.toDouble()
@@ -389,6 +484,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
         title: 'FREQUENZA RESPIRATORIA',
         currentValue: respVal,
         historical30dValues: historical30dResp,
+        personalBaseline: baselines['respiratory_rate'],
         unit: 'rpm',
       ),
       HealthVitalsEngine.evaluateVital(
@@ -396,6 +492,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
         title: 'OSSIGENO NEL SANGUE (SPO₂)',
         currentValue: spo2Val,
         historical30dValues: historical30dSpo2,
+        personalBaseline: baselines['spo2'],
         unit: '%',
       ),
       HealthVitalsEngine.evaluateVital(
@@ -403,6 +500,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
         title: 'FC A RIPOSO (FCR)',
         currentValue: current?.fcrBpm?.toDouble(),
         historical30dValues: historical30dRhr,
+        personalBaseline: baselines['rhr'],
         unit: 'bpm',
       ),
       HealthVitalsEngine.evaluateVital(
@@ -410,6 +508,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
         title: 'VARIABILITÀ FC (VFC)',
         currentValue: current?.vfcMs,
         historical30dValues: historical30dHrv,
+        personalBaseline: baselines['hrv'],
         unit: 'ms',
       ),
       HealthVitalsEngine.evaluateVital(
@@ -417,6 +516,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
         title: 'TEMP. CUTANEA',
         currentValue: tempVal,
         historical30dValues: historical30dTemp,
+        personalBaseline: baselines['skin_temp'],
         unit: '°C',
       ),
     ];
@@ -459,12 +559,18 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       if (_liveBpm > 0 && (_liveHrvRmssd > 0 || _ultimoCiclo?.vfcMs != null)) {
         final double? effectiveHrv = _liveHrvRmssd > 0 ? _liveHrvRmssd : _ultimoCiclo?.vfcMs;
         if (effectiveHrv != null && effectiveHrv > 0) {
+          final hrvBase = getPersonalBaseline('hrv');
+          final rhrBase = getPersonalBaseline('rhr');
           _liveStressIndex = WhoopAnalyticsEngine.calculateStressScore(
             hrLive: _liveBpm.toDouble(),
-            hrRest: (_ultimoCiclo?.fcrBpm ?? _userProfile.hrRestBaseline).toDouble(),
+            hrRest: (rhrBase?.mean ?? _ultimoCiclo?.fcrBpm ?? _userProfile.hrRestBaseline).toDouble(),
             hrvLiveMs: effectiveHrv,
-            baselineHrvMean: _userProfile.hrvBaselineMean,
-            baselineHrvStd: _userProfile.hrvBaselineStd,
+            meanLnRmssd14d: hrvBase?.extraStats['meanLnRmssd'],
+            stdLnRmssd14d: hrvBase?.extraStats['stdDevLnRmssd'],
+            rhr14d: rhrBase?.mean,
+            stdRhr14d: rhrBase?.stdDev ?? 3.5,
+            baselineHrvMean: hrvBase?.mean ?? _userProfile.hrvBaselineMean,
+            baselineHrvStd: hrvBase?.stdDev ?? _userProfile.hrvBaselineStd,
             accMagnitude: 1.0 + (t.motionVar ?? 0.0),
           );
 
@@ -587,9 +693,11 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// Imposta la data selezionata nel navigatore < OGGI > e aggiorna reattivamente le query
-  void setSelectedDate(DateTime date, {bool triggerAutoSync = true}) {
+  Future<void> setSelectedDate(DateTime date, {bool? triggerAutoSync}) async {
     _selectedDate = date;
-    loadData(triggerAutoSync: triggerAutoSync);
+    final now = DateTime.now();
+    final isTargetToday = date.year == now.year && date.month == now.month && date.day == now.day;
+    await loadData(triggerAutoSync: triggerAutoSync ?? isTargetToday);
   }
 
   /// Carica i dati per la data selezionata direttamente da SQLite
@@ -620,10 +728,30 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
 
       final dateKey = _selectedDate.toIso8601String().substring(0, 10);
 
-      // Esegui query per la data selezionata
+      // Carica tutti i cicli e sonni da SQLite per calcolo e visualizzazione
       final cicli = await _repository.getCicliFisiologici();
       _cicliList = cicli;
       _streakDays = SqliteWhoopRepository.calculateStreakDays(cicli);
+
+      final allSonno = await _repository.getSonnoLogs();
+      _allSonnoList = allSonno;
+
+      // WHOOP PERSONAL BASELINE ENGINE (Rolling 30-Day excluding selectedDate):
+      // Calcola le baseline personali dinamiche per la data selezionata usando i dati
+      // dei 30 giorni precedenti, escludendo rigorosamente il giorno selezionato.
+      final rollingBaselinesMap = BaselineCalculator.calculateRollingBaselines(
+        cycles: cicli,
+        sleeps: allSonno,
+        referenceDateIso: dateKey,
+        rollingDays: 30,
+      );
+
+      if (rollingBaselinesMap.isNotEmpty) {
+        _personalBaselines = rollingBaselinesMap.values.toList();
+      } else {
+        // Fallback su baseline salvate nel DB se non ci sono abbastanza giorni pregressi
+        _personalBaselines = await _repository.getPersonalBaselines();
+      }
 
       final dateCicli = cicli.where((c) => c.dataIso == dateKey).toList();
       _ultimoCiclo = dateCicli.isNotEmpty ? dateCicli.first : null;
@@ -631,7 +759,6 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       final allAllenamenti = await _repository.getAllenamenti();
       _allenamentiList = allAllenamenti.where((a) => a.dataIso == dateKey).toList();
 
-      final allSonno = await _repository.getSonnoLogs();
       _sonnoList = allSonno.where((s) => s.dataIso == dateKey).toList();
 
       final allDiario = await _repository.getVociDiario();
@@ -675,7 +802,12 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
         _isChartsLoading = false;
       }
 
-      if (triggerAutoSync && !DatabaseHelper.isTestMode) {
+      final now = DateTime.now();
+      final isCurrentDateToday = _selectedDate.year == now.year &&
+          _selectedDate.month == now.month &&
+          _selectedDate.day == now.day;
+
+      if (triggerAutoSync && isCurrentDateToday && !DatabaseHelper.isTestMode) {
         await triggerOvernightSyncIfNeeded();
       }
     } catch (e) {
@@ -737,12 +869,12 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
         debugPrint('WhoopViewModel: PosteriorSleepDetector ha rilevato e salvato $savedCount sessioni di sonno!');
         final cicli = await _repository.getCicliFisiologici();
         _cicliList = cicli;
-        final dateCicli = cicli.where((c) => c.dataIso == todayIso).toList();
-        if (dateCicli.isNotEmpty) {
-          _ultimoCiclo = dateCicli.first;
-        }
+        final selectedIso = _selectedDate.toIso8601String().substring(0, 10);
+        final dateCicli = cicli.where((c) => c.dataIso == selectedIso).toList();
+        _ultimoCiclo = dateCicli.isNotEmpty ? dateCicli.first : null;
         final allSonno = await _repository.getSonnoLogs();
-        _sonnoList = allSonno.where((s) => s.dataIso == todayIso).toList();
+        _allSonnoList = allSonno;
+        _sonnoList = allSonno.where((s) => s.dataIso == selectedIso).toList();
         notifyListeners();
       }
     }
@@ -777,10 +909,10 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     final engineResult = await _overnightSleepEngine.processNightlyTelemetry(
       rawTelemetryRecords: dbPoints,
       userBaseline30d: {
-        'rhr_mean': _userProfile.rhrBaselineMean,
-        'rmssd_mean': _userProfile.hrvBaselineMean,
-        'rmssd_std': _userProfile.hrvBaselineStd,
-        'baseline_temp_celsius': 36.5,
+        'rhr_mean': getPersonalBaseline('rhr')?.mean ?? _userProfile.rhrBaselineMean,
+        'rmssd_mean': getPersonalBaseline('hrv')?.mean ?? _userProfile.hrvBaselineMean,
+        'rmssd_std': getPersonalBaseline('hrv')?.stdDev ?? _userProfile.hrvBaselineStd,
+        'baseline_temp_celsius': getPersonalBaseline('skin_temp')?.mean ?? 36.5,
       },
       windowStart: startTime,
       windowEnd: endTime,
@@ -849,22 +981,65 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   double get accumulatedSleepDebtMinutes {
-    if (_sonnoList.isEmpty) return 0.0;
-    final baseline = _userProfile.sleepBaselineMin.toDouble();
-    final pastSonno = _sonnoList.take(7).toList().reversed.toList();
-    final pairs = pastSonno
-        .map((s) => (sleepNeedMin: baseline, actualSleepMin: s.durataTotMin.toDouble()))
-        .toList();
+    final dateKey = _selectedDate.toIso8601String().substring(0, 10);
+    final baselineSleep = _userProfile.sleepBaselineMin.toDouble();
+    // Prende i sonni dei 7 giorni precedenti alla data selezionata (escludendo la notte corrente e i riposi brevi)
+    final pastSleeps = _allSonnoList
+        .where((s) => s.dataIso.compareTo(dateKey) < 0 && !s.riposoBreve)
+        .toList()
+      ..sort((a, b) => b.dataIso.compareTo(a.dataIso));
+    final recent7 = pastSleeps.take(7).toList().reversed.toList();
+    if (recent7.isEmpty) return 0.0;
+
+    final pairs = recent7.map((s) {
+      final matchingCiclo = _cicliList.where((c) => c.dataIso == s.dataIso).firstOrNull;
+      final need = matchingCiclo?.sonnoRichiestoMin ?? (s.sleepNeedMin?.toDouble()) ?? baselineSleep;
+      return (sleepNeedMin: need, actualSleepMin: s.durataTotMin.toDouble());
+    }).toList();
+
     return WhoopAnalyticsEngine.calculateAccumulatedSleepDebt(historicalSleeps: pairs);
   }
 
   double get currentSleepNeedMinutes {
+    // 1. Se per la giornata selezionata esiste già un valore WHOOP autentico, usalo direttamente!
+    final importedNeed = _ultimoCiclo?.sonnoRichiestoMin ?? _sonnoList.firstOrNull?.sleepNeedMin?.toDouble();
+    if (importedNeed != null && importedNeed > 0) {
+      return importedNeed;
+    }
+
+    // 2. Altrimenti, calcola internamente secondo la formula validata:
+    // Need = baseline + sleepDebt + strainImpact - naps
     final strain = _ultimoCiclo?.sforzoGiornaliero ?? 0.0;
+    final baseNeed = _userProfile.sleepBaselineMin.toDouble();
     return WhoopAnalyticsEngine.calculateSleepNeedMinutes(
-      baselineNeedMin: _userProfile.sleepBaselineMin.toDouble(),
+      baselineNeedMin: baseNeed,
       dayStrain: strain,
       sleepDebtMin: accumulatedSleepDebtMinutes,
     ).toDouble();
+  }
+
+  /// Calcola la regolarità del sonno per la data selezionata
+  double? calculateSleepConsistencyForSelectedDate() {
+    final currentSonno = _sonnoList.firstOrNull;
+    if (currentSonno == null || currentSonno.durataTotMin <= 0) return null;
+    if (currentSonno.regolaritaSonnoPct != null && currentSonno.regolaritaSonnoPct! > 0) {
+      return currentSonno.regolaritaSonnoPct;
+    }
+
+    final dateKey = _selectedDate.toIso8601String().substring(0, 10);
+    final priorSleeps = _allSonnoList
+        .where((s) => s.dataIso.compareTo(dateKey) < 0 && !s.riposoBreve && s.durataTotMin > 0)
+        .toList()
+      ..sort((a, b) => b.dataIso.compareTo(a.dataIso));
+    final prevSonno = priorSleeps.firstOrNull;
+    if (prevSonno == null) return null;
+
+    return WhoopAnalyticsEngine.calculateSleepConsistency(
+      currentOnset: currentSonno.inizioSonno,
+      currentWake: currentSonno.inizioRisveglio,
+      previousOnset: prevSonno.inizioSonno,
+      previousWake: prevSonno.inizioRisveglio,
+    );
   }
 
   Future<void> saveJournalEntries({
@@ -902,6 +1077,32 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       habitQuestion: habitQuestion,
       records: records,
     );
+  }
+
+  /// Importa l'archivio ZIP WHOOP ufficiale ed esegue il reload reattivo dello stato
+  Future<WhoopImportResult> importWhoopArchive({
+    String? filePath,
+    List<int>? fileBytes,
+    OnImportProgress? onProgress,
+  }) async {
+    final repo = _repository is SqliteWhoopRepository
+        ? (_repository as SqliteWhoopRepository)
+        : SqliteWhoopRepository();
+    final importer = WhoopArchiveImporter(
+      repository: repo,
+      userRepository: _userRepository,
+    );
+
+    final result = await importer.importArchive(
+      filePath: filePath,
+      fileBytes: fileBytes,
+      onProgress: onProgress,
+    );
+
+    if (result.success) {
+      await loadData(triggerAutoSync: false);
+    }
+    return result;
   }
 
   @override

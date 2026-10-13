@@ -1,48 +1,47 @@
 import 'package:flutter/material.dart';
-import 'app_colors.dart';
 import '../theme/nature_theme.dart';
 
-/// WhoopTheme definisce la palette Hex e le specifiche visive UFFICIALI WHOOP
+/// WhoopTheme definisce le specifiche visive coerenti con la nuova identità "Deep Navy / Teal / Natural"
 class WhoopTheme {
   // Canvas & Surfaces
-  static const Color background = AppColors.background;
-  static const Color backgroundDark = AppColors.backgroundDark;
-  static const Color cardSurface = AppColors.surface;
-  static const Color cardSurfaceDark = AppColors.surfaceDark;
-  static const Color surfaceRaised = AppColors.surfaceLight;
-  static const Color surfaceOverlay = Color(0xFFEFE9DE);
+  static const Color background = NatureColors.background;
+  static const Color backgroundDark = NatureColors.background;
+  static const Color cardSurface = NatureColors.surface;
+  static const Color cardSurfaceDark = NatureColors.surface;
+  static const Color surfaceRaised = NatureColors.elevatedSurface;
+  static const Color surfaceOverlay = NatureColors.translucentSurface;
 
   // Borders & Hairlines
-  static const Color cardBorder = AppColors.cardBorder;
-  static const Color cardBorderDark = AppColors.cardBorderDark;
-  static const Color hairlineStrong = Color(0xFFC8BFB0);
+  static const Color cardBorder = NatureColors.border;
+  static const Color cardBorderDark = NatureColors.border;
+  static const Color hairlineStrong = NatureColors.border;
 
-  // Official WHOOP Brand Colors
-  static const Color brandBlack = Color(0xFF000000);
-  static const Color brandWhite = Color(0xFFFFFFFF);
-  static const Color brandTeal = Color(0xFF00F19F);
-  static const Color strainBlue = AppColors.strainBlue;
-  static const Color recoveryBlue = Color(0xFF67AEE6);
-  static const Color sleepSlate = Color(0xFF7BA1BB);
-  static const Color sleepPurple = Color(0xFF7C4DFF);
-  static const Color lightSleep = Color(0xFF40C4FF);
-  static const Color remSleep = Color(0xFF00E5FF);
+  // Core Brand Colors
+  static const Color brandBlack = NatureColors.background;
+  static const Color brandWhite = NatureColors.textPrimary;
+  static const Color brandTeal = NatureColors.teal;
+  static const Color strainBlue = NatureColors.teal;
+  static const Color recoveryBlue = NatureColors.sleep;
+  static const Color sleepSlate = NatureColors.sleep;
+  static const Color sleepPurple = NatureColors.lavender;
+  static const Color lightSleep = NatureColors.sleepLight;
+  static const Color remSleep = NatureColors.mistLight;
 
-  // Official Recovery Scale
-  static const Color recoveryGreen = Color(0xFF00F19F);
-  static const Color recoveryYellow = AppColors.recoveryYellow;
-  static const Color recoveryRed = AppColors.recoveryRed;
-  static const Color strainHigh = AppColors.strainHigh;
+  // Recovery Scale
+  static const Color recoveryGreen = NatureColors.recovery;
+  static const Color recoveryYellow = NatureColors.amberWarm;
+  static const Color recoveryRed = NatureColors.strain;
+  static const Color strainHigh = NatureColors.strain;
 
-  // Stress Monitor Scale
-  static const Color stressLow = Color(0xFF00B0FF);
-  static const Color stressMedium = Color(0xFFFF9100);
-  static const Color stressHigh = Color(0xFFFF1744);
+  // Stress Monitor Scale (Calm, analytical)
+  static const Color stressLow = NatureColors.recovery;
+  static const Color stressMedium = NatureColors.amberWarm;
+  static const Color stressHigh = NatureColors.strain;
 
   // Text Colors
-  static const Color textPrimary = AppColors.textPrimary;
-  static const Color textSecondary = AppColors.textSecondary;
-  static const Color textMuted = AppColors.textMuted;
+  static const Color textPrimary = NatureColors.textPrimary;
+  static const Color textSecondary = NatureColors.textSecondary;
+  static const Color textMuted = NatureColors.textMuted;
 
   // Logo Assets Paths
   static const String logoWhite = 'assets/logos/whoop_logo_white.png';
@@ -51,60 +50,20 @@ class WhoopTheme {
   static const String puckWhite = 'assets/logos/whoop_puck_white.png';
 
   static Color getRecoveryColor(double recoveryPct) {
-    if (recoveryPct >= 67) {
-      return recoveryGreen;
-    } else if (recoveryPct >= 34) {
-      return recoveryYellow;
-    } else {
-      return recoveryRed;
-    }
+    return NatureColors.getRecoveryColor(recoveryPct);
   }
 
   static BoxDecoration officialCardDecoration({
     Color? tint,
     double borderRadius = 20.0,
     bool elevated = false,
-    bool isDark = false,
+    bool isDark = true,
   }) {
-    if (isDark) {
-      return BoxDecoration(
-        color: const Color(0xFF161E24),
-        borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(
-          color: tint?.withValues(alpha: 0.35) ?? const Color(0xFF26323D),
-          width: 1.0,
-        ),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF1B242C),
-            Color(0xFF141A20),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: elevated ? 0.30 : 0.15),
-            blurRadius: elevated ? 16 : 8,
-            offset: const Offset(0, 4),
-          )
-        ],
-      );
-    }
-    return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(borderRadius),
-      border: Border.all(
-        color: tint?.withValues(alpha: 0.25) ?? NatureColors.sandBorder,
-        width: 0.85,
-      ),
-      boxShadow: [
-        BoxShadow(
-          color: const Color(0xFF1E2832).withValues(alpha: elevated ? 0.05 : 0.025),
-          blurRadius: elevated ? 14 : 8,
-          offset: const Offset(0, 3),
-        ),
-      ],
+    return NatureTheme.organicCardDecoration(
+      isDark: isDark,
+      accentTint: tint,
+      radius: borderRadius,
+      elevated: elevated,
     );
   }
 
@@ -145,33 +104,6 @@ class WhoopTheme {
     );
   }
 
-  static ThemeData get lightTheme => NatureTheme.lightTheme;
-
-  static ThemeData get darkTheme {
-    return ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.dark,
-      scaffoldBackgroundColor: NatureColors.darkCanvas,
-      colorScheme: const ColorScheme.dark(
-        surface: NatureColors.darkSurface,
-        primary: strainBlue,
-        secondary: recoveryGreen,
-        tertiary: brandTeal,
-        onSurface: NatureColors.textDarkPrimary,
-      ),
-      cardTheme: CardThemeData(
-        color: NatureColors.darkSurface,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: NatureColors.darkBorder, width: 0.85),
-        ),
-      ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: NatureColors.darkCanvas,
-        elevation: 0,
-        centerTitle: true,
-      ),
-    );
-  }
+  static ThemeData get lightTheme => NatureTheme.darkTheme;
+  static ThemeData get darkTheme => NatureTheme.darkTheme;
 }

@@ -125,11 +125,18 @@ class SleepRepository {
       return;
     }
     
+    // Fabbisogno effettivo della sessione: usa sleepNeedMin del sonno, non inventare baseline fittizie
+    final double? effectiveNeed = (sleep.sleepNeedMin != null && sleep.sleepNeedMin! > 0)
+        ? sleep.sleepNeedMin!.toDouble()
+        : null;
+
     final sleepPerfPct = sleep.sleepPerformancePct ??
-        WhoopAnalyticsEngine.calculateSleepPerformancePct(
-          actualDurationMin: sleep.durataTotMin.toDouble(),
-          sleepNeedMin: profile.sleepBaselineMin.toDouble(),
-        );
+        (effectiveNeed != null
+            ? WhoopAnalyticsEngine.calculateSleepPerformancePct(
+                actualDurationMin: sleep.durataTotMin.toDouble(),
+                sleepNeedMin: effectiveNeed,
+              )
+            : 0.0);
 
     // c) Ricalcola il Recovery Score incrociando HRV/RHR con le baseline
     final recoveryScore = WhoopAnalyticsEngine.calculateRecoveryScorePct(

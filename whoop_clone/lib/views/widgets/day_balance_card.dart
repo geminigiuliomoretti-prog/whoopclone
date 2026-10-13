@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 
-/// Widget "Il bilancio della tua giornata" (Sezione 1 Roadmap)
+/// Widget "Il bilancio della tua giornata"
 /// Confronta il Day Strain accumulato con il Target Strain consigliato dal Recovery Score
 class DayBalanceCard extends StatelessWidget {
   final double currentStrain;
@@ -19,7 +19,7 @@ class DayBalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final recoveryColor = WhoopTheme.getRecoveryColor(recoveryPct);
+    final recoveryColor = NatureTheme.getRecoveryColor(recoveryPct);
     final isOptimal = currentStrain >= targetStrainMin && currentStrain <= targetStrainMax;
     final isUnder = currentStrain < targetStrainMin;
 
@@ -27,17 +27,20 @@ class DayBalanceCard extends StatelessWidget {
     Color statusColor;
     if (isOptimal) {
       statusText = 'OTTIMALE (IN TARGET)';
-      statusColor = WhoopTheme.recoveryGreen;
+      statusColor = NatureColors.recoveryAccent;
     } else if (isUnder) {
       statusText = 'STIMOLO INCOMPLETO';
-      statusColor = WhoopTheme.recoveryYellow;
+      statusColor = NatureColors.amberWarm;
     } else {
       statusText = 'SUPERATO IL TARGET';
-      statusColor = WhoopTheme.strainHigh;
+      statusColor = NatureColors.terracotta;
     }
 
     return Container(
-      decoration: WhoopTheme.officialCardDecoration(tint: WhoopTheme.strainBlue),
+      decoration: NatureTheme.organicCardDecoration(
+        isDark: true,
+        accentTint: NatureColors.strainAccent.withValues(alpha: 0.08),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -48,12 +51,12 @@ class DayBalanceCard extends StatelessWidget {
               children: [
                 const Row(
                   children: [
-                    Icon(Icons.balance, color: WhoopTheme.strainBlue, size: 18),
+                    Icon(Icons.balance_rounded, color: NatureColors.tealLight, size: 18),
                     SizedBox(width: 8),
                     Text(
                       'IL BILANCIO DELLA TUA GIORNATA',
                       style: TextStyle(
-                        color: WhoopTheme.textSecondary,
+                        color: NatureColors.textDarkMuted,
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.1,
@@ -88,13 +91,13 @@ class DayBalanceCard extends StatelessWidget {
                     children: [
                       const Text(
                         'Sforzo Attuale',
-                        style: TextStyle(color: WhoopTheme.textMuted, fontSize: 11),
+                        style: TextStyle(color: NatureColors.textDarkMuted, fontSize: 11),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         currentStrain.toStringAsFixed(1),
                         style: const TextStyle(
-                          color: WhoopTheme.strainBlue,
+                          color: NatureColors.coralLight,
                           fontSize: 22,
                           fontWeight: FontWeight.w900,
                         ),
@@ -102,7 +105,7 @@ class DayBalanceCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                Container(width: 1, height: 32, color: WhoopTheme.cardBorder),
+                Container(width: 1, height: 32, color: NatureColors.border),
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.only(left: 16.0),
@@ -111,7 +114,7 @@ class DayBalanceCard extends StatelessWidget {
                       children: [
                         const Text(
                           'Target Consigliato',
-                          style: TextStyle(color: WhoopTheme.textMuted, fontSize: 11),
+                          style: TextStyle(color: NatureColors.textDarkMuted, fontSize: 11),
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -133,19 +136,19 @@ class DayBalanceCard extends StatelessWidget {
             Stack(
               children: [
                 Container(
-                  height: 8,
+                  height: 6,
                   decoration: BoxDecoration(
-                    color: WhoopTheme.cardBorder,
-                    borderRadius: BorderRadius.circular(4),
+                    color: NatureColors.border,
+                    borderRadius: BorderRadius.circular(3),
                   ),
                 ),
                 FractionallySizedBox(
                   widthFactor: (currentStrain / 21.0).clamp(0.0, 1.0),
                   child: Container(
-                    height: 8,
+                    height: 6,
                     decoration: BoxDecoration(
-                      color: WhoopTheme.strainBlue,
-                      borderRadius: BorderRadius.circular(4),
+                      color: NatureColors.terracotta,
+                      borderRadius: BorderRadius.circular(3),
                     ),
                   ),
                 ),
@@ -154,7 +157,7 @@ class DayBalanceCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Con un Recupero del ${recoveryPct.toInt()}%, il tuo organismo può sostenere uno sforzo fino a $targetStrainMax senza compromettere la rigenerazione di domani.',
-              style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 11, height: 1.3),
+              style: const TextStyle(color: NatureColors.textDarkSecondary, fontSize: 11, height: 1.3),
             ),
           ],
         ),

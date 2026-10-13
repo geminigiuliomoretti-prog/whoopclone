@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/nature_theme.dart';
-import '../widgets/nature/nature_scene.dart';
 import '../../data/database/database_helper.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 import '../widgets/stress_check_sheet.dart';
@@ -243,17 +242,16 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
 
             const SizedBox(height: 8),
 
-            // ── 2. Arc Gauge Grande 0,0 - 3,0 Immerso in NatureScene ───────────
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                NatureScene(
-                  mood: NatureMood.stress,
-                  height: 185,
-                  isDark: isDark,
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                SizedBox(
+            // ── 2. Arc Gauge Grande 0,0 - 3,0 (Zero atmospheric image) ───────────
+            Container(
+              height: 195,
+              width: double.infinity,
+              decoration: NatureTheme.organicCardDecoration(
+                isDark: isDark,
+                accentTint: categoryColor.withValues(alpha: 0.1),
+              ),
+              child: Center(
+                child: SizedBox(
                   width: 240,
                   height: 160,
                   child: CustomPaint(
@@ -297,7 +295,7 @@ class _StressMonitorScreenState extends State<StressMonitorScreen> {
                     ),
                   ),
                 ),
-              ],
+              ),
             ),
 
             const SizedBox(height: 16),

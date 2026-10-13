@@ -11,6 +11,7 @@ class NoopTelemetryFrame {
   final int timestampUtcMs;
   final int heartRate; // Range fisiologico: 30-220 bpm
   final List<double> rrIntervalsMs; // Validi nel range 300-1500 ms
+  final double? rmssdMs; // HRV rMSSD autentico nel range 5-300 ms
   final double accelEnmo; // Dynamic acceleration max(0, sqrt(x^2+y^2+z^2) - 1.0)
   final double? skinTempCelsius; // Temperatura cutanea normalizzata
   final double? spo2Pct; // Saturazione ossigeno nel range 85-100%
@@ -21,6 +22,7 @@ class NoopTelemetryFrame {
     required this.timestampUtcMs,
     required this.heartRate,
     required this.rrIntervalsMs,
+    this.rmssdMs,
     required this.accelEnmo,
     this.skinTempCelsius,
     this.spo2Pct,
@@ -39,8 +41,9 @@ class NoopTelemetryFrame {
       'timestamp': DateTime.fromMillisecondsSinceEpoch(timestampUtcMs, isUtc: true).toIso8601String(),
       'timestamp_utc_ms': timestampUtcMs,
       'bpm': heartRate,
+      'rmssd_ms': rmssdMs,
       'rr_ms': meanRrMs,
-      'rr_intervals_json': jsonEncode(rrIntervalsMs),
+      'rr_intervals_json': rrIntervalsMs.isNotEmpty ? jsonEncode(rrIntervalsMs) : null,
       'accel_enmo': accelEnmo,
       'motion_var': motionVariance ?? accelEnmo,
       'skin_temp_celsius': skinTempCelsius,
@@ -50,7 +53,7 @@ class NoopTelemetryFrame {
 
   @override
   String toString() {
-    return 'NoopTelemetryFrame(ts: $timestampUtcMs, hr: $heartRate bpm, rrCount: ${rrIntervalsMs.length}, enmo: ${accelEnmo.toStringAsFixed(4)}g, temp: $skinTempCelsius°C, spo2: $spo2Pct%)';
+    return 'NoopTelemetryFrame(ts: $timestampUtcMs, hr: $heartRate bpm, rrCount: ${rrIntervalsMs.length}, rmssd: ${rmssdMs?.toStringAsFixed(1)} ms, enmo: ${accelEnmo.toStringAsFixed(4)}g, temp: $skinTempCelsius°C, spo2: $spo2Pct%)';
   }
 }
 
@@ -151,15 +154,12 @@ class NoopBleDecoder {
         }
       }
 
-      // 3. Intervalli R-R (Bytes 40-43 rMSSD o estrazione serie)
+      // 3. HRV rMSSD (Bytes 40-43 float32 LE)
+      // NOTA SCIENTIFICA: Il pacchetto 96-byte WHOOP riporta la metrica rMSSD precalcolata dal sensore,
+      // NON la serie discreta di intervalli R-R grezzi. Non sintetizzare RR fittizi (es. 60000/HR).
       final rawRmssd = byteData.getFloat32(40, Endian.little);
-      final List<double> rrList = [];
-      if (rawRmssd > 0 && rawRmssd.isFinite) {
-        final instantaneousRr = 60000.0 / rawHr;
-        if (instantaneousRr >= 300.0 && instantaneousRr <= 1500.0) {
-          rrList.add(instantaneousRr);
-        }
-      }
+      final double? decodedRmssd = (rawRmssd.isFinite && rawRmssd >= 5.0 && rawRmssd <= 300.0) ? rawRmssd : null;
+      final List<double> rrList = []; // Nessun intervallo R-R discreto fornito nel pacchetto 96-byte
 
       // 4. Temperatura cutanea (Bytes 28-29 uint16 raw -> °C)
       double? skinTemp;
@@ -183,7 +183,8 @@ class NoopBleDecoder {
       return NoopTelemetryFrame(
         timestampUtcMs: rawTimestampMs,
         heartRate: rawHr,
-        rrIntervalsMs: filterRrIntervals(rrList),
+        rrIntervalsMs: rrList,
+        rmssdMs: decodedRmssd,
         accelEnmo: accelEnmo,
         motionVariance: motionVar,
         skinTempCelsius: skinTemp,
@@ -220,14 +221,32 @@ class NoopBleDecoder {
       }
     }
 
+    // Calcolo del vero rMSSD per intervalli RR reali (Task Force 1996)
+    double? computedRmssd;
+    if (rrList.length >= 2) {
+      double sumSq = 0.0;
+      int count = 0;
+      for (int i = 0; i < rrList.length - 1; i++) {
+        final diff = (rrList[i + 1] - rrList[i]).abs();
+        if (diff <= 200.0) { // Rigetto ectopico
+          sumSq += diff * diff;
+          count++;
+        }
+      }
+      if (count > 0) {
+        computedRmssd = sqrt(sumSq / count);
+      }
+    }
+
     final ts = explicitTimestampMs ?? DateTime.now().toUtc().millisecondsSinceEpoch;
 
     return NoopTelemetryFrame(
       timestampUtcMs: ts,
       heartRate: hr,
       rrIntervalsMs: rrList,
+      rmssdMs: computedRmssd,
       accelEnmo: 0.0,
-      motionVariance: 0.001,
+      motionVariance: 0.0,
       skinTempCelsius: null,
       spo2Pct: null,
     );

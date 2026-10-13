@@ -31,6 +31,9 @@ enum HapticIntensity {
 
 /// Servizio di Gestione della Sveglia Aptica Intelligente e Controllo BLE (NOOP Haptic Engine)
 class HapticAlarmService extends ChangeNotifier {
+  static const MethodChannel _foregroundChannel =
+      MethodChannel('com.example.whoop_clone/foreground_service');
+
   final BleConnectionManager _bleManager;
   final DatabaseHelper _dbHelper;
 
@@ -249,12 +252,21 @@ class HapticAlarmService extends ChangeNotifier {
   void _startPhoneVibrationRinging() {
     _phoneVibrationLoop?.cancel();
     HapticFeedback.vibrate();
+    _triggerNativeVibration(500);
     _phoneVibrationLoop = Timer.periodic(const Duration(milliseconds: 800), (timer) {
       if (!_isRinging) {
         timer.cancel();
       } else {
         HapticFeedback.vibrate();
+        _triggerNativeVibration(400);
       }
+    });
+  }
+
+  void _triggerNativeVibration(int durationMs) {
+    _foregroundChannel.invokeMethod('triggerVibration', {'durationMs': durationMs}).catchError((_) {
+      // Ignorato se piattaforma non Android o in ambiente di test
+      return null;
     });
   }
 

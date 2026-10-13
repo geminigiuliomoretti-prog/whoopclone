@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../../../core/constants/whoop_theme.dart';
+import '../../../core/theme/nature_theme.dart';
 
 /// Punto di telemetria cardiaca intraday con supporto per valori nulli (gap reale)
 class HrDataPoint {
@@ -36,6 +36,7 @@ class IntradayHrChart extends StatefulWidget {
   final int? hrRestBaseline;
   final int? hrMaxBaseline;
   final bool isLoading;
+  final Color? lineColor;
 
   const IntradayHrChart({
     super.key,
@@ -44,6 +45,7 @@ class IntradayHrChart extends StatefulWidget {
     this.hrRestBaseline = 55,
     this.hrMaxBaseline = 190,
     this.isLoading = false,
+    this.lineColor,
   });
 
   @override
@@ -55,22 +57,24 @@ class _IntradayHrChartState extends State<IntradayHrChart> {
 
   @override
   Widget build(BuildContext context) {
+    final effectiveLineColor = widget.lineColor ?? NatureColors.tealLight;
+
     // 1. Stato: Caricamento (spinner discreto) (CHT-03)
     if (widget.isLoading) {
       return Container(
         height: widget.height,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: const Color(0xFF141920),
+          color: NatureColors.surfaceHighlight.withValues(alpha: 0.45),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: WhoopTheme.cardBorder),
+          border: Border.all(color: NatureColors.borderSubtle),
         ),
         child: const SizedBox(
-          width: 24,
-          height: 24,
+          width: 22,
+          height: 22,
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            valueColor: AlwaysStoppedAnimation<Color>(WhoopTheme.textSecondary),
+            valueColor: AlwaysStoppedAnimation<Color>(NatureColors.secondaryText),
           ),
         ),
       );
@@ -85,19 +89,19 @@ class _IntradayHrChartState extends State<IntradayHrChart> {
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
-          color: const Color(0xFF141920),
+          color: NatureColors.surfaceHighlight.withValues(alpha: 0.45),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: WhoopTheme.cardBorder),
+          border: Border.all(color: NatureColors.borderSubtle),
         ),
         child: const Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.favorite_border, color: WhoopTheme.textMuted, size: 24),
+            Icon(Icons.favorite_border, color: NatureColors.mutedText, size: 24),
             SizedBox(height: 8),
             Text(
               'Nessun dato registrato per questa finestra temporale',
               textAlign: TextAlign.center,
-              style: TextStyle(color: WhoopTheme.textMuted, fontSize: 12),
+              style: TextStyle(color: NatureColors.secondaryText, fontSize: 12),
             ),
           ],
         ),
@@ -123,15 +127,15 @@ class _IntradayHrChartState extends State<IntradayHrChart> {
       children: [
         if (hasGaps) ...[
           const Padding(
-            padding: EdgeInsets.only(bottom: 6),
+            padding: EdgeInsets.only(bottom: 8),
             child: Row(
               children: [
-                Icon(Icons.warning_amber_rounded, size: 14, color: Color(0xFFFF9F0A)),
+                Icon(Icons.warning_amber_rounded, size: 14, color: NatureColors.amberWarm),
                 SizedBox(width: 5),
                 Text(
                   'Dati parziali: rilevate interruzioni nel segnale (> 5 min)',
                   style: TextStyle(
-                    color: Color(0xFFFF9F0A),
+                    color: NatureColors.amberWarm,
                     fontSize: 10.5,
                     fontWeight: FontWeight.bold,
                   ),
@@ -141,76 +145,88 @@ class _IntradayHrChartState extends State<IntradayHrChart> {
           ),
         ],
 
-        // Header con Statistiche Rapide Min / Avg / Max
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _buildStatBadge('MIN', '$minBpm BPM', WhoopTheme.recoveryGreen),
-            _buildStatBadge('MEDIA', '$avgBpm BPM', WhoopTheme.strainBlue),
-            _buildStatBadge('MAX', '$maxBpm BPM', WhoopTheme.strainHigh),
-          ],
-        ),
-        const SizedBox(height: 10),
-
-        // Area Grafico CustomPaint con spezzamento esplicito delle linee (CHT-01)
+        // Area Tracciato con Gestione Touch
         GestureDetector(
           onTapDown: (details) => _selectPointAt(details.localPosition, validPoints),
           onHorizontalDragUpdate: (details) => _selectPointAt(details.localPosition, validPoints),
-          onTapUp: (_) => setState(() => _selectedPoint = null),
-          onHorizontalDragEnd: (_) => setState(() => _selectedBlockNull()),
+          onTapUp: (_) => _selectedBlockNull(),
+          onHorizontalDragEnd: (_) => _selectedBlockNull(),
           child: Container(
             height: widget.height,
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFF141920),
+              color: NatureColors.surfaceHighlight.withValues(alpha: 0.45),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: WhoopTheme.cardBorder),
+              border: Border.all(color: NatureColors.borderSubtle),
             ),
-            child: CustomPaint(
-              painter: _IntradayHrPainter(
-                points: validPoints,
-                minBpm: math.min(minBpm, widget.hrRestBaseline ?? 50),
-                maxBpm: math.max(maxBpm, widget.hrMaxBaseline ?? 180),
-                selectedPoint: _selectedPoint,
-              ),
+            child: Stack(
+              children: [
+                // Griglia e Linee di Baseline
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _IntradayGridPainter(
+                      minBpm: minBpm,
+                      maxBpm: maxBpm,
+                      hrRestBaseline: widget.hrRestBaseline,
+                    ),
+                  ),
+                ),
+
+                // Tracciato Curva Cardiaca
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _IntradayHrPainter(
+                      points: validPoints,
+                      minBpm: minBpm,
+                      maxBpm: maxBpm,
+                      selectedPoint: _selectedPoint,
+                      lineColor: effectiveLineColor,
+                    ),
+                  ),
+                ),
+
+                // Tooltip Fluttuante su Touch
+                if (_selectedPoint != null)
+                  Positioned(
+                    top: 0,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: NatureColors.surface.withValues(alpha: 0.95),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: effectiveLineColor.withValues(alpha: 0.5), width: 0.8),
+                      ),
+                      child: Text(
+                        '${_selectedPoint!.bpm} bpm  •  ${_formatTime(_selectedPoint!.timestamp)}',
+                        style: TextStyle(
+                          color: effectiveLineColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
 
-        const SizedBox(height: 6),
-        _buildTimeAxis(validPoints),
+        const SizedBox(height: 8),
+
+        // Barra Statistiche in basso (Min, Media, Max, Baseline)
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildStatBadge('MIN', '$minBpm BPM', NatureColors.secondaryText),
+            _buildStatBadge('MEDIA', '$avgBpm BPM', NatureColors.primaryText),
+            _buildStatBadge('MAX', '$maxBpm BPM', effectiveLineColor),
+            if (widget.hrRestBaseline != null)
+              _buildStatBadge('A RIPOSO', '${widget.hrRestBaseline} BPM', NatureColors.recoveryAccent),
+          ],
+        ),
       ],
-    );
-  }
-
-  Widget _buildTimeAxis(List<HrDataPoint> points) {
-    if (points.isEmpty) return const SizedBox.shrink();
-    final start = points.first.timestamp;
-    final end = points.last.timestamp;
-    final spanMs = end.difference(start).inMilliseconds;
-    if (spanMs <= 0) {
-      return Center(
-        child: Text(_formatTime(start), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-      );
-    }
-
-    final t1 = DateTime.fromMillisecondsSinceEpoch(start.millisecondsSinceEpoch + (spanMs * 0.25).round());
-    final t2 = DateTime.fromMillisecondsSinceEpoch(start.millisecondsSinceEpoch + (spanMs * 0.50).round());
-    final t3 = DateTime.fromMillisecondsSinceEpoch(start.millisecondsSinceEpoch + (spanMs * 0.75).round());
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(_formatTime(start), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-          Text(_formatTime(t1), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-          Text(_formatTime(t2), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-          Text(_formatTime(t3), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-          Text(_formatTime(end), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9)),
-        ],
-      ),
     );
   }
 
@@ -241,7 +257,7 @@ class _IntradayHrChartState extends State<IntradayHrChart> {
         Text(
           '$label: ',
           style: const TextStyle(
-            color: WhoopTheme.textSecondary,
+            color: NatureColors.mutedText,
             fontSize: 10,
             fontWeight: FontWeight.bold,
           ),
@@ -257,12 +273,14 @@ class _IntradayHrPainter extends CustomPainter {
   final int minBpm;
   final int maxBpm;
   final HrDataPoint? selectedPoint;
+  final Color lineColor;
 
   _IntradayHrPainter({
     required this.points,
     required this.minBpm,
     required this.maxBpm,
     this.selectedPoint,
+    required this.lineColor,
   });
 
   @override
@@ -271,12 +289,11 @@ class _IntradayHrPainter extends CustomPainter {
 
     final bpmRange = (maxBpm - minBpm) > 0 ? (maxBpm - minBpm) : 100;
 
-    // Se c'è solo un punto
     if (points.length == 1) {
       final p = points.first;
       final yRatio = (p.bpm! - minBpm) / bpmRange;
       final y = size.height - (yRatio * (size.height - 20)) - 10;
-      canvas.drawCircle(Offset(size.width / 2, y), 4, Paint()..color = WhoopTheme.strainBlue);
+      canvas.drawCircle(Offset(size.width / 2, y), 4, Paint()..color = lineColor);
       return;
     }
 
@@ -299,8 +316,8 @@ class _IntradayHrPainter extends CustomPainter {
     }
 
     final strokePaint = Paint()
-      ..color = WhoopTheme.strainBlue
-      ..strokeWidth = 2.2
+      ..color = lineColor
+      ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
@@ -308,8 +325,8 @@ class _IntradayHrPainter extends CustomPainter {
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
       colors: [
-        WhoopTheme.strainBlue.withValues(alpha: 0.35),
-        WhoopTheme.strainBlue.withValues(alpha: 0.0),
+        lineColor.withValues(alpha: 0.25),
+        lineColor.withValues(alpha: 0.0),
       ],
     );
 
@@ -317,13 +334,12 @@ class _IntradayHrPainter extends CustomPainter {
       ..shader = gradient.createShader(Rect.fromLTWH(0, 0, size.width, size.height))
       ..style = PaintingStyle.fill;
 
-    // Spezzamento esplicito delle linee in presenza di gap > 5 minuti (CHT-01)
     List<Offset> currentSegment = [];
 
     void drawSegment(List<Offset> seg) {
       if (seg.isEmpty) return;
       if (seg.length == 1) {
-        canvas.drawCircle(seg.first, 2.5, Paint()..color = WhoopTheme.strainBlue);
+        canvas.drawCircle(seg.first, 2.5, Paint()..color = lineColor);
         return;
       }
 
@@ -357,7 +373,6 @@ class _IntradayHrPainter extends CustomPainter {
       final diffMinutes = curr.timestamp.difference(prev.timestamp).inMinutes;
 
       if (diffMinutes > 5) {
-        // Gap > 5 minuti: spezza la linea senza interpolare
         drawSegment(currentSegment);
         currentSegment = [];
       }
@@ -365,27 +380,61 @@ class _IntradayHrPainter extends CustomPainter {
     }
     drawSegment(currentSegment);
 
-    // Evidenziazione punto selezionato su touch
     if (selectedPoint != null && selectedPoint!.hasData) {
       final selectedIndex = points.indexOf(selectedPoint!);
       if (selectedIndex >= 0) {
-        final pos = getPointOffset(selectedPoint!, selectedIndex);
-
-        final linePaint = Paint()
-          ..color = Colors.white.withValues(alpha: 0.5)
-          ..strokeWidth = 1.0
-          ..style = PaintingStyle.stroke;
-        canvas.drawLine(Offset(pos.dx, 0), Offset(pos.dx, size.height), linePaint);
-
-        final pointPaint = Paint()
-          ..color = WhoopTheme.strainHigh
-          ..style = PaintingStyle.fill;
-        canvas.drawCircle(pos, 5, pointPaint);
-        canvas.drawCircle(pos, 8, Paint()..color = Colors.white.withValues(alpha: 0.3)..style = PaintingStyle.stroke);
+        final ptOffset = getPointOffset(selectedPoint!, selectedIndex);
+        canvas.drawCircle(ptOffset, 6, Paint()..color = Colors.white);
+        canvas.drawCircle(ptOffset, 3, Paint()..color = lineColor);
       }
     }
   }
 
   @override
-  bool shouldRepaint(covariant _IntradayHrPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _IntradayHrPainter old) =>
+      old.points != points || old.selectedPoint != selectedPoint || old.lineColor != lineColor;
+}
+
+class _IntradayGridPainter extends CustomPainter {
+  final int minBpm;
+  final int maxBpm;
+  final int? hrRestBaseline;
+
+  _IntradayGridPainter({
+    required this.minBpm,
+    required this.maxBpm,
+    this.hrRestBaseline,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final gridPaint = Paint()
+      ..color = NatureColors.borderSubtle.withValues(alpha: 0.5)
+      ..strokeWidth = 0.8;
+
+    canvas.drawLine(Offset(0, size.height * 0.25), Offset(size.width, size.height * 0.25), gridPaint);
+    canvas.drawLine(Offset(0, size.height * 0.50), Offset(size.width, size.height * 0.50), gridPaint);
+    canvas.drawLine(Offset(0, size.height * 0.75), Offset(size.width, size.height * 0.75), gridPaint);
+
+    if (hrRestBaseline != null && hrRestBaseline! >= minBpm && hrRestBaseline! <= maxBpm) {
+      final bpmRange = (maxBpm - minBpm) > 0 ? (maxBpm - minBpm) : 100;
+      final yRatio = (hrRestBaseline! - minBpm) / bpmRange;
+      final y = size.height - (yRatio * (size.height - 20)) - 10;
+
+      final baselinePaint = Paint()
+        ..color = NatureColors.recoveryAccent.withValues(alpha: 0.4)
+        ..strokeWidth = 1.0;
+
+      double startX = 0;
+      const dashWidth = 4.0;
+      const dashSpace = 3.0;
+      while (startX < size.width) {
+        canvas.drawLine(Offset(startX, y), Offset(startX + dashWidth, y), baselinePaint);
+        startX += dashWidth + dashSpace;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

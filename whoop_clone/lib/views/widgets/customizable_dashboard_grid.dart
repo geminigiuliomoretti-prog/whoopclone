@@ -44,25 +44,28 @@ class CustomizableDashboardGrid extends StatelessWidget {
     final effectiveRemSleep = sonno?.sonnoRemMin;
     final effectiveSleepEff = sonno?.efficienzaPct;
 
+    final hrvBaseVal = viewModel.getPersonalBaseline('hrv')?.mean ?? profile.hrvBaselineMean;
+    final rhrBaseVal = viewModel.getPersonalBaseline('rhr')?.mean ?? profile.hrRestBaseline.toDouble();
+
     final Map<String, Map<String, dynamic>> allTiles = {
       'vfc': {
         'title': 'Variabilità FC (VFC)',
         'value': effectiveHrv != null ? '${effectiveHrv.toStringAsFixed(0)} ms' : '-- ms',
-        'subtitle': effectiveHrv != null ? (effectiveHrv >= profile.hrvBaselineMean ? 'Superiore alla baseline' : 'Inferiore alla baseline') : 'In attesa di dati',
+        'subtitle': effectiveHrv != null ? (effectiveHrv >= hrvBaseVal ? 'Superiore alla baseline' : 'Inferiore alla baseline') : 'In attesa di dati',
         'icon': Icons.show_chart,
-        'accentColor': effectiveHrv != null ? (effectiveHrv >= profile.hrvBaselineMean ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
+        'accentColor': effectiveHrv != null ? (effectiveHrv >= hrvBaseVal ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
       },
       'fcr': {
         'title': 'FC a Riposo (FCR)',
         'value': effectiveRhr != null ? '$effectiveRhr bpm' : '-- bpm',
-        'subtitle': effectiveRhr != null ? 'Baseline: ${profile.hrRestBaseline} bpm' : 'In attesa di dati',
+        'subtitle': effectiveRhr != null ? 'Baseline: ${rhrBaseVal.round()} bpm' : 'In attesa di dati',
         'icon': Icons.favorite_border,
-        'accentColor': effectiveRhr != null ? (effectiveRhr <= profile.hrRestBaseline ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
+        'accentColor': effectiveRhr != null ? (effectiveRhr <= rhrBaseVal ? WhoopTheme.recoveryGreen : WhoopTheme.recoveryYellow) : WhoopTheme.textSecondary,
       },
       'steps': {
         'title': 'Passi Giornalieri',
         'value': steps != null ? '$steps' : '--',
-        'subtitle': steps != null ? 'Pedometer' : 'Dispositivo privo di contapassi',
+        'subtitle': steps != null ? 'Passi stimati dal movimento' : 'Passi WHOOP non disponibili',
         'icon': Icons.directions_walk,
         'accentColor': WhoopTheme.strainBlue,
       },

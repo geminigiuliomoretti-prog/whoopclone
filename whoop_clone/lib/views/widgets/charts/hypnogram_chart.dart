@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../../../core/constants/whoop_theme.dart';
+import '../../../core/theme/nature_theme.dart';
 
 /// Rappresentazione di un blocco o segmento di stadio di sonno nell'ipnogramma (STG-07, CHT-01)
 class HypnogramBlock {
@@ -25,21 +25,21 @@ class HypnogramBlock {
     switch (stage.toLowerCase()) {
       case 'wake':
       case 'veglia':
-        return const Color(0xFFFF9500); // Arancione veglia
+        return const Color(0xFFDF955B); // Albicocca/ambra calma veglia
       case 'rem':
-        return const Color(0xFF5AC8FA); // Azzurro chiaro REM
+        return const Color(0xFF6AB6CC); // Ciano crepuscolare REM
       case 'light':
       case 'leggero':
-        return const Color(0xFF5856D6); // Viola/Blu sonno leggero
+        return const Color(0xFF6F6A9E); // Lavanda/indaco notturno tenue
       case 'sws':
       case 'deep':
       case 'profondo':
-        return const Color(0xFF0A84FF); // Blu elettrico/profondo SWS
+        return const Color(0xFF2E7B91); // Teal notturno profondo SWS
       case 'missing':
       case 'mancante':
         return Colors.transparent; // Interruzione visiva (gap)
       default:
-        return const Color(0xFF0A84FF);
+        return const Color(0xFF2E7B91);
     }
   }
 
@@ -114,16 +114,16 @@ class _HypnogramChartState extends State<HypnogramChart> {
         height: widget.height,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: const Color(0xFF141920),
+          color: NatureColors.surfaceHighlight.withValues(alpha: 0.45),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: WhoopTheme.cardBorder),
+          border: Border.all(color: NatureColors.borderSubtle),
         ),
         child: const SizedBox(
-          width: 24,
-          height: 24,
+          width: 22,
+          height: 22,
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            valueColor: AlwaysStoppedAnimation<Color>(WhoopTheme.textSecondary),
+            valueColor: AlwaysStoppedAnimation<Color>(NatureColors.secondaryText),
           ),
         ),
       );
@@ -136,19 +136,19 @@ class _HypnogramChartState extends State<HypnogramChart> {
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
-          color: const Color(0xFF141920),
+          color: NatureColors.surfaceHighlight.withValues(alpha: 0.45),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: WhoopTheme.cardBorder),
+          border: Border.all(color: NatureColors.borderSubtle),
         ),
         child: const Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.bedtime_outlined, color: WhoopTheme.textMuted, size: 24),
+            Icon(Icons.bedtime_outlined, color: NatureColors.mutedText, size: 24),
             SizedBox(height: 8),
             Text(
               'Nessun dato registrato per questa finestra temporale',
               textAlign: TextAlign.center,
-              style: TextStyle(color: WhoopTheme.textMuted, fontSize: 12),
+              style: TextStyle(color: NatureColors.secondaryText, fontSize: 12),
             ),
           ],
         ),
@@ -167,12 +167,12 @@ class _HypnogramChartState extends State<HypnogramChart> {
             padding: EdgeInsets.only(bottom: 8),
             child: Row(
               children: [
-                Icon(Icons.warning_amber_rounded, size: 14, color: Color(0xFFFF9F0A)),
+                Icon(Icons.warning_amber_rounded, size: 14, color: NatureColors.amberWarm),
                 SizedBox(width: 5),
                 Text(
                   'Dati parziali: rilevate interruzioni nel tracciato notturno',
                   style: TextStyle(
-                    color: Color(0xFFFF9F0A),
+                    color: NatureColors.amberWarm,
                     fontSize: 10.5,
                     fontWeight: FontWeight.bold,
                   ),
@@ -193,9 +193,9 @@ class _HypnogramChartState extends State<HypnogramChart> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFF141920),
+              color: NatureColors.surfaceHighlight.withValues(alpha: 0.45),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: WhoopTheme.cardBorder),
+              border: Border.all(color: NatureColors.borderSubtle),
             ),
             child: Stack(
               children: [
@@ -203,10 +203,10 @@ class _HypnogramChartState extends State<HypnogramChart> {
                 Column(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _buildStageRow('VEGLIA', const Color(0xFFFF9500), 0.15),
-                    _buildStageRow('REM', const Color(0xFF5AC8FA), 0.25),
-                    _buildStageRow('LEGGERO', const Color(0xFF5856D6), 0.40),
-                    _buildStageRow('SWS', const Color(0xFF0A84FF), 0.20),
+                    _buildStageRow('VEGLIA', const Color(0xFFDF955B), 0.15),
+                    _buildStageRow('REM', const Color(0xFF6AB6CC), 0.25),
+                    _buildStageRow('LEGGERO', const Color(0xFF6F6A9E), 0.40),
+                    _buildStageRow('SWS', const Color(0xFF2E7B91), 0.20),
                   ],
                 ),
 
@@ -225,10 +225,10 @@ class _HypnogramChartState extends State<HypnogramChart> {
                           child: Container(
                             margin: const EdgeInsets.symmetric(horizontal: 0.5),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF0D1117),
+                              color: NatureColors.background,
                               borderRadius: BorderRadius.circular(2),
                               border: Border.all(
-                                color: isSelected ? Colors.white : const Color(0x33FF453A),
+                                color: isSelected ? NatureColors.primaryText : const Color(0x33FF453A),
                                 width: isSelected ? 1.5 : 1.0,
                               ),
                             ),
@@ -249,7 +249,7 @@ class _HypnogramChartState extends State<HypnogramChart> {
                           decoration: BoxDecoration(
                             color: block.color.withValues(alpha: isSelected ? 1.0 : 0.85),
                             borderRadius: BorderRadius.circular(2),
-                            border: isSelected ? Border.all(color: Colors.white, width: 1.5) : null,
+                            border: isSelected ? Border.all(color: NatureColors.primaryText, width: 1.5) : null,
                           ),
                         ),
                       );
@@ -265,7 +265,7 @@ class _HypnogramChartState extends State<HypnogramChart> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.92),
+                        color: NatureColors.surface.withValues(alpha: 0.95),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: _selectedBlock!.isMissing ? const Color(0xFFFF453A) : _selectedBlock!.color,
@@ -273,30 +273,27 @@ class _HypnogramChartState extends State<HypnogramChart> {
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            blurRadius: 6,
+                            color: Colors.black.withValues(alpha: 0.4),
+                            blurRadius: 8,
                           )
                         ],
                       ),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             _selectedBlock!.displayName,
                             style: TextStyle(
                               color: _selectedBlock!.isMissing ? const Color(0xFFFF453A) : _selectedBlock!.color,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             '${_formatTime(_selectedBlock!.startTime)} - ${_formatTime(_selectedBlock!.endTime)} (${_selectedBlock!.durationMinutes} min)',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                            ),
+                            style: const TextStyle(color: NatureColors.primaryText, fontSize: 9.5),
                           ),
                         ],
                       ),
@@ -307,51 +304,38 @@ class _HypnogramChartState extends State<HypnogramChart> {
           ),
         ),
 
-        const SizedBox(height: 6),
-        _buildTimeAxis(widget.blocks),
+        const SizedBox(height: 8),
+
+        // Asse Temporale (Orari Reali STG-07)
+        if (widget.blocks.isNotEmpty) _buildTimeAxis(),
 
         if (widget.showLegend) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           _buildLegend(hasGaps),
         ],
       ],
     );
   }
 
-  Widget _buildTimeAxis(List<HypnogramBlock> blocks) {
-    if (blocks.isEmpty) return const SizedBox.shrink();
-    final start = blocks.first.startTime;
-    final end = blocks.last.endTime;
-    final spanMs = end.difference(start).inMilliseconds;
-    if (spanMs <= 0) return const SizedBox.shrink();
+  Widget _buildTimeAxis() {
+    final start = widget.blocks.first.startTime;
+    final end = widget.blocks.last.endTime;
+    final totalSpan = end.difference(start);
 
-    if (spanMs < 60000 * 30) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(_formatTime(start), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
-            Text(_formatTime(end), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
-          ],
-        ),
-      );
-    }
-
-    final t1 = DateTime.fromMillisecondsSinceEpoch(start.millisecondsSinceEpoch + (spanMs * 0.25).round());
-    final t2 = DateTime.fromMillisecondsSinceEpoch(start.millisecondsSinceEpoch + (spanMs * 0.50).round());
-    final t3 = DateTime.fromMillisecondsSinceEpoch(start.millisecondsSinceEpoch + (spanMs * 0.75).round());
+    final t1 = start.add(Duration(seconds: (totalSpan.inSeconds * 0.25).round()));
+    final t2 = start.add(Duration(seconds: (totalSpan.inSeconds * 0.50).round()));
+    final t3 = start.add(Duration(seconds: (totalSpan.inSeconds * 0.75).round()));
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(_formatTime(start), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
-          Text(_formatTime(t1), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
-          Text(_formatTime(t2), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
-          Text(_formatTime(t3), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
-          Text(_formatTime(end), style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
+          Text(_formatTime(start), style: const TextStyle(color: NatureColors.mutedText, fontSize: 9.5, fontWeight: FontWeight.w600)),
+          Text(_formatTime(t1), style: const TextStyle(color: NatureColors.mutedText, fontSize: 9.5, fontWeight: FontWeight.w600)),
+          Text(_formatTime(t2), style: const TextStyle(color: NatureColors.mutedText, fontSize: 9.5, fontWeight: FontWeight.w600)),
+          Text(_formatTime(t3), style: const TextStyle(color: NatureColors.mutedText, fontSize: 9.5, fontWeight: FontWeight.w600)),
+          Text(_formatTime(end), style: const TextStyle(color: NatureColors.mutedText, fontSize: 9.5, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -390,7 +374,7 @@ class _HypnogramChartState extends State<HypnogramChart> {
           ),
         ),
         Expanded(
-          child: Divider(color: WhoopTheme.cardBorder.withValues(alpha: 0.3), height: 1),
+          child: Divider(color: NatureColors.borderSubtle.withValues(alpha: 0.6), height: 1),
         ),
       ],
     );
@@ -400,10 +384,10 @@ class _HypnogramChartState extends State<HypnogramChart> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
-        _buildLegendItem('Veglia', const Color(0xFFFF9500)),
-        _buildLegendItem('REM', const Color(0xFF5AC8FA)),
-        _buildLegendItem('Leggero', const Color(0xFF5856D6)),
-        _buildLegendItem('SWS', const Color(0xFF0A84FF)),
+        _buildLegendItem('Veglia', const Color(0xFFDF955B)),
+        _buildLegendItem('REM', const Color(0xFF6AB6CC)),
+        _buildLegendItem('Leggero', const Color(0xFF6F6A9E)),
+        _buildLegendItem('SWS', const Color(0xFF2E7B91)),
         if (hasGaps) _buildLegendItem('Interruzione', const Color(0xFFFF453A)),
       ],
     );
@@ -420,7 +404,7 @@ class _HypnogramChartState extends State<HypnogramChart> {
         const SizedBox(width: 5),
         Text(
           label,
-          style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 10),
+          style: const TextStyle(color: NatureColors.secondaryText, fontSize: 10),
         ),
       ],
     );

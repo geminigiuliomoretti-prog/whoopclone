@@ -67,9 +67,9 @@ class SleepNeedEngine {
     required double actualSleepMin,
     required double sleepNeedMin,
   }) {
-    if (sleepNeedMin <= 0) return 100.0;
+    if (sleepNeedMin <= 0 || actualSleepMin <= 0) return 0.0;
     final pct = (actualSleepMin / sleepNeedMin) * 100.0;
-    return pct.clamp(1.0, 100.0);
+    return pct.clamp(0.0, 100.0);
   }
 
   /// Calcola i tre target di sonno: Peak (100%), Perform (85%), Get By (70%)

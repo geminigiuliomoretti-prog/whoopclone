@@ -298,6 +298,10 @@ class WhoopAnalyticsEngine {
   }
 
   /// Calcola il Debito di Sonno accumulato (in minuti) con decadimento progressivo su finestra rolling
+  /// Modello fisiologico:
+  /// - Deficit (sonno effettivo < fabbisogno): incrementa il debito con decadimento (80% carryover)
+  /// - Surplus (sonno effettivo > fabbisogno): ripaga parzialmente (50%) il debito pregresso
+  /// - Clamped tra 0 e 300 minuti (5 ore max di debito accumulabile)
   static double calculateAccumulatedSleepDebt({
     required List<({double sleepNeedMin, double actualSleepMin})> historicalSleeps,
     double decayFactor = 0.80,
@@ -306,7 +310,12 @@ class WhoopAnalyticsEngine {
     double debt = 0.0;
     for (final day in historicalSleeps) {
       final deficit = day.sleepNeedMin - day.actualSleepMin;
-      debt = (debt * decayFactor) + (deficit > 0 ? deficit : 0.0);
+      if (deficit > 0) {
+        debt = (debt * decayFactor) + deficit;
+      } else {
+        debt = (debt * decayFactor) + (deficit * 0.50);
+      }
+      if (debt < 0.0) debt = 0.0;
     }
     return double.parse(debt.clamp(0.0, 300.0).toStringAsFixed(1));
   }
@@ -329,8 +338,56 @@ class WhoopAnalyticsEngine {
     required double actualDurationMin,
     required double sleepNeedMin,
   }) {
-    if (sleepNeedMin <= 0) return 100.0;
+    if (sleepNeedMin <= 0 || actualDurationMin <= 0) return 0.0;
     final pct = (actualDurationMin / sleepNeedMin) * 100.0;
-    return double.parse(pct.clamp(1.0, 100.0).toStringAsFixed(1));
+    return double.parse(pct.clamp(0.0, 100.0).toStringAsFixed(1));
+  }
+
+  /// Calcola la percentuale di ore effettive rispetto al fabbisogno di sonno.
+  /// Se il fabbisogno o la durata non sono validi (> 0), restituisce null (visualizzato come '--').
+  static double? calculateActualVsNeededPct({
+    required double? actualDurationMin,
+    required double? sleepNeedMin,
+  }) {
+    if (actualDurationMin == null || sleepNeedMin == null) return null;
+    if (actualDurationMin <= 0 || sleepNeedMin <= 0) return null;
+    final pct = (actualDurationMin / sleepNeedMin) * 100.0;
+    return double.parse(pct.clamp(0.0, 100.0).toStringAsFixed(1));
+  }
+
+  /// Calcola la Regolarità del Sonno (Sleep Consistency %) confrontando l'intervallo
+  /// di sonno reale con quello della notte precedente.
+  /// Richiede almeno 2 notti reali con orari validi. Se insufficienti, restituisce null.
+  static double? calculateSleepConsistency({
+    required DateTime currentOnset,
+    required DateTime currentWake,
+    required DateTime previousOnset,
+    required DateTime previousWake,
+  }) {
+    if (currentWake.isBefore(currentOnset) || previousWake.isBefore(previousOnset)) {
+      return null;
+    }
+
+    double toMinutesFromMidnight(DateTime dt, DateTime wakeRef) {
+      final midnight = DateTime(wakeRef.year, wakeRef.month, wakeRef.day);
+      return dt.difference(midnight).inMinutes.toDouble();
+    }
+
+    final curStart = toMinutesFromMidnight(currentOnset, currentWake);
+    final curEnd = toMinutesFromMidnight(currentWake, currentWake);
+    final prevStart = toMinutesFromMidnight(previousOnset, previousWake);
+    final prevEnd = toMinutesFromMidnight(previousWake, previousWake);
+
+    final overlapStart = max(curStart, prevStart);
+    final overlapEnd = min(curEnd, prevEnd);
+    final overlapMin = max(0.0, overlapEnd - overlapStart);
+
+    final totalSpanStart = min(curStart, prevStart);
+    final totalSpanEnd = max(curEnd, prevEnd);
+    final unionMin = totalSpanEnd - totalSpanStart;
+
+    if (unionMin <= 0) return null;
+    final consistency = (overlapMin / unionMin) * 100.0;
+    return double.parse(consistency.clamp(0.0, 100.0).toStringAsFixed(1));
   }
 }

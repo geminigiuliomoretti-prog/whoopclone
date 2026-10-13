@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/constants/whoop_theme.dart';
 import '../../core/theme/nature_theme.dart';
 
 /// Modulo 7: Activity Details Screen (Sezione 7 Roadmap)
@@ -132,10 +131,10 @@ class ActivityDetailsScreen extends StatelessWidget {
           ),
           IconButton(
             icon: const Icon(Icons.share, color: NatureColors.powderBlue),
-            tooltip: 'Condividi WHOOP Live',
+            tooltip: 'Condividi Attività Live',
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('WHOOP Live Overlay esportato per la condivisione!')),
+                const SnackBar(content: Text('Attività Live Overlay esportato per la condivisione!')),
               );
             },
           ),
@@ -383,7 +382,7 @@ class _DarkGpsMapPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     // Draw Dark Mode Grid background
     final gridPaint = Paint()
-      ..color = WhoopTheme.cardBorder.withOpacity(0.3)
+      ..color = NatureColors.borderSubtle
       ..strokeWidth = 1.0;
 
     for (double i = 0; i < size.width; i += 30) {
@@ -396,7 +395,7 @@ class _DarkGpsMapPainter extends CustomPainter {
     if (routePoints.length < 2) {
       // Fallback: Disegna percorso rappresentativo dinamico
       final routePaint = Paint()
-        ..color = WhoopTheme.strainBlue
+        ..color = NatureColors.strainAccent
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3.5
         ..strokeCap = StrokeCap.round;
@@ -412,10 +411,10 @@ class _DarkGpsMapPainter extends CustomPainter {
 
       canvas.drawPath(path, routePaint);
 
-      final startDot = Paint()..color = WhoopTheme.recoveryGreen;
+      final startDot = Paint()..color = NatureColors.recoveryAccent;
       canvas.drawCircle(Offset(size.width * 0.1, size.height * 0.8), 6, startDot);
 
-      final endDot = Paint()..color = WhoopTheme.strainHigh;
+      final endDot = Paint()..color = NatureColors.terracotta;
       canvas.drawCircle(Offset(size.width * 0.9, size.height * 0.5), 6, endDot);
       return;
     }
@@ -439,7 +438,7 @@ class _DarkGpsMapPainter extends CustomPainter {
     final lonSpan = (maxLon - minLon).abs() < 0.0001 ? 0.0001 : (maxLon - minLon);
 
     final routePaint = Paint()
-      ..color = WhoopTheme.strainBlue
+      ..color = NatureColors.strainAccent
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.5
       ..strokeCap = StrokeCap.round;
@@ -465,10 +464,10 @@ class _DarkGpsMapPainter extends CustomPainter {
     canvas.drawPath(path, routePaint);
 
     // Pin Inizio (Verde) e Fine (Rosso) su coordinate reali
-    final startDot = Paint()..color = WhoopTheme.recoveryGreen;
+    final startDot = Paint()..color = NatureColors.recoveryAccent;
     canvas.drawCircle(canvasPoints.first, 6, startDot);
 
-    final endDot = Paint()..color = WhoopTheme.strainHigh;
+    final endDot = Paint()..color = NatureColors.terracotta;
     canvas.drawCircle(canvasPoints.last, 6, endDot);
   }
 
@@ -480,7 +479,7 @@ class _HrTimelinePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final linePaint = Paint()
-      ..color = WhoopTheme.strainHigh
+      ..color = NatureColors.terracotta
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5;
 

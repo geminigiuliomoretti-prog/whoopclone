@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import '../ble/ble_connection_manager.dart';
 import '../ble/noop_protocol_decoder.dart';
@@ -116,34 +115,50 @@ class BackgroundSyncDaemon {
       flushTelemetry();
     });
 
-    // Sottoscrizione al flusso pacchetti 96 byte per estrarre ENMO, temperatura, SpO2, respirazione
+    // Sottoscrizione al flusso pacchetti 96 byte usando il decoder canonico Whoop96BytePacket
     _packet96Sub?.cancel();
     _packet96Sub = bleManager.packet96ByteStream.listen((packet) async {
-      // Estrazione dei dati biometrici avanzati dal pacchetto proprietario Whoop 96 byte
-      if (packet.rawBytes.length >= 40) {
+      if (packet.isValid && packet.rawBytes.length >= 24) {
         _lastMotionVar = packet.motionVariance;
-        _lastRespPower = _extractFloat32LE(packet.rawBytes, 16);
-        _lastRespRate = _extractFloat32LE(packet.rawBytes, 20);
-        final rawTemp = _extractUint16LE(packet.rawBytes, 28);
-        if (rawTemp != null && rawTemp > 1000 && rawTemp < 6000) {
+        _lastRespPower = packet.respiratoryPower > 0 ? packet.respiratoryPower : null;
+        _lastRespRate = packet.respiratoryRate > 0 ? packet.respiratoryRate : null;
+        
+        final rawTemp = packet.skinTempRaw;
+        if (rawTemp > 1000 && rawTemp < 6000) {
           _lastSkinTempC = double.parse((rawTemp * 0.0078125).toStringAsFixed(2));
-        }
-        final rRatio = _extractFloat32LE(packet.rawBytes, 32);
-        if (rRatio != null && rRatio > 0 && rRatio <= 1.2) {
-          _lastSpo2Pct = double.parse((110.0 - (25.0 * rRatio)).clamp(85.0, 100.0).toStringAsFixed(1));
+        } else {
+          _lastSkinTempC = null;
         }
 
-        // Aggiorna metriche in memoria per buffering notturno
+        final rRatio = packet.spo2Ratio;
+        if (rRatio > 0 && rRatio <= 1.2) {
+          _lastSpo2Pct = double.parse((110.0 - (25.0 * rRatio)).clamp(70.0, 100.0).toStringAsFixed(1));
+        } else {
+          _lastSpo2Pct = null;
+        }
+
+        // Aggiorna metriche con timestamp autentico del pacchetto
         final hrVal = packet.heartRateBpm > 0 ? packet.heartRateBpm : (_nocturnalBpmSamples.isNotEmpty ? _nocturnalBpmSamples.last : 0);
         if (hrVal > 0) {
           _lastPacket96Time = packet.timestamp;
-          final rmssdVal = packet.hrvRmssdMs > 0 && packet.hrvRmssdMs < 200 ? packet.hrvRmssdMs : null;
+          final rmssdVal = packet.hrvRmssdMs >= 5.0 && packet.hrvRmssdMs <= 300.0 ? packet.hrvRmssdMs : null;
           if (rmssdVal != null) {
             _nocturnalHrvSamples.add(rmssdVal);
             if (_nocturnalHrvSamples.length > 3600) {
               _nocturnalHrvSamples.removeAt(0);
             }
           }
+
+          _recordNocturnalSample(
+            timestamp: packet.timestamp,
+            bpm: hrVal,
+            hrv: rmssdVal,
+            motion: _lastMotionVar,
+            respPower: _lastRespPower,
+            respRate: _lastRespRate,
+            skinTempC: _lastSkinTempC,
+            spo2Pct: _lastSpo2Pct,
+          );
         }
       }
     });
@@ -233,48 +248,55 @@ class BackgroundSyncDaemon {
     });
   }
 
+  final List<_NocturnalSample> _nocturnalSamples = [];
+
+  void _recordNocturnalSample({
+    required DateTime timestamp,
+    required int bpm,
+    double? hrv,
+    required double motion,
+    double? respPower,
+    double? respRate,
+    double? skinTempC,
+    double? spo2Pct,
+  }) {
+    _nocturnalSamples.add(_NocturnalSample(
+      timestamp: timestamp,
+      bpm: bpm,
+      hrv: hrv,
+      motion: motion,
+      respPower: respPower,
+      respRate: respRate,
+      skinTempC: skinTempC,
+      spo2Pct: spo2Pct,
+    ));
+    if (_nocturnalSamples.length > 3600) {
+      _nocturnalSamples.removeAt(0);
+    }
+  }
+
   /// Genera la lista di campioni di telemetria notturna per l'OvernightSleepEngine
-  /// NOTA: Questo metodo è usato SOLO come fallback se la query DB non trova nulla.
-  /// I dati reali con timestamp sono salvati nella tabella telemetria_grezza dal listener BLE.
+  /// NOTA: I campioni contengono i timestamp reali registrati all'arrivo dei pacchetti.
   List<Map<String, dynamic>> getNocturnalTelemetryRecords() {
     final List<Map<String, dynamic>> records = [];
-    final int totalCount = _nocturnalBpmSamples.length;
-
-    if (totalCount > 0) {
-      final now = DateTime.now();
-      for (int i = 0; i < totalCount; i++) {
-        final bpm = _nocturnalBpmSamples[i];
-        final hrv = i < _nocturnalHrvSamples.length ? _nocturnalHrvSamples[i] : null;
-        records.add({
-          'hr': bpm.toDouble(),
-          'bpm': bpm.toDouble(),
-          'rmssd': hrv,
-          'rmssd_ms': hrv,
-          'rr_ms': null,
-          'motion_var': _lastMotionVar,
-          'accel_enmo': _lastMotionVar,
-          'resp_power': _lastRespPower,
-          'resp_rate': _lastRespRate,
-          'skin_temp_celsius': _lastSkinTempC,
-          'spo2_pct': _lastSpo2Pct,
-          'timestamp': now.subtract(Duration(seconds: (totalCount - i))).toIso8601String(),
-        });
-      }
+    for (final s in _nocturnalSamples) {
+      records.add({
+        'hr': s.bpm.toDouble(),
+        'bpm': s.bpm.toDouble(),
+        'rmssd': s.hrv,
+        'rmssd_ms': s.hrv,
+        'rr_ms': null,
+        'motion_var': s.motion,
+        'accel_enmo': s.motion,
+        'resp_power': s.respPower,
+        'resp_rate': s.respRate,
+        'skin_temp_celsius': s.skinTempC,
+        'spo2_pct': s.spo2Pct,
+        'timestamp': s.timestamp.toIso8601String(),
+        'timestamp_utc_ms': s.timestamp.toUtc().millisecondsSinceEpoch,
+      });
     }
     return records;
-  }
-
-  /// Helper: estrae un float32 little-endian da un buffer di byte
-  double? _extractFloat32LE(List<int> bytes, int offset) {
-    if (bytes.length < offset + 4) return null;
-    final bd = ByteData.sublistView(Uint8List.fromList(bytes.sublist(offset, offset + 4)));
-    return bd.getFloat32(0, Endian.little);
-  }
-
-  /// Helper: estrae un uint16 little-endian da un buffer di byte
-  int? _extractUint16LE(List<int> bytes, int offset) {
-    if (bytes.length < offset + 2) return null;
-    return bytes[offset] | (bytes[offset + 1] << 8);
   }
 
   /// Svuota immediatamente la coda in memoria su SQLite in batch (Fase 4: DAT-04)
@@ -300,3 +322,27 @@ class BackgroundSyncDaemon {
     await flushTelemetry();
   }
 }
+
+/// Campione con timestamp autentico per il buffer notturno
+class _NocturnalSample {
+  final DateTime timestamp;
+  final int bpm;
+  final double? hrv;
+  final double motion;
+  final double? respPower;
+  final double? respRate;
+  final double? skinTempC;
+  final double? spo2Pct;
+
+  const _NocturnalSample({
+    required this.timestamp,
+    required this.bpm,
+    this.hrv,
+    required this.motion,
+    this.respPower,
+    this.respRate,
+    this.skinTempC,
+    this.spo2Pct,
+  });
+}
+

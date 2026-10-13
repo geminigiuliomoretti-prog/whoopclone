@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 import 'activity_details_screen.dart';
 import 'settings_device_screen.dart';
 import 'integrations_screen.dart';
 import 'onboarding_screen.dart';
+import 'whoop_import_screen.dart';
 
 class ProfilePlanScreen extends StatelessWidget {
   final int initialTab;
@@ -17,21 +19,25 @@ class ProfilePlanScreen extends StatelessWidget {
       initialIndex: initialTab,
       length: 2,
       child: Scaffold(
-        backgroundColor: WhoopTheme.background,
+        backgroundColor: NatureColors.background,
         appBar: AppBar(
+          backgroundColor: NatureColors.background,
+          elevation: 0,
           title: const Text(
             'PROFILO ATLETA & MY PLAN',
             style: TextStyle(
-              color: WhoopTheme.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
+              color: NatureColors.textDarkPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
               letterSpacing: 1.2,
             ),
           ),
           bottom: const TabBar(
-            indicatorColor: WhoopTheme.strainBlue,
-            labelColor: WhoopTheme.textPrimary,
-            unselectedLabelColor: WhoopTheme.textSecondary,
+            indicatorColor: NatureColors.teal,
+            indicatorSize: TabBarIndicatorSize.tab,
+            labelColor: Colors.white,
+            unselectedLabelColor: NatureColors.textDarkMuted,
+            labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
             tabs: [
               Tab(text: 'Profilo Atleta'),
               Tab(text: 'My Plan (Obiettivi)'),
@@ -66,36 +72,64 @@ class ProfilePlanScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // User Card
-          Card(
-            color: WhoopTheme.cardSurface,
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 30,
-                    backgroundColor: WhoopTheme.strainBlue.withValues(alpha: 0.2),
-                    child: Text(initials, style: const TextStyle(color: WhoopTheme.strainBlue, fontSize: 20, fontWeight: FontWeight.bold)),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(profile.nome, style: const TextStyle(color: WhoopTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
-                        const Text('Atleta WHOOP 5.0 | Membro dal 2024', style: TextStyle(color: WhoopTheme.textSecondary, fontSize: 12)),
-                        const SizedBox(height: 4),
-                        Text('HRmax: ${profile.hrMax} bpm | FCR: ${profile.hrRestBaseline} bpm | VFC: ${profile.hrvBaselineMean.toInt()} ms',
-                            style: const TextStyle(color: WhoopTheme.recoveryGreen, fontSize: 11, fontWeight: FontWeight.bold)),
-                      ],
+          Container(
+            decoration: NatureTheme.organicCardDecoration(isDark: true),
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: NatureColors.teal.withValues(alpha: 0.15),
+                  child: Text(
+                    initials,
+                    style: const TextStyle(
+                      color: NatureColors.tealLight,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.edit, color: WhoopTheme.strainBlue, size: 20),
-                    onPressed: () => _showEditBiometricsDialog(context, viewModel),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Builder(
+                    builder: (context) {
+                      final rhrDisplay = viewModel.getPersonalBaseline('rhr')?.mean.round() ?? profile.hrRestBaseline;
+                      final hrvDisplay = viewModel.getPersonalBaseline('hrv')?.mean ?? profile.hrvBaselineMean;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            profile.nome,
+                            style: const TextStyle(
+                              color: NatureColors.textDarkPrimary,
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Text(
+                            'Atleta • Membro dal 2024',
+                            style: TextStyle(color: NatureColors.textDarkSecondary, fontSize: 11),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'HRmax: ${profile.hrMax} bpm | FCR: $rhrDisplay bpm | VFC: ${hrvDisplay.round()} ms',
+                            style: const TextStyle(
+                              color: NatureColors.recoveryAccent,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
-                ],
-              ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.edit_rounded, color: NatureColors.tealLight, size: 20),
+                  onPressed: () => _showEditBiometricsDialog(context, viewModel),
+                ),
+              ],
             ),
           ),
 
@@ -103,15 +137,34 @@ class ProfilePlanScreen extends StatelessWidget {
 
           const Text(
             'DATI FISIOLOGICI BIOMETRICI (SQLITE)',
-            style: TextStyle(color: WhoopTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+            style: TextStyle(
+              color: NatureColors.textDarkMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
           ),
           const SizedBox(height: 10),
 
-          _buildBioTile('Età Fisiologica', '${profile.eta} anni', Icons.person),
-          _buildBioTile('HR Max', '${profile.hrMax} bpm', Icons.favorite, WhoopTheme.strainHigh),
-          _buildBioTile('FC a Riposo Baseline', '${profile.hrRestBaseline} bpm', Icons.favorite, WhoopTheme.recoveryGreen),
-          _buildBioTile('VFC Baseline (RMSSD)', '${profile.hrvBaselineMean.toStringAsFixed(1)} ms', Icons.show_chart, WhoopTheme.strainBlue),
-          _buildBioTile('Fabbisogno Sonno Teorico', '${profile.sleepBaselineMin} min (${(profile.sleepBaselineMin / 60).toStringAsFixed(1)}h)', Icons.nightlight_round, WhoopTheme.sleepSlate),
+          Builder(
+            builder: (context) {
+              final rhrDisplay = viewModel.getPersonalBaseline('rhr')?.mean.round() ?? profile.hrRestBaseline;
+              final hrvDisplay = viewModel.getPersonalBaseline('hrv')?.mean ?? profile.hrvBaselineMean;
+              final sleepNeedDisplay = viewModel.getPersonalBaseline('sleep_need')?.mean.round() ??
+                  viewModel.getPersonalBaseline('sleep_duration')?.mean.round() ??
+                  profile.sleepBaselineMin;
+
+              return Column(
+                children: [
+                  _buildBioTile('Età Fisiologica', '${profile.eta} anni', Icons.person),
+                  _buildBioTile('HR Max', '${profile.hrMax} bpm', Icons.favorite, WhoopTheme.strainHigh),
+                  _buildBioTile('FC a Riposo Baseline', '$rhrDisplay bpm', Icons.favorite, WhoopTheme.recoveryGreen),
+                  _buildBioTile('VFC Baseline (RMSSD)', '${hrvDisplay.round()} ms', Icons.show_chart, WhoopTheme.strainBlue),
+                  _buildBioTile('Fabbisogno Sonno Teorico', '$sleepNeedDisplay min (${(sleepNeedDisplay / 60).toStringAsFixed(1)}h)', Icons.nightlight_round, WhoopTheme.sleepSlate),
+                ],
+              );
+            },
+          ),
 
           const SizedBox(height: 12),
 
@@ -161,6 +214,14 @@ class ProfilePlanScreen extends StatelessWidget {
             icon: Icons.tune,
             color: WhoopTheme.strainBlue,
             onTap: () => OnboardingScreen.show(context),
+          ),
+          _buildActionNavTile(
+            context: context,
+            title: 'Importa dati WHOOP',
+            subtitle: 'Importa lo storico export ZIP per personalizzare le baseline',
+            icon: Icons.file_upload_outlined,
+            color: NatureColors.teal,
+            onTap: () => WhoopImportScreen.show(context),
           ),
           _buildActionNavTile(
             context: context,
@@ -233,25 +294,22 @@ class ProfilePlanScreen extends StatelessWidget {
     required Color color,
     required VoidCallback onTap,
   }) {
-    return Card(
-      color: WhoopTheme.cardSurface,
+    return Container(
+      decoration: NatureTheme.organicCardDecoration(isDark: true),
       margin: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: Colors.transparent,
-        child: ListTile(
-          onTap: onTap,
-          leading: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: color, size: 20),
+      child: ListTile(
+        onTap: onTap,
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.15),
+            shape: BoxShape.circle,
           ),
-          title: Text(title, style: const TextStyle(color: WhoopTheme.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
-          subtitle: Text(subtitle, style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 11)),
-          trailing: const Icon(Icons.chevron_right, color: WhoopTheme.textMuted, size: 18),
+          child: Icon(icon, color: color, size: 20),
         ),
+        title: Text(title, style: const TextStyle(color: NatureColors.textDarkPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
+        subtitle: Text(subtitle, style: const TextStyle(color: NatureColors.textDarkMuted, fontSize: 11)),
+        trailing: const Icon(Icons.chevron_right, color: NatureColors.textDarkMuted, size: 18),
       ),
     );
   }
@@ -314,16 +372,13 @@ class ProfilePlanScreen extends StatelessWidget {
   }
 
   Widget _buildBioTile(String label, String value, IconData icon, [Color? color]) {
-    return Card(
-      color: WhoopTheme.cardSurface,
+    return Container(
+      decoration: NatureTheme.organicCardDecoration(isDark: true),
       margin: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: Colors.transparent,
-        child: ListTile(
-          leading: Icon(icon, color: color ?? WhoopTheme.strainBlue, size: 20),
-          title: Text(label, style: const TextStyle(color: WhoopTheme.textSecondary, fontSize: 12)),
-          trailing: Text(value, style: TextStyle(color: color ?? WhoopTheme.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
-        ),
+      child: ListTile(
+        leading: Icon(icon, color: color ?? NatureColors.tealLight, size: 20),
+        title: Text(label, style: const TextStyle(color: NatureColors.textDarkSecondary, fontSize: 12)),
+        trailing: Text(value, style: TextStyle(color: color ?? NatureColors.textDarkPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
       ),
     );
   }
@@ -333,19 +388,26 @@ class ProfilePlanScreen extends StatelessWidget {
     required String description,
     required bool isSelected,
   }) {
-    return Card(
-      color: isSelected ? WhoopTheme.cardBorder : WhoopTheme.cardSurface,
+    return Container(
+      decoration: NatureTheme.organicCardDecoration(
+        isDark: true,
+        accentTint: isSelected ? NatureColors.teal.withValues(alpha: 0.12) : null,
+      ),
       margin: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: Colors.transparent,
-        child: ListTile(
-          leading: Icon(
-            isSelected ? Icons.check_circle : Icons.circle_outlined,
-            color: isSelected ? WhoopTheme.strainBlue : WhoopTheme.textMuted,
-          ),
-          title: Text(title, style: TextStyle(color: isSelected ? WhoopTheme.strainBlue : WhoopTheme.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
-          subtitle: Text(description, style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 11)),
+      child: ListTile(
+        leading: Icon(
+          isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+          color: isSelected ? NatureColors.tealLight : NatureColors.textDarkMuted,
         ),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: isSelected ? Colors.white : NatureColors.textDarkPrimary,
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+        subtitle: Text(description, style: const TextStyle(color: NatureColors.textDarkMuted, fontSize: 11)),
       ),
     );
   }

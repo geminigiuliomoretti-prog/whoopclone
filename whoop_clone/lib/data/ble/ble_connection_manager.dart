@@ -851,22 +851,22 @@ class BleConnectionManager {
               _onTelemetryDataReceived();
 
               // UNIFIED INGESTION PIPELINE (ARCH-01):
+              // FIX 4: RECEIVE -> REASSEMBLE -> DECODE -> VALIDATE -> PERSIST RAW -> DB COMMIT -> ACK
+              // MAI ACK prima del commit.
               _ingestionService.ingestRawPacket(
                 bytesU8,
                 source: _state == BleState.syncingHistory ? 'STORE_FORWARD' : 'REAL_STREAM',
                 deviceId: device.remoteId.str,
                 sessionId: _sessionStartTime?.toIso8601String(),
-              );
-
-              // BLE-04: Non inviare ACK per i normali pacchetti live di streaming.
-              // Solo durante sync storico (syncingHistory) si invia l'ACK opcode 23,
-              // e viene accodato in modo asincrono non bloccante (NO await).
-              if (_state == BleState.syncingHistory) {
-                final ackFrame = Uint8List.fromList(
-                  StoreAndForwardHandler.buildOpcode23HistoricalDataResult(p96.seqNumber),
-                );
-                enqueueCommand(ackFrame);
-              }
+              ).then((result) {
+                // Solo durante sync storico (syncingHistory) e SOLO SE il commit DB è avvenuto con successo:
+                if (_state == BleState.syncingHistory && result.accepted && result.telemetry?.id != null) {
+                  final ackFrame = Uint8List.fromList(
+                    StoreAndForwardHandler.buildOpcode23HistoricalDataResult(p96.seqNumber),
+                  );
+                  enqueueCommand(ackFrame);
+                }
+              });
             }
           });
           debugPrint('BleConnectionManager: [3/5] Sottoscritto canale 0005 (Data 96-Byte)');

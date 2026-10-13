@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../core/constants/whoop_theme.dart';
+import '../../core/theme/nature_theme.dart';
 import '../../data/ble/ble_connection_manager.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 
-/// Schermata Dedicata per la Connessione ed Abbinamento della Banda WHOOP BLE (Ispirata alla Repo NOOP)
+/// Schermata per la Connessione ed Abbinamento del Sensore Biometrico BLE
 class StrapConnectionScreen extends StatefulWidget {
   const StrapConnectionScreen({super.key});
 
@@ -45,20 +45,20 @@ class _StrapConnectionScreenState extends State<StrapConnectionScreen>
     final isScanning = viewModel.bleState == BleState.scanning;
 
     return Scaffold(
-      backgroundColor: WhoopTheme.background,
+      backgroundColor: NatureColors.background,
       appBar: AppBar(
-        backgroundColor: WhoopTheme.background,
+        backgroundColor: NatureColors.background,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 18),
+          icon: const Icon(Icons.arrow_back_ios_new, color: NatureColors.textPrimary, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          'CONNETTI DISPOSITIVO WHOOP',
+          'CONNETTI DISPOSITIVO',
           style: TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
+            color: NatureColors.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
             letterSpacing: 1.2,
           ),
         ),
@@ -86,7 +86,7 @@ class _StrapConnectionScreenState extends State<StrapConnectionScreen>
                               height: 140,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: WhoopTheme.strainBlue.withValues(alpha: 0.2),
+                                color: NatureColors.teal.withValues(alpha: 0.15),
                               ),
                             ),
                           ),
@@ -95,42 +95,42 @@ class _StrapConnectionScreenState extends State<StrapConnectionScreen>
                           height: 100,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: WhoopTheme.cardSurface,
+                            color: NatureColors.surface,
                             border: Border.all(
                               color: isConnected
-                                  ? WhoopTheme.recoveryGreen
-                                  : (isScanning ? WhoopTheme.strainBlue : WhoopTheme.cardBorder),
-                              width: 2.5,
+                                  ? NatureColors.recoveryGreen
+                                  : (isScanning ? NatureColors.teal : NatureColors.borderSubtle),
+                              width: 2.0,
                             ),
                           ),
                           child: Icon(
                             isConnected ? Icons.bluetooth_connected : Icons.watch,
-                            size: 44,
+                            size: 40,
                             color: isConnected
-                                ? WhoopTheme.recoveryGreen
-                                : (isScanning ? WhoopTheme.strainBlue : WhoopTheme.textMuted),
+                                ? NatureColors.recoveryGreen
+                                : (isScanning ? NatureColors.teal : NatureColors.textMuted),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 18),
                     Text(
                       isConnected
-                          ? 'WHOOP 5.0 CONNESSO'
+                          ? 'DISPOSITIVO CONNESSO'
                           : (isScanning ? 'RICERCA SENSORE IN CORSO...' : 'NESSUN DISPOSITIVO ABBINATO'),
                       style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.0,
+                        color: NatureColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       isConnected
-                          ? 'Streaming telemetria 1Hz attivo (GATT Batteria & HR)'
-                          : 'Assicurati che il cinturino sia carico e vicino al telefono',
-                      style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 12),
+                          ? 'Streaming telemetria 1Hz attivo (Batteria & HR)'
+                          : 'Assicurati che il sensore sia carico e nelle vicinanze',
+                      style: const TextStyle(color: NatureColors.textMuted, fontSize: 12),
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -143,7 +143,7 @@ class _StrapConnectionScreenState extends State<StrapConnectionScreen>
             // 2. Action Scan / Connect Button
             SizedBox(
               width: double.infinity,
-              height: 52,
+              height: 50,
               child: ElevatedButton.icon(
                 onPressed: isScanning
                     ? null
@@ -152,7 +152,7 @@ class _StrapConnectionScreenState extends State<StrapConnectionScreen>
                           await viewModel.disconnectBle();
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Dispositivo WHOOP disconnesso.')),
+                              const SnackBar(content: Text('Dispositivo disconnesso.')),
                             );
                           }
                         } else {
@@ -161,34 +161,36 @@ class _StrapConnectionScreenState extends State<StrapConnectionScreen>
                       },
                 icon: Icon(
                   isConnected ? Icons.bluetooth_disabled : Icons.bluetooth_searching,
-                  color: isConnected ? Colors.white : Colors.black,
+                  color: isConnected ? NatureColors.terracotta : NatureColors.background,
+                  size: 18,
                 ),
                 label: Text(
-                  isConnected ? 'DISCONNETTI STRAP' : 'AVVIA SCANSIONE BLE',
+                  isConnected ? 'DISCONNETTI SENSORE' : 'AVVIA SCANSIONE BLE',
                   style: TextStyle(
-                    color: isConnected ? Colors.white : Colors.black,
-                    fontWeight: FontWeight.w900,
+                    color: isConnected ? NatureColors.terracotta : NatureColors.background,
+                    fontWeight: FontWeight.w700,
                     fontSize: 13,
-                    letterSpacing: 1.0,
+                    letterSpacing: 0.8,
                   ),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: isConnected ? WhoopTheme.recoveryRed : Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-                  elevation: isConnected ? 0 : 4,
+                  backgroundColor: isConnected ? NatureColors.terracotta.withValues(alpha: 0.12) : NatureColors.teal,
+                  elevation: 0,
+                  side: isConnected ? BorderSide(color: NatureColors.terracotta.withValues(alpha: 0.3)) : BorderSide.none,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
               ),
             ),
 
             const SizedBox(height: 28),
 
-            // 3. Status Card Hardware Details (NOOP Protocol Specs)
+            // 3. Status Card Hardware Details
             const Text(
               'INFORMAZIONI HARDWARE & TELEMETRIA',
               style: TextStyle(
-                color: WhoopTheme.textMuted,
+                color: NatureColors.textSecondary,
                 fontSize: 11,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 letterSpacing: 1.2,
               ),
             ),
@@ -196,37 +198,37 @@ class _StrapConnectionScreenState extends State<StrapConnectionScreen>
 
             Container(
               padding: const EdgeInsets.all(18),
-              decoration: WhoopTheme.officialCardDecoration(),
+              decoration: NatureTheme.organicCardDecoration(isDark: true),
               child: Column(
                 children: [
                   _buildDetailRow(
                     label: 'Stato Batteria',
                     value: viewModel.batteryPct != null ? '${viewModel.batteryPct}%' : '--%',
-                    statusColor: viewModel.batteryPct != null ? WhoopTheme.recoveryGreen : WhoopTheme.textMuted,
+                    statusColor: viewModel.batteryPct != null ? NatureColors.recoveryGreen : NatureColors.textMuted,
                   ),
-                  const Divider(color: WhoopTheme.cardBorder, height: 20),
+                  const Divider(color: NatureColors.borderSubtle, height: 20),
                   _buildDetailRow(
                     label: 'Modello Hardware',
-                    value: 'WHOOP 5.0 (WP5)',
-                    statusColor: Colors.white,
+                    value: 'BLE Sensor v5.0',
+                    statusColor: NatureColors.textPrimary,
                   ),
-                  const Divider(color: WhoopTheme.cardBorder, height: 20),
+                  const Divider(color: NatureColors.borderSubtle, height: 20),
                   _buildDetailRow(
                     label: 'UUID Servizi GATT',
-                    value: 'fd4b0001 / 61080001 (NOOP Engine)',
-                    statusColor: Colors.white,
+                    value: 'fd4b0001 / 61080001',
+                    statusColor: NatureColors.textPrimary,
                   ),
-                  const Divider(color: WhoopTheme.cardBorder, height: 20),
+                  const Divider(color: NatureColors.borderSubtle, height: 20),
                   _buildDetailRow(
                     label: 'Frequenza Cardiaca Live',
                     value: viewModel.liveBpm > 0 ? '${viewModel.liveBpm} BPM' : '-- BPM',
-                    statusColor: viewModel.liveBpm > 0 ? WhoopTheme.strainBlue : WhoopTheme.textMuted,
+                    statusColor: viewModel.liveBpm > 0 ? NatureColors.teal : NatureColors.textMuted,
                   ),
-                  const Divider(color: WhoopTheme.cardBorder, height: 20),
+                  const Divider(color: NatureColors.borderSubtle, height: 20),
                   _buildDetailRow(
                     label: 'Sveglia Haptic',
-                    value: 'Sveglia Silenziosa Configuarata',
-                    statusColor: WhoopTheme.recoveryGreen,
+                    value: 'Sveglia Silenziosa Abilitata',
+                    statusColor: NatureColors.recoveryGreen,
                   ),
                 ],
               ),
@@ -234,21 +236,21 @@ class _StrapConnectionScreenState extends State<StrapConnectionScreen>
 
             const SizedBox(height: 24),
 
-            // 4. Test Sveglia Haptic & Vibrazione (Da HapticClockEncoder NOOP)
+            // 4. Test Sveglia Haptic & Vibrazione
             if (isConnected) ...[
               const Text(
                 'CONTROLLI HARDWARE HAPTIC',
                 style: TextStyle(
-                  color: WhoopTheme.textMuted,
+                  color: NatureColors.textSecondary,
                   fontSize: 11,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                   letterSpacing: 1.2,
                 ),
               ),
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
-                height: 46,
+                height: 48,
                 child: OutlinedButton.icon(
                   onPressed: () async {
                     final nextAlarm = DateTime.now().add(const Duration(minutes: 30));
@@ -259,14 +261,15 @@ class _StrapConnectionScreenState extends State<StrapConnectionScreen>
                       );
                     }
                   },
-                  icon: const Icon(Icons.alarm_on, color: WhoopTheme.strainBlue, size: 18),
+                  icon: const Icon(Icons.alarm_on, color: NatureColors.teal, size: 18),
                   label: const Text(
-                    'INVIA TEST SVEGLIA VIBRAZIONE HARDWARE',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                    'TEST VIBRAZIONE HARDWARE',
+                    style: TextStyle(color: NatureColors.teal, fontWeight: FontWeight.w700, fontSize: 12, letterSpacing: 0.5),
                   ),
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: WhoopTheme.strainBlue),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(23)),
+                    side: const BorderSide(color: NatureColors.borderSubtle),
+                    backgroundColor: NatureColors.surface,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
                 ),
               ),
@@ -285,10 +288,10 @@ class _StrapConnectionScreenState extends State<StrapConnectionScreen>
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(color: WhoopTheme.textMuted, fontSize: 12)),
+        Text(label, style: const TextStyle(color: NatureColors.textMuted, fontSize: 12)),
         Text(
           value,
-          style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.bold),
+          style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.w600),
         ),
       ],
     );

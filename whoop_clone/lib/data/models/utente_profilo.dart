@@ -43,6 +43,15 @@ class UtenteProfilo {
     this.pairedDeviceName,
   });
 
+  /// True se l'utente ha una baseline consolidata con almeno 14 osservazioni autentiche
+  bool get hasEstablishedBaseline => baselineSampleCount >= 14 && baselineSource != 'INITIAL_PROFILE';
+
+  /// True se l'utente è in fase di calibrazione (tra 1 e 13 osservazioni)
+  bool get isCalibrating => baselineSampleCount > 0 && baselineSampleCount < 14;
+
+  /// True se non sono ancora presenti dati autentici per la baseline
+  bool get hasNoBaselineData => baselineSampleCount == 0 || baselineSource == 'INITIAL_PROFILE';
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
