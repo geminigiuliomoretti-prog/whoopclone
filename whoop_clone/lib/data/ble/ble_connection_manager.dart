@@ -1003,7 +1003,8 @@ class BleConnectionManager {
     try {
       _updateState(BleState.initializing, 'Inizializzazione hardware...');
       final isMaverick = device.platformName.toUpperCase().contains('5.0') ||
-          device.platformName.toUpperCase().contains('WP5');
+          device.platformName.toUpperCase().contains('WP5') ||
+          (_cmdToStrapChar?.uuid.toString().toLowerCase().contains('fd4b0002') ?? false);
 
       debugPrint('BleConnectionManager: Avvio sequenza di sblocco hardware profondo (isMaverick=$isMaverick)...');
 
@@ -1015,6 +1016,16 @@ class BleConnectionManager {
       );
       await writeAlarmCommand(helloFrame);
       await Future.delayed(const Duration(milliseconds: 100));
+
+      // a) Handshake CLIENT_HELLO (type: 0x23, cmd: 0x01, payload: [0x01, 0x00]) oltre a GET_HELLO su Maverick
+      if (isMaverick) {
+        _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
+        final clientHello = HapticClockEncoder.buildClientHelloCommand(
+          seq: _hapticPacketCounter,
+        );
+        await writeAlarmCommand(clientHello);
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
 
       // 2. SET_CLOCK con l'orario UTC corrente del telefono (Opcode 10)
       _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
@@ -1035,16 +1046,26 @@ class BleConnectionManager {
       await writeAlarmCommand(unlockHrFrame);
       await Future.delayed(const Duration(milliseconds: 100));
 
-      // 4. TOGGLE_REALTIME_HR: attiva lo streaming continuo di campioni 1 Hz (Opcode 3)
+      // 4. b) Abilitazione telemetria estesa (type: 0x23, cmd: 0x03, payload: [0x01]) e sensori termici/ottici Red-IR
       _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
       final startRtFrame = HapticClockEncoder.buildToggleRealtimeHrCommand(
         seq: _hapticPacketCounter,
         enable: true,
       );
       await writeAlarmCommand(startRtFrame);
+
+      if (isMaverick) {
+        // dopo 50ms type: 0x23, cmd: 0x13, payload: [0x01, 0x01, 0x01]
+        await Future.delayed(const Duration(milliseconds: 50));
+        _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
+        final extSensorsFrame = HapticClockEncoder.buildEnableExtendedSensorsCommand(
+          seq: _hapticPacketCounter,
+        );
+        await writeAlarmCommand(extSensorsFrame);
+      }
       await Future.delayed(const Duration(milliseconds: 100));
 
-      // 5. Store & Forward Handshake
+      // 5. c) Richiesta scarico storico Store-and-Forward (Opcode 0x16)
       await sendStoreAndForwardSyncHandshake();
 
       debugPrint('BleConnectionManager: Sblocco hardware profondo completato con successo!');

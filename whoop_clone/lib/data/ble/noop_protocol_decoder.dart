@@ -316,6 +316,16 @@ class HapticClockEncoder {
     return buildFramedCommand(cmd: isMaverick ? 145 : 35, payload: const [], seq: seq);
   }
 
+  /// Opcode 1 (0x01): CLIENT_HELLO -> Handshake iniziale WHOOP 5.0 Maverick (type: 0x23, cmd: 0x01, payload: [0x01, 0x00])
+  static Uint8List buildClientHelloCommand({int seq = 1}) {
+    return buildFramedCommand(type: 0x23, cmd: 0x01, payload: const [0x01, 0x00], seq: seq);
+  }
+
+  /// Opcode 19 (0x13): ENABLE_EXTENDED_OPTICAL_THERMAL -> Abilita sensori termici e ottici Red-IR (type: 0x23, cmd: 0x13, payload: [0x01, 0x01, 0x01])
+  static Uint8List buildEnableExtendedSensorsCommand({int seq = 1}) {
+    return buildFramedCommand(type: 0x23, cmd: 0x13, payload: const [0x01, 0x01, 0x01], seq: seq);
+  }
+
   /// Opcode 10 (0x0A): SET_CLOCK -> Sincronizza l'orologio interno del cinturino
   static Uint8List buildSetClockCommand({required int epochSec, int seq = 1}) {
     final payload = [

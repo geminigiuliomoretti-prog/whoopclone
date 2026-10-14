@@ -237,7 +237,8 @@ class PosteriorSleepDetector {
       }
 
       final int couchSearchLimit = math.min(lastQuietIdx, candidateStartIdx + 180);
-      int postTransitionStart = candidateStartIdx;
+      int tInBedIdx = candidateStartIdx;
+      double hrAtInBed = profileRhr + 10.0;
       int wakeBoutLen = 0;
 
       for (int k = candidateStartIdx; k <= couchSearchLimit; k++) {
@@ -263,18 +264,60 @@ class PosteriorSleepDetector {
 
         if (isWalkingToBed) {
           wakeBoutLen++;
+          hrAtInBed = avgHrInEpoch;
         } else {
           if (wakeBoutLen >= 4 && (lastQuietIdx - k) >= 240) {
-            int newStart = k;
-            while (newStart < lastQuietIdx && epochStatus[newStart] != true) {
-              newStart++;
-            }
-            postTransitionStart = newStart;
+            tInBedIdx = k;
           }
           wakeBoutLen = 0;
         }
       }
-      candidateStartIdx = postTransitionStart;
+
+      // Risolve l'orario di addormentamento anticipato (Sleep Onset Latency):
+      // Quando l'utente si mette a letto (t_in_bed), NON far partire subito il sonno alla prima epoca quieta!
+      // Mantieni le epoche iniziali come WAKE finché non si verificano per almeno 6 epoche consecutive (3 min):
+      // 1) Quiescenza motoria stabile ENMO <= 0.010g in almeno 5 epoche su 6;
+      // 2) Discesa parasimpatica: HR <= min(rhrBaseline + 5.0, nightHrMean + 0.35 * nightHrStd) e calo di almeno 3.0 bpm rispetto all'ingresso a letto.
+      final double nightHrMean = hrValues.isNotEmpty ? (hrValues.reduce((a, b) => a + b) / hrValues.length) : profileRhr;
+      final double nightHrStd = hrValues.length > 1
+          ? math.sqrt(hrValues.map((h) => math.pow(h - nightHrMean, 2)).reduce((a, b) => a + b) / hrValues.length)
+          : 6.0;
+      final double sleepHrThreshold = math.min(profileRhr + 5.0, nightHrMean + 0.35 * nightHrStd);
+
+      int actualOnsetIdx = tInBedIdx;
+      for (int m = tInBedIdx; m <= math.max(tInBedIdx, lastQuietIdx - 6); m++) {
+        int quietEnmoCount = 0;
+        bool allDropHr = true;
+
+        for (int offset = 0; offset < 6; offset++) {
+          final targetIdx = m + offset;
+          if (targetIdx >= totalEpochs) break;
+          final bucket = epochBuckets[targetIdx];
+          double epEnmo = 0.0;
+          double epHr = profileRhr;
+          if (bucket.isNotEmpty) {
+            final eVals = bucket.map<double>((r) => (r['accel_enmo'] ?? r['motion_var'] ?? r['enmo'] as num?)?.toDouble() ?? 0.0);
+            if (eVals.isNotEmpty) epEnmo = eVals.reduce((a, b) => a > b ? a : b);
+            final hVals = bucket.map<double>((r) => (r['bpm'] ?? r['hr'] as num?)?.toDouble() ?? 0.0).where((h) => h > 0);
+            if (hVals.isNotEmpty) epHr = hVals.reduce((a, b) => a + b) / hVals.length;
+          }
+
+          if (epEnmo <= 0.010) quietEnmoCount++;
+          if (epHr > sleepHrThreshold || (hrAtInBed > 0 && epHr > (hrAtInBed - 3.0))) {
+            allDropHr = false;
+          }
+        }
+
+        if (quietEnmoCount >= 5 && allDropHr) {
+          actualOnsetIdx = m;
+          break;
+        }
+      }
+
+      for (int w = tInBedIdx; w < actualOnsetIdx; w++) {
+        epochStatus[w] = false;
+      }
+      candidateStartIdx = tInBedIdx;
 
       final startTs = firstTs.add(Duration(seconds: candidateStartIdx * 30));
       final endTs = firstTs.add(Duration(seconds: (lastQuietIdx + 1) * 30));
@@ -336,6 +379,7 @@ class PosteriorSleepDetector {
   Future<int> runPosteriorDetectionAndPersist({
     DateTime? windowStart,
     DateTime? windowEnd,
+    bool forceOverwrite = false,
   }) async {
     final sessions = await detectSleepSessions(
       windowStart: windowStart,
@@ -356,7 +400,7 @@ class PosteriorSleepDetector {
     for (final session in sessions) {
       try {
         final existing = await _dbHelper.getSonnoByDate(session.wakeDateIso);
-        if (existing != null && existing['provenance'] == 'WHOOP_IMPORT') {
+        if (existing != null && existing['provenance'] == 'WHOOP_IMPORT' && !forceOverwrite) {
           debugPrint('[PosteriorSleepDetector] Ignorata sovrascrittura sessione WHOOP_IMPORT per ${session.wakeDateIso}');
           continue;
         }
@@ -374,6 +418,7 @@ class PosteriorSleepDetector {
           windowStart: session.startTime,
           windowEnd: session.endTime,
           targetDateIso: session.wakeDateIso, // SLP-02: data locale del risveglio
+          forceOverwrite: forceOverwrite,
         );
         saved++;
       } catch (e) {

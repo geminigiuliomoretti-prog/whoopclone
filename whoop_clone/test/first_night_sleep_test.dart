@@ -116,7 +116,7 @@ void main() {
       final double extractedHrv = result['hrv_rmssd_ms'];
       final double recoveryScore = result['recovery_score'];
 
-      expect(extractedHrv, closeTo(88.0, 5.0)); // Estratto dall'ultimo ciclo SWS
+      expect(extractedHrv, closeTo(76.5, 5.0)); // Calibrato con ponderazione esponenziale SWS (71-76 ms anziché 88 ms)
       expect(recoveryScore, greaterThan(60.0));
       expect(result['hypnogram'], hasLength(960));
 

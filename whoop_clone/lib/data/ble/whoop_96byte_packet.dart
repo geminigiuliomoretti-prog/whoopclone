@@ -30,6 +30,15 @@ class Whoop96BytePacket {
   /// - In pacchetti flat/senza header 0xAA, l'heart rate si trova al byte 4 (uint8).
   int get heartRateBpm {
     if (isWhoopFramed) {
+      if (rawBytes.length > 8 && rawBytes[8] >= 30 && rawBytes[8] <= 250) {
+        return rawBytes[8];
+      }
+      if (rawBytes.length > 6 && rawBytes[6] >= 30 && rawBytes[6] <= 250) {
+        return rawBytes[6];
+      }
+      if (rawBytes.length > 4 && rawBytes[4] >= 30 && rawBytes[4] <= 250) {
+        return rawBytes[4];
+      }
       return rawBytes.length > 8 ? rawBytes[8] : 0;
     }
     return rawBytes.length > 4 ? rawBytes[4] : 0;
@@ -85,64 +94,151 @@ class Whoop96BytePacket {
   }
   
   /// Skin Temperature raw:
-  /// - Sensore digitale AS6221 a 16-bit LE su bytes 28-29 (range 1000..8000, 0.0078125 °C/LSB)
-  /// - In alternativa su frame con formato ridotto: byte 17
+  /// - Multi-scala: legge uint16 LE (AS6221, centesimi o decimi) o fallback byte 17
   int get skinTempRaw {
-    if (rawBytes.length >= 30) {
-      final val16 = rawBytes[28] | (rawBytes[29] << 8);
-      if (val16 > 1000 && val16 < 8000) return val16;
+    final List<int> offsets = [];
+    if (isWhoopFramed) {
+      if (rawBytes.length >= 34) offsets.add(32);
+      if (rawBytes.length >= 20) offsets.add(18);
+      if (rawBytes.length >= 30) offsets.add(28);
+    } else {
+      if (rawBytes.length >= 30) offsets.add(28);
+      if (rawBytes.length >= 20) offsets.add(18);
     }
-    if (rawBytes.length >= 18) {
-      final val8 = rawBytes[17];
-      return val8 > 0 ? val8 : 0;
+    for (final off in offsets) {
+      final val16 = rawBytes[off] | (rawBytes[off + 1] << 8);
+      if ((val16 >= 3840 && val16 <= 5312) ||
+          (val16 >= 3000 && val16 <= 3839) ||
+          (val16 >= 300 && val16 <= 415)) {
+        return val16;
+      }
+    }
+    if (rawBytes.length >= 18 && rawBytes[17] != 0) {
+      return rawBytes[17];
     }
     return 0;
   }
 
   /// Skin Temperature (°C):
-  /// - Decodifica temperatura cutanea sia dai pacchetti flat (AS6221 16-bit LE) sia dai pacchetti framed 0xAA (byte 17 int8)
+  /// - Decodifica multi-scala:
+  ///   - Byte 32..33 (se framed 0xAA) o Byte 28..29 (se flat), o Byte 18..19 nei frame compatti:
+  ///     * val16 in [3840, 5312] (AS6221): tempC = val16 * 0.0078125
+  ///     * val16 in [3000, 3839] (centesimi): tempC = val16 / 100.0
+  ///     * val16 in [300, 415] (decimi): tempC = val16 / 10.0
+  ///   - Fallback Byte 17 (int8 != 0, tra -55 e +50): tempC = 36.0 + (int8Val / 10.0)
+  ///   - Valida tempC in [28.0, 42.0] °C
   double? get skinTempCelsius {
-    if (rawBytes.length >= 30) {
-      final offset = isWhoopFramed && rawBytes.length >= 34 ? 32 : 28;
-      final val16 = rawBytes[offset] | (rawBytes[offset + 1] << 8);
-      final tempC = val16 * 0.0078125;
-      if (tempC >= 28.0 && tempC <= 42.0) {
+    final List<int> offsets = [];
+    if (isWhoopFramed) {
+      if (rawBytes.length >= 34) offsets.add(32);
+      if (rawBytes.length >= 20) offsets.add(18);
+      if (rawBytes.length >= 30) offsets.add(28);
+    } else {
+      if (rawBytes.length >= 30) offsets.add(28);
+      if (rawBytes.length >= 20) offsets.add(18);
+    }
+
+    for (final off in offsets) {
+      final val16 = rawBytes[off] | (rawBytes[off + 1] << 8);
+      double? tempC;
+      if (val16 >= 3840 && val16 <= 5312) {
+        tempC = val16 * 0.0078125;
+      } else if (val16 >= 3000 && val16 <= 3839) {
+        tempC = val16 / 100.0;
+      } else if (val16 >= 300 && val16 <= 415) {
+        tempC = val16 / 10.0;
+      }
+
+      if (tempC != null && tempC >= 28.0 && tempC <= 42.0) {
         return double.parse(tempC.toStringAsFixed(2));
       }
-      // Se a offset 32 non era valido ma a 28 c'è un valore valido AS6221:
-      if (offset != 28) {
-        final val16Fallback = rawBytes[28] | (rawBytes[29] << 8);
-        final tempCFallback = val16Fallback * 0.0078125;
-        if (tempCFallback >= 28.0 && tempCFallback <= 42.0) {
-          return double.parse(tempCFallback.toStringAsFixed(2));
-        }
-      }
     }
+
     if (rawBytes.length >= 18) {
       final bd = ByteData.sublistView(Uint8List.fromList(rawBytes));
       final int8Val = bd.getInt8(17);
-      final tempC = 36.0 + (int8Val / 10.0);
-      if (tempC >= 30.0 && tempC <= 41.5 && int8Val != 0) {
-        return double.parse(tempC.toStringAsFixed(2));
+      if (int8Val != 0 && int8Val >= -55 && int8Val <= 50) {
+        final tempC = 36.0 + (int8Val / 10.0);
+        if (tempC >= 28.0 && tempC <= 42.0) {
+          return double.parse(tempC.toStringAsFixed(2));
+        }
       }
     }
     return null;
   }
   
-  /// SpO2 R-ratio:
-  /// - Se isWhoopFramed e rawBytes.length >= 40 legge float32 da sublist(36, 40); con fallback su sublist(32, 36)
-  double get spo2Ratio {
+  /// SpO2 (%):
+  /// - Cerca a Byte 36..39 (se framed 0xAA), Byte 32..35 (se flat), Byte 20..21 (se compatto)
+  ///   e nella coda ottica Byte 106..109 (se record storico v18 Type 0x2F, lunghezza >= 110):
+  ///   * float32 LE in [0.40, 1.20] (R-ratio Red/IR): spo2Pct = (110.0 - 25.0 * rRatio).clamp(80.0, 100.0)
+  ///   * float32 LE in [85.0, 100.0]: valore diretto
+  ///   * uint16 LE in [850, 1000]: val16 / 10.0
+  double? get spo2Pct {
+    if (rawBytes.length >= 110) {
+      final pct = _evalFloat32Spo2(106);
+      if (pct != null) return pct;
+    }
     if (isWhoopFramed && rawBytes.length >= 40) {
-      final bd = ByteData.sublistView(Uint8List.fromList(rawBytes.sublist(36, 40)));
-      final val = bd.getFloat32(0, Endian.little);
-      if (val.isFinite && val >= 0.4 && val <= 1.2) return val;
+      final pct = _evalFloat32Spo2(36);
+      if (pct != null) return pct;
     }
     if (rawBytes.length >= 36) {
-      final bd = ByteData.sublistView(Uint8List.fromList(rawBytes.sublist(32, 36)));
-      final val = bd.getFloat32(0, Endian.little);
-      if (val.isFinite && val >= 0.4 && val <= 1.2) return val;
+      final pct = _evalFloat32Spo2(32);
+      if (pct != null) return pct;
+    }
+    if (rawBytes.length >= 22) {
+      final val16 = rawBytes[20] | (rawBytes[21] << 8);
+      if (val16 >= 850 && val16 <= 1000) {
+        return double.parse((val16 / 10.0).toStringAsFixed(1));
+      }
+    }
+    return null;
+  }
+
+  double? _evalFloat32Spo2(int offset) {
+    if (rawBytes.length < offset + 4) return null;
+    final bd = ByteData.sublistView(Uint8List.fromList(rawBytes));
+    final val = bd.getFloat32(offset, Endian.little);
+    if (!val.isFinite) return null;
+    if (val >= 0.40 && val <= 1.20) {
+      final pct = (110.0 - 25.0 * val).clamp(80.0, 100.0);
+      return double.parse(pct.toStringAsFixed(1));
+    }
+    if (val >= 85.0 && val <= 100.0) {
+      return double.parse(val.toStringAsFixed(1));
+    }
+    return null;
+  }
+
+  /// SpO2 R-ratio:
+  double get spo2Ratio {
+    if (rawBytes.length >= 110) {
+      final r = _evalFloat32Ratio(106);
+      if (r != null) return r;
+    }
+    if (isWhoopFramed && rawBytes.length >= 40) {
+      final r = _evalFloat32Ratio(36);
+      if (r != null) return r;
+    }
+    if (rawBytes.length >= 36) {
+      final r = _evalFloat32Ratio(32);
+      if (r != null) return r;
+    }
+    final pct = spo2Pct;
+    if (pct != null && pct >= 80.0 && pct <= 100.0) {
+      return double.parse(((110.0 - pct) / 25.0).toStringAsFixed(3));
     }
     return 0.0;
+  }
+
+  double? _evalFloat32Ratio(int offset) {
+    if (rawBytes.length < offset + 4) return null;
+    final bd = ByteData.sublistView(Uint8List.fromList(rawBytes));
+    final val = bd.getFloat32(offset, Endian.little);
+    if (val.isFinite && val >= 0.40 && val <= 1.20) {
+      return double.parse(val.toStringAsFixed(3));
+    }
+    return null;
   }
   
   /// HRV rMSSD (ms):
@@ -185,7 +281,7 @@ class Whoop96BytePacket {
   }
 
   factory Whoop96BytePacket.fromBytes(List<int> bytes) {
-    if (bytes.length < 96) {
+    if (bytes.length < 20) {
       return Whoop96BytePacket(
         rawBytes: bytes,
         sequenceNumber: 0,
@@ -198,11 +294,17 @@ class Whoop96BytePacket {
 
     // Estrazione sequenceNumber corretta in base all'header del protocollo:
     // Se inizia con 0xAA, byte 0 è Sync e byte 1 è la lunghezza;
-    // la sequenza si trova al byte 2 (uint16 LE).
+    // la sequenza si trova al byte 2 (uint16 LE) per 96-byte e record flash, o byte 5 per comandi incapsulati.
     // Se flat/senza header 0xAA, la sequenza si trova nei primi 2 byte (0..1).
     final int seqNum;
     if (bytes[0] == 0xAA) {
-      seqNum = byteData.getUint16(2, Endian.little);
+      if (bytes.length >= 96) {
+        seqNum = byteData.getUint16(2, Endian.little);
+      } else if (bytes.length >= 6) {
+        seqNum = bytes[5];
+      } else {
+        seqNum = byteData.getUint16(2, Endian.little);
+      }
     } else {
       seqNum = byteData.getUint16(0, Endian.little);
     }

@@ -201,9 +201,8 @@ class TelemetryIngestionService {
     bool crcValid = true;
     final bool isFramed = rawBytes[0] == 0xAA;
     final bool is96ByteSensor = rawBytes.length >= 96;
-    final bool isFramedCommand = isFramed && !is96ByteSensor;
 
-    if (isFramedCommand) {
+    if (isFramed) {
       if (rawBytes.length < 4) {
         _packetsInvalid++;
         return IngestionResult.dropped(reason: 'TRUNCATED_HEADER', isValidCrc: false);
@@ -212,37 +211,38 @@ class TelemetryIngestionService {
       final lenHi = rawBytes[2];
       final headerCrc = rawBytes[3];
       final expectedHeaderCrc = WhoopCrc8.compute([lenLo, lenHi]);
-      if (headerCrc != expectedHeaderCrc) {
+      final int bodyLen = lenLo | (lenHi << 8);
+      final int expectedTotalLen = 4 + bodyLen;
+      if (headerCrc == expectedHeaderCrc && bodyLen >= 4 && rawBytes.length >= expectedTotalLen) {
+        // Verifica CRC-32 di coda (IEEE 802.3 standard sui byte interni)
+        final int innerLen = bodyLen - 4;
+        final innerBytes = rawBytes.sublist(4, 4 + innerLen);
+        final tailCrcOffset = 4 + innerLen;
+        final actualTailCrc = (rawBytes[tailCrcOffset] |
+                (rawBytes[tailCrcOffset + 1] << 8) |
+                (rawBytes[tailCrcOffset + 2] << 16) |
+                (rawBytes[tailCrcOffset + 3] << 24)) &
+            0xFFFFFFFF;
+        final expectedTailCrc = WhoopCrc32.compute(innerBytes);
+
+        if (actualTailCrc != expectedTailCrc) {
+          _packetsInvalid++;
+          BleDiagnosticService.instance.recordCrcError(discardedBytesCount: rawBytes.length);
+          StructuredLogger.instance.warn(LogTag.ingest, 'Payload CRC32 mismatch');
+          return IngestionResult.dropped(reason: 'PAYLOAD_CRC32_MISMATCH', isValidCrc: false);
+        }
+      } else if (rawBytes.length < 20) {
         _packetsInvalid++;
         BleDiagnosticService.instance.recordCrcError(discardedBytesCount: rawBytes.length);
         StructuredLogger.instance.warn(LogTag.ingest, 'Header CRC8 mismatch');
         return IngestionResult.dropped(reason: 'HEADER_CRC8_MISMATCH', isValidCrc: false);
-      }
-
-      final int bodyLen = lenLo | (lenHi << 8);
-      final int expectedTotalLen = 4 + bodyLen;
-      if (rawBytes.length < expectedTotalLen || bodyLen < 4) {
-        _packetsInvalid++;
-        BleDiagnosticService.instance.recordDiscardedBytes(rawBytes.length);
-        return IngestionResult.dropped(reason: 'INCOMPLETE_FRAME_BODY', isValidCrc: false);
-      }
-
-      // Verifica CRC-32 di coda (IEEE 802.3 standard sui byte interni)
-      final int innerLen = bodyLen - 4;
-      final innerBytes = rawBytes.sublist(4, 4 + innerLen);
-      final tailCrcOffset = 4 + innerLen;
-      final actualTailCrc = (rawBytes[tailCrcOffset] |
-              (rawBytes[tailCrcOffset + 1] << 8) |
-              (rawBytes[tailCrcOffset + 2] << 16) |
-              (rawBytes[tailCrcOffset + 3] << 24)) &
-          0xFFFFFFFF;
-      final expectedTailCrc = WhoopCrc32.compute(innerBytes);
-
-      if (actualTailCrc != expectedTailCrc) {
-        _packetsInvalid++;
-        BleDiagnosticService.instance.recordCrcError(discardedBytesCount: rawBytes.length);
-        StructuredLogger.instance.warn(LogTag.ingest, 'Payload CRC32 mismatch');
-        return IngestionResult.dropped(reason: 'PAYLOAD_CRC32_MISMATCH', isValidCrc: false);
+      } else if (rawBytes.length >= 96) {
+        final sync = rawBytes[0];
+        if (sync != 0xAA && sync != 0x55) {
+          _packetsInvalid++;
+          BleDiagnosticService.instance.recordDiscardedBytes(rawBytes.length);
+          return IngestionResult.dropped(reason: 'INVALID_96BYTE_SYNC_BYTE', isValidCrc: false);
+        }
       }
     } else if (is96ByteSensor) {
       final sync = rawBytes[0];
@@ -316,7 +316,7 @@ class TelemetryIngestionService {
     double? respRate;
     double? respPower;
 
-    if (rawBytes.length >= 96) {
+    if (rawBytes.length >= 20) {
       final packet96 = Whoop96BytePacket.fromBytes(rawBytes);
       deviceTs = packet96.timestamp;
       bpm = packet96.heartRateBpm > 0 ? packet96.heartRateBpm : null;
@@ -326,13 +326,11 @@ class TelemetryIngestionService {
       motionVar = packet96.motionVariance;
       skinTempRaw = packet96.skinTempRaw;
       skinTempC = packet96.skinTempCelsius;
+      spo2Pct = packet96.spo2Pct;
       spo2RatioR = packet96.spo2Ratio > 0 ? packet96.spo2Ratio : null;
-      if (spo2RatioR != null && spo2RatioR > 0 && spo2RatioR <= 1.2) {
-        spo2Pct = double.parse((110.0 - (25.0 * spo2RatioR)).clamp(70.0, 100.0).toStringAsFixed(1));
-      }
       respRate = packet96.respiratoryRate > 0 ? packet96.respiratoryRate : null;
       respPower = packet96.respiratoryPower > 0 ? packet96.respiratoryPower : null;
-    } else if (isFramedCommand) {
+    } else if (isFramed) {
       if (rawBytes.length >= 7) {
         final potentialBpm = rawBytes[6];
         if (potentialBpm >= 30 && potentialBpm <= 250) {

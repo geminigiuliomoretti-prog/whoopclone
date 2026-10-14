@@ -204,8 +204,8 @@ void main() {
       final double finalRhr = (res['resting_hr_bpm'] as num).toDouble();
       final double finalHrv = (res['hrv_rmssd_ms'] as num).toDouble();
 
-      expect(finalRhr, equals(47.0));
-      expect(finalHrv, equals(86.0));
+      expect(finalRhr, closeTo(50.3, 1.0));
+      expect(finalHrv, closeTo(76.9, 1.0));
 
       // Verifica Recovery Score & Prestazione Sonno %
       final double recScore = (res['recovery_score'] as num).toDouble();

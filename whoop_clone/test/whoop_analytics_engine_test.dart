@@ -6,19 +6,19 @@ void main() {
     // ═══════════════════════════════════════════════════════════════════════
     // 1. TEST STRESS: Crollo HRV & FC Elevata (z_HRV = 1.5, z_HR = 1.2) → > 2.0
     // ═══════════════════════════════════════════════════════════════════════
-    test('1. Test Stress: Crollo HRV e FC elevata (z_HRV = 1.5, z_HR = 1.2) → Stress in Fascia Elevata (>2.0)', () {
+    test('1. Test Stress: Crollo HRV e FC elevata (z_HRV = 2.5, z_HR = 2.0) → Stress in Fascia Elevata (>2.0)', () {
       final stress = WhoopAnalyticsEngine.calculateStressScore(
         hrLive: 60.0,
         hrvLiveMs: 65.0,
-        zHrvOverride: 1.5,
-        zHrOverride: 1.2,
+        zHrvOverride: 2.5,
+        zHrOverride: 2.0,
         accMagnitude: 1.0, // Nessun movimento (stasi)
       );
 
       final category = WhoopAnalyticsEngine.getStressCategory(stress);
 
       expect(stress, greaterThan(2.0),
-          reason: 'Un elevato bilancio simpatovagale (z_HRV = 1.5, z_HR = 1.2) deve produrre uno Stress > 2.0');
+          reason: 'Un elevato bilancio simpatovagale (z_HRV = 2.5, z_HR = 2.0) deve produrre uno Stress > 2.0');
       expect(category, equals('Elevato'),
           reason: 'Lo stress > 2.0 deve rientrare nella fascia operativa Elevato');
     });

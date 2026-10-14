@@ -824,6 +824,17 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       if (triggerAutoSync && isCurrentDateToday && !DatabaseHelper.isTestMode) {
         await triggerOvernightSyncIfNeeded();
       }
+
+      if (!DatabaseHelper.isTestMode) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final reprocessedV4 = prefs.getBool('recalc_sleep_v4_scientific') ?? false;
+          if (!reprocessedV4) {
+            await prefs.setBool('recalc_sleep_v4_scientific', true);
+            await reprocessHistoricalSleepsV4();
+          }
+        } catch (_) {}
+      }
     } catch (e) {
       _errorMessage = 'Errore durante il caricamento dei dati: $e';
     } finally {
@@ -869,6 +880,21 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     return count;
   }
 
+  /// Riprocessa con modello matematico scientifico v4 forzato le ultime 7 notti da telemetria_grezza
+  Future<int> reprocessHistoricalSleepsV4({int days = 7}) async {
+    final now = DateTime.now();
+    final windowStart = now.subtract(Duration(days: days));
+    final count = await _posteriorSleepDetector.runPosteriorDetectionAndPersist(
+      windowStart: windowStart,
+      windowEnd: now,
+      forceOverwrite: true,
+    );
+    if (count > 0) {
+      await loadData(triggerAutoSync: false);
+    }
+    return count;
+  }
+
   /// Caricamento iniziale all'avvio dell'applicazione
   Future<void> loadInitialData() async {
     await loadData();
@@ -878,6 +904,12 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       if (!reprocessed) {
         await prefs.setBool('sleep_reprocessed_v2', true);
         await reprocessHistoricalSleepsFromRawTelemetry();
+      }
+
+      final reprocessedV4 = prefs.getBool('recalc_sleep_v4_scientific') ?? false;
+      if (!reprocessedV4 && !DatabaseHelper.isTestMode) {
+        await prefs.setBool('recalc_sleep_v4_scientific', true);
+        await reprocessHistoricalSleepsV4();
       }
     } catch (e) {
       debugPrint('WhoopViewModel: Errore riprocessamento storico iniziale sonno: $e');
@@ -1071,14 +1103,11 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
         .where((s) => s.dataIso.compareTo(dateKey) < 0 && !s.riposoBreve && s.durataTotMin > 0)
         .toList()
       ..sort((a, b) => b.dataIso.compareTo(a.dataIso));
-    final prevSonno = priorSleeps.firstOrNull;
-    if (prevSonno == null) return null;
+    if (priorSleeps.isEmpty) return null;
 
-    return WhoopAnalyticsEngine.calculateSleepConsistency(
-      currentOnset: currentSonno.inizioSonno,
-      currentWake: currentSonno.inizioRisveglio,
-      previousOnset: prevSonno.inizioSonno,
-      previousWake: prevSonno.inizioRisveglio,
+    return WhoopAnalyticsEngine.calculateMultiNightSleepConsistency(
+      currentSleep: (onset: currentSonno.inizioSonno, wake: currentSonno.inizioRisveglio),
+      priorSleeps: priorSleeps.take(4).map((s) => (onset: s.inizioSonno, wake: s.inizioRisveglio)).toList(),
     );
   }
 

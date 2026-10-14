@@ -51,52 +51,45 @@ class WhoopAnalyticsEngine {
     if (hrLive <= 0) return 0.0;
 
     final double effectiveRhr = rhr14d ?? hrRest ?? 55.0;
+    final double effectiveHrvMean = baselineHrvMean ?? 65.0;
+    final double targetMeanLn = meanLnRmssd14d ?? log(max(1.0, effectiveHrvMean));
+    final double targetStdLn = stdLnRmssd14d ?? (baselineHrvStd / max(1.0, effectiveHrvMean));
 
-    // A.1 Z-Score HRV (trasformazione logaritmica)
-    double zHrv = 0.0;
-    if (zHrvOverride != null) {
-      zHrv = zHrvOverride;
+    final double safeHrv = max(1.0, hrvLiveMs);
+    final double lnHrvAtt = log(safeHrv);
+    final double safeStdLn = targetStdLn > 0 ? targetStdLn : 0.23;
+    final double safeStdRhr = stdRhr14d > 0 ? stdRhr14d : 3.5;
+
+    // Distinzione tra veglia e sonno/riposo con offset circadiano
+    final bool isAwake = (accMagnitude - 1.0) > 0.008 || hrLive > (effectiveRhr + 6.0);
+    final double refRhr = effectiveRhr + (isAwake ? 8.5 : 0.0);
+    final double refLnHrv = targetMeanLn - (isAwake ? 0.28 : 0.0);
+
+    double zHr = ((hrLive - refRhr) / max(3.0, safeStdRhr)).clamp(-2.5, 4.5);
+    double zHrv = ((refLnHrv - lnHrvAtt) / max(0.18, safeStdLn)).clamp(-2.5, 4.0);
+
+    if (zHrOverride != null) zHr = zHrOverride.clamp(-2.5, 4.5);
+    if (zHrvOverride != null) zHrv = zHrvOverride.clamp(-2.5, 4.0);
+
+    // Motion gating su ENMO (enmo = max(0.0, accMagnitude - 1.0))
+    final double enmo = max(0.0, accMagnitude - 1.0);
+    double gMotion = 1.0;
+    if (enmo <= 0.03) {
+      gMotion = 1.0;
+    } else if (enmo <= 0.18) {
+      gMotion = 1.0 / (1.0 + 18.0 * (enmo - 0.03));
     } else {
-      final double effectiveHrvMean = baselineHrvMean ?? 65.0;
-      final double targetMeanLn = meanLnRmssd14d ?? log(max(1.0, effectiveHrvMean));
-      final double targetStdLn = stdLnRmssd14d ?? (baselineHrvStd / max(1.0, effectiveHrvMean));
-
-      final double safeHrv = max(1.0, hrvLiveMs);
-      final double lnHrvAtt = log(safeHrv);
-      final double safeStdLn = targetStdLn > 0 ? targetStdLn : 0.23;
-
-      zHrv = (targetMeanLn - lnHrvAtt) / safeStdLn;
+      gMotion = 0.08;
+      zHrv = zHrv * 0.40;
     }
 
-    // A.2 Z-Score HR
-    double zHr = 0.0;
-    if (zHrOverride != null) {
-      zHr = zHrOverride;
-    } else {
-      final double safeStdRhr = stdRhr14d > 0 ? stdRhr14d : 3.5;
-      zHr = (hrLive - effectiveRhr) / safeStdRhr;
-    }
+    // Integratore simpatovagale Z_SVB
+    final double zSvb = (0.60 * zHrv) + (0.40 * gMotion * zHr);
 
-    // B. Motion Gating (Filtro Accelerometrico - Brevetto US11574722B2)
-    const double sogliaAcc = 1.2;
-    double fattoreMovimento = 1.0;
-    if (accMagnitude > sogliaAcc) {
-      final double deltaAcc = accMagnitude - sogliaAcc;
-      fattoreMovimento = 1.0 / (1.0 + 8.0 * deltaAcc + 15.0 * pow(deltaAcc, 2));
-    }
+    // Sigmoide traslata (k = 0.95, z0 = 1.15)
+    final double stress = 3.0 / (1.0 + exp(-0.95 * (zSvb - 1.15)));
 
-    // C. Integratore Simpatovagale Z_SVB
-    // Limita z-score a range fisiologico [-3.0, 4.0] e attenua l'attivazione simpatica durante movimento
-    const double pesoHrv = 0.65;
-    const double pesoHr = 0.35;
-    final double zSvb = fattoreMovimento * ((pesoHrv * zHrv.clamp(-3.0, 4.0)) + (pesoHr * zHr.clamp(-3.0, 4.0)));
-
-    // Sigmoide Modificata (k = 0.85, z0 = 0.0)
-    const double kPendenza = 0.85;
-    const double zZero = 0.0;
-    final double stress = 3.0 / (1.0 + exp(-kPendenza * (zSvb - zZero)));
-
-    return double.parse(stress.clamp(0.0, 3.0).toStringAsFixed(2));
+    return double.parse(stress.clamp(0.1, 3.0).toStringAsFixed(2));
   }
 
   /// Ritorna la categoria di Stress in base al punteggio (0.0 - 3.0)
@@ -236,21 +229,35 @@ class WhoopAnalyticsEngine {
     required double rhr30dMean,
     required double rhr30dStd,
     required double sleepPerformancePct,
+    double? deltaResp,
+    double? deltaSkinTemp,
+    double? spo2Pct,
+    double? nightlyStress,
   }) {
     if (hrvMssd <= 0 || hrv30dMean <= 0) return 50;
-    if (hrv30dStd <= 0 || rhr30dStd <= 0) return 50;
 
-    final double lnHrv = log(hrvMssd);
-    final double lnHrvMean = log(hrv30dMean);
-    final double sigmaLnHrv = hrv30dStd / hrv30dMean;
-    final double zHrv = (lnHrv - lnHrvMean) / (sigmaLnHrv > 0 ? sigmaLnHrv : 0.2);
+    final double stdLnHrv30d = max(0.08, (hrv30dStd > 0 && hrv30dMean > 0) ? (hrv30dStd / hrv30dMean) : 0.23);
+    final double zHrv = ((log(hrvMssd) - log(hrv30dMean)) / stdLnHrv30d).clamp(-3.0, 3.0);
+    final double zRhr = ((rhr30dMean - rhrNight) / max(1.8, rhr30dStd)).clamp(-3.0, 3.0);
+    final double zSleep = ((sleepPerformancePct - 82.0) / 15.0).clamp(-2.5, 1.5);
 
-    final double zRhr = (rhr30dMean - rhrNight) / rhr30dStd;
-    final double sleepComponent = (sleepPerformancePct - 70.0) / 15.0;
+    final double zRec = (0.60 * zHrv) + (0.28 * zRhr) + (0.12 * zSleep);
+    double baseRecovery = 100.0 / (1.0 + exp(-1.15 * (zRec + 0.35)));
 
-    final double zTot = (0.55 * zHrv) + (0.35 * zRhr) + (0.10 * sleepComponent);
-    final double recoveryRaw = 100.0 / (1.0 + exp(-1.2 * zTot));
-    return recoveryRaw.round().clamp(1, 99);
+    if (deltaResp != null && deltaResp > 1.2) {
+      baseRecovery -= 4.5 * pow(deltaResp - 1.2, 1.3);
+    }
+    if (deltaSkinTemp != null && deltaSkinTemp.abs() > 0.6) {
+      baseRecovery -= 6.0 * pow(deltaSkinTemp.abs() - 0.6, 1.4);
+    }
+    if (spo2Pct != null && spo2Pct < 94.0) {
+      baseRecovery -= 2.5 * (94.0 - spo2Pct);
+    }
+    if (nightlyStress != null && nightlyStress > 1.1) {
+      baseRecovery -= 10.0 * (nightlyStress - 1.1);
+    }
+
+    return baseRecovery.round().clamp(1, 99);
   }
 
   static double calculateRecoveryScorePct({
@@ -263,9 +270,11 @@ class WhoopAnalyticsEngine {
     required double sleepPerformancePct,
     double nightlyStress = 0.5,
     double skinTempDeltaC = 0.0,
+    double? spo2Pct,
     double currentRespRateRpm = 14.5,
     double baselineRespRateRpm = 14.0,
   }) {
+    final double deltaResp = currentRespRateRpm - baselineRespRateRpm;
     final rec = calculateRecovery(
       hrvMssd: currentHrvMs,
       hrv30dMean: baselineHrvMean,
@@ -274,15 +283,13 @@ class WhoopAnalyticsEngine {
       rhr30dMean: baselineRhrMean,
       rhr30dStd: baselineRhrStd,
       sleepPerformancePct: sleepPerformancePct,
+      deltaResp: deltaResp,
+      deltaSkinTemp: skinTempDeltaC,
+      spo2Pct: spo2Pct,
+      nightlyStress: nightlyStress,
     );
 
-    double penalty = max(0.0, (nightlyStress - 1.0) * 15.0);
-    if (skinTempDeltaC.abs() > 1.2 || (currentRespRateRpm - baselineRespRateRpm).abs() > 1.5) {
-      penalty += 5.0;
-    }
-
-    final finalScore = (rec - penalty).clamp(1.0, 99.0);
-    return double.parse(finalScore.toStringAsFixed(0));
+    return rec.toDouble();
   }
 
   /// Calcola il Fabbisogno di Sonno in minuti
@@ -364,30 +371,62 @@ class WhoopAnalyticsEngine {
     required DateTime previousOnset,
     required DateTime previousWake,
   }) {
-    if (currentWake.isBefore(currentOnset) || previousWake.isBefore(previousOnset)) {
-      return null;
+    return calculateMultiNightSleepConsistency(
+      currentSleep: (onset: currentOnset, wake: currentWake),
+      priorSleeps: [(onset: previousOnset, wake: previousWake)],
+    );
+  }
+
+  /// Calcola la Regolarità del Sonno (Sleep Consistency %) confrontando l'intervallo
+  /// di sonno reale con quello di fino a 4 notti precedenti (d = 1..4 con pesi pow(0.75, d - 1)).
+  static double? calculateMultiNightSleepConsistency({
+    required ({DateTime onset, DateTime wake}) currentSleep,
+    required List<({DateTime onset, DateTime wake})> priorSleeps,
+  }) {
+    if (priorSleeps.isEmpty) return null;
+    if (currentSleep.wake.isBefore(currentSleep.onset)) return null;
+
+    ({double onsetMin, double wakeMin}) toRefMinutes(DateTime onset, DateTime wake) {
+      final refDate = onset.hour < 12
+          ? DateTime(onset.year, onset.month, onset.day - 1, 18, 0, 0)
+          : DateTime(onset.year, onset.month, onset.day, 18, 0, 0);
+      return (
+        onsetMin: onset.difference(refDate).inMinutes.toDouble(),
+        wakeMin: wake.difference(refDate).inMinutes.toDouble(),
+      );
     }
 
-    double toMinutesFromMidnight(DateTime dt, DateTime wakeRef) {
-      final midnight = DateTime(wakeRef.year, wakeRef.month, wakeRef.day);
-      return dt.difference(midnight).inMinutes.toDouble();
+    final cur = toRefMinutes(currentSleep.onset, currentSleep.wake);
+
+    double sumWeightedC = 0.0;
+    double sumWeight = 0.0;
+
+    final evalPrior = priorSleeps.take(4).toList();
+    for (int i = 0; i < evalPrior.length; i++) {
+      final pSleep = evalPrior[i];
+      if (pSleep.wake.isBefore(pSleep.onset)) continue;
+
+      final prev = toRefMinutes(pSleep.onset, pSleep.wake);
+      final double overlapMin = max(0.0, min(cur.wakeMin, prev.wakeMin) - max(cur.onsetMin, prev.onsetMin));
+      final double unionMin = max(cur.wakeMin, prev.wakeMin) - min(cur.onsetMin, prev.onsetMin);
+      if (unionMin <= 0) continue;
+
+      final double deltaOnsetMin = (cur.onsetMin - prev.onsetMin).abs();
+      final double deltaWakeMin = (cur.wakeMin - prev.wakeMin).abs();
+
+      final double cD = 100.0 * (
+        0.50 * (overlapMin / unionMin) +
+        0.25 * exp(-deltaOnsetMin / 90.0) +
+        0.25 * exp(-deltaWakeMin / 90.0)
+      );
+
+      final double weight = pow(0.75, i).toDouble();
+      sumWeightedC += cD * weight;
+      sumWeight += weight;
     }
 
-    final curStart = toMinutesFromMidnight(currentOnset, currentWake);
-    final curEnd = toMinutesFromMidnight(currentWake, currentWake);
-    final prevStart = toMinutesFromMidnight(previousOnset, previousWake);
-    final prevEnd = toMinutesFromMidnight(previousWake, previousWake);
-
-    final overlapStart = max(curStart, prevStart);
-    final overlapEnd = min(curEnd, prevEnd);
-    final overlapMin = max(0.0, overlapEnd - overlapStart);
-
-    final totalSpanStart = min(curStart, prevStart);
-    final totalSpanEnd = max(curEnd, prevEnd);
-    final unionMin = totalSpanEnd - totalSpanStart;
-
-    if (unionMin <= 0) return null;
-    final consistency = (overlapMin / unionMin) * 100.0;
+    if (sumWeight <= 0) return null;
+    final double consistency = sumWeightedC / sumWeight;
     return double.parse(consistency.clamp(0.0, 100.0).toStringAsFixed(1));
   }
 }

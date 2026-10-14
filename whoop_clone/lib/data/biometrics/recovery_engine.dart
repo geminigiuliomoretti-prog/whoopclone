@@ -142,6 +142,7 @@ class RecoveryEngine {
     double? sleepPerformancePct,
     double? nightlyStress,
     double? skinTempDeltaC,
+    double? spo2Pct,
     double? sleepDurationMinutes,
     int? validRrEpochsCount,
     bool strictGating = false,
@@ -163,39 +164,38 @@ class RecoveryEngine {
       }
     }
 
-    final currentLnRmssd = calculateLnRmssd(currentRmssdMs);
     final baseline = calculateBaseline(historicalLnRmssd, historicalRhr);
 
     if (strictGating && baseline.isCalibrating) {
       return null;
     }
 
-    // 1. zHRV & zRHR (lower RHR is better, so meanRhr - currentFcrBpm)
-    final zHrv = calculateZScore(value: currentLnRmssd, mean: baseline.meanLnRmssd, stdDev: baseline.stdDevLnRmssd);
-    final zRhr = (baseline.meanRhr - currentFcrBpm) / (baseline.stdDevRhr > 0 ? baseline.stdDevRhr : 1.0);
+    final double stdLnHrv30d = max(0.08, baseline.stdDevLnRmssd);
+    final double zHrv = ((log(currentRmssdMs) - baseline.meanLnRmssd) / stdLnHrv30d).clamp(-3.0, 3.0);
+    final double zRhr = ((baseline.meanRhr - currentFcrBpm) / max(1.8, baseline.stdDevRhr)).clamp(-3.0, 3.0);
+    final double zSleep = (((sleepPerformancePct ?? 82.0) - 82.0) / 15.0).clamp(-2.5, 1.5);
 
-    // 2. Penalty Stress Notturno
-    final penaltyStress = (nightlyStress != null && nightlyStress > 1.0) ? (nightlyStress - 1.0) * 15.0 : 0.0;
+    final double zRec = (0.60 * zHrv) + (0.28 * zRhr) + (0.12 * zSleep);
+    double baseRecovery = 100.0 / (1.0 + exp(-1.15 * (zRec + 0.35)));
 
-    // 3. Factor Prestazione Sonno
-    final sleepPerfFactor = sleepPerformancePct != null ? (sleepPerformancePct - 70.0) / 15.0 : 0.0;
-
-    // 4. Z_tot pesato (z-scores biometrici e prestazione sonno)
-    final zTot = (0.45 * zHrv) + (0.30 * zRhr) + (0.15 * sleepPerfFactor);
-
-    // 5. Penalità Vitals Fuori Norma (-5%)
-    double penaltyVitals = 0.0;
-    final bool hasRespAnomaly = (currentRespRateRpm != null && baselineRespRateRpm != null) &&
-        (currentRespRateRpm - baselineRespRateRpm).abs() > 1.5;
-    final bool hasTempAnomaly = skinTempDeltaC != null && skinTempDeltaC.abs() > 1.2;
-
-    if (hasRespAnomaly || hasTempAnomaly) {
-      penaltyVitals = 5.0;
+    // Penalità
+    final double? deltaResp = (currentRespRateRpm != null && baselineRespRateRpm != null)
+        ? (currentRespRateRpm - baselineRespRateRpm)
+        : null;
+    if (deltaResp != null && deltaResp > 1.2) {
+      baseRecovery -= 4.5 * pow(deltaResp - 1.2, 1.3);
+    }
+    if (skinTempDeltaC != null && skinTempDeltaC.abs() > 0.6) {
+      baseRecovery -= 6.0 * pow(skinTempDeltaC.abs() - 0.6, 1.4);
+    }
+    if (spo2Pct != null && spo2Pct < 94.0) {
+      baseRecovery -= 2.5 * (94.0 - spo2Pct);
+    }
+    if (nightlyStress != null && nightlyStress > 1.1) {
+      baseRecovery -= 10.0 * (nightlyStress - 1.1);
     }
 
-    // 6. Mappatura e Clamp (1 - 99%)
-    final mappedScore = (((zTot + 3.0) / 6.0) * 100.0) - penaltyStress - penaltyVitals;
-    return mappedScore.clamp(1.0, 99.0);
+    return double.parse(baseRecovery.clamp(1.0, 99.0).toStringAsFixed(1));
   }
 
   /// Classifica la zona prestazionale: Verde (67-99%), Gialla (34-66%), Rossa (1-33%)
