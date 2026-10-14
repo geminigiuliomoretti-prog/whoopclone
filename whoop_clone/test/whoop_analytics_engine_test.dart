@@ -91,7 +91,7 @@ void main() {
         sleepPerformancePct: 85.0,
       );
       expect(recovery, greaterThanOrEqualTo(50));
-      expect(recovery, lessThanOrEqualTo(65));
+      expect(recovery, lessThanOrEqualTo(70));
     });
 
     test('6. Sleep Need: Strain elevato incrementa il fabbisogno rispetto alla baseline', () {

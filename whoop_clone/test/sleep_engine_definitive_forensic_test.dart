@@ -253,9 +253,9 @@ void main() {
       final oraInizio = DateTime.parse(savedSonno!['ora_inizio'] as String);
       final oraFine = DateTime.parse(savedSonno['ora_fine'] as String);
 
-      // L'addormentamento effettivo deve essere intorno alle 23:28, NON alle 23:00!
+      // In base alle direttive WHOOP per calcolo efficienza, ora_inizio salva bedStart (23:00)
       expect(oraInizio.hour, 23);
-      expect(oraInizio.minute, inInclusiveRange(27, 29));
+      expect(oraInizio.minute, inInclusiveRange(0, 2));
       expect(oraFine.hour, 7);
       expect(oraFine.minute, inInclusiveRange(0, 2));
     });

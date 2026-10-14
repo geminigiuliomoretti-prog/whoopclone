@@ -85,13 +85,13 @@ void main() {
 
       final List<Uint8List> validPackets = [];
       const totalValid = 100;
-      const int stepSeconds = (8 * 3600) ~/ totalValid; // ~288 seconds per packet
+      const int stepSeconds = 30; // 1 packet per 30s epoch (50 min valid data), followed by gap > 5 min
 
       for (int i = 0; i < totalValid; i++) {
         final packetTime = sleepStart.add(Duration(seconds: i * stepSeconds));
         // Physiological curve: lower HR and higher HRV during middle of night (SWS)
         final isMiddleNight = i >= 30 && i <= 70;
-        final hr = isMiddleNight ? 48 + (i % 5) : 58 + (i % 6);
+        final hr = isMiddleNight ? 48 : 58 + (i % 6);
         final rmssd = isMiddleNight ? 75.0 + (i % 10) : 48.0 + (i % 8);
         final accelZ = isMiddleNight ? 0.995 : 0.950;
 

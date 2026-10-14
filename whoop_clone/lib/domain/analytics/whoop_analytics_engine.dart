@@ -61,7 +61,7 @@ class WhoopAnalyticsEngine {
     final double safeStdRhr = stdRhr14d > 0 ? stdRhr14d : 3.5;
 
     // Distinzione tra veglia e sonno/riposo con offset circadiano
-    final bool isAwake = (accMagnitude - 1.0) > 0.008 || hrLive > (effectiveRhr + 6.0);
+    final bool isAwake = (accMagnitude - 1.0) > 0.025 || hrLive > (effectiveRhr + 12.0);
     final double refRhr = effectiveRhr + (isAwake ? 8.5 : 0.0);
     final double refLnHrv = targetMeanLn - (isAwake ? 0.28 : 0.0);
 
@@ -86,8 +86,8 @@ class WhoopAnalyticsEngine {
     // Integratore simpatovagale Z_SVB
     final double zSvb = (0.60 * zHrv) + (0.40 * gMotion * zHr);
 
-    // Sigmoide traslata (k = 0.95, z0 = 1.15)
-    final double stress = 3.0 / (1.0 + exp(-0.95 * (zSvb - 1.15)));
+    // Sigmoide traslata (k = 0.95, z0 = 1.35)
+    final double stress = 3.0 / (1.0 + exp(-0.95 * (zSvb - 1.35)));
 
     return double.parse(stress.clamp(0.1, 3.0).toStringAsFixed(2));
   }
@@ -236,13 +236,14 @@ class WhoopAnalyticsEngine {
   }) {
     if (hrvMssd <= 0 || hrv30dMean <= 0) return 50;
 
-    final double stdLnHrv30d = max(0.08, (hrv30dStd > 0 && hrv30dMean > 0) ? (hrv30dStd / hrv30dMean) : 0.23);
-    final double zHrv = ((log(hrvMssd) - log(hrv30dMean)) / stdLnHrv30d).clamp(-3.0, 3.0);
-    final double zRhr = ((rhr30dMean - rhrNight) / max(1.8, rhr30dStd)).clamp(-3.0, 3.0);
+    final double safeHrvMean = hrv30dMean > 0 ? hrv30dMean : 65.0;
+    final double stdLnHrv30d = max(0.15, (hrv30dStd > 0 && safeHrvMean > 0) ? (hrv30dStd / safeHrvMean) : 0.23);
+    final double zHrv = ((log(hrvMssd) - log(safeHrvMean)) / stdLnHrv30d).clamp(-3.0, 3.0);
+    final double zRhr = ((rhr30dMean - rhrNight) / max(2.5, rhr30dStd)).clamp(-3.0, 3.0);
     final double zSleep = ((sleepPerformancePct - 82.0) / 15.0).clamp(-2.5, 1.5);
 
     final double zRec = (0.60 * zHrv) + (0.28 * zRhr) + (0.12 * zSleep);
-    double baseRecovery = 100.0 / (1.0 + exp(-1.15 * (zRec + 0.35)));
+    double baseRecovery = 100.0 / (1.0 + exp(-1.15 * (zRec + 0.65)));
 
     if (deltaResp != null && deltaResp > 1.2) {
       baseRecovery -= 4.5 * pow(deltaResp - 1.2, 1.3);
@@ -253,8 +254,8 @@ class WhoopAnalyticsEngine {
     if (spo2Pct != null && spo2Pct < 94.0) {
       baseRecovery -= 2.5 * (94.0 - spo2Pct);
     }
-    if (nightlyStress != null && nightlyStress > 1.1) {
-      baseRecovery -= 10.0 * (nightlyStress - 1.1);
+    if (nightlyStress != null && nightlyStress >= 1.6) {
+      baseRecovery -= 10.0 * (nightlyStress - 1.6);
     }
 
     return baseRecovery.round().clamp(1, 99);

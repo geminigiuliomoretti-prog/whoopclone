@@ -66,7 +66,7 @@ void main() {
 
       for (int i = 0; i < 960; i++) {
         double motion = 0.002;
-        double hr = 55.0;
+        double hr = 63.0;
         double rmssd = 60.0;
         double respPower = 0.4; // Light sleep standard resp power (<0.6)
         List<double> pp = [0.95, 0.96, 0.94, 0.95, 0.96]; // ~63 BPM, ~20ms diff

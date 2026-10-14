@@ -99,9 +99,6 @@ class PosteriorSleepDetector {
     final p30Enmo = enmoValues.isNotEmpty ? _percentile(enmoValues, 0.30) : 0.015;
     final effectiveEnmoQuietThresh = math.max(0.012, math.min(p30Enmo, 0.030));
 
-    final medianHr = hrValues.isNotEmpty ? _percentile(hrValues, 0.50) : profileRhr * 1.25;
-    final maxSleepHr = math.max(profileRhr * 1.20, medianHr);
-
     // 2. Suddivide in epoche da 30 secondi
     final firstTs = _extractTimestamp(sortedRecords.first);
     final lastTs = _extractTimestamp(sortedRecords.last);
@@ -149,20 +146,18 @@ class PosteriorSleepDetector {
 
         final epochTime = firstTs.add(Duration(seconds: i * 30));
         final localHour = epochTime.toLocal().hour;
-        final isCircadianNight = localHour >= 21 || localHour < 9;
 
+        final double strictSleepHrCeiling = profileRhr + 9.0; // es. 50 + 9 = 59 bpm max per confermare sonno quieto
         final bool isQuiet;
-        if (isCircadianNight) {
-          // In fascia serale (es. 21:00 - 23:00): una persona rilassata sul divano o a cena è immobile (enmo basso)
-          // ma ha FC ancora da sveglio (65-80 bpm). L'addormentamento reale richiede quiete motoria combinata
-          // con caduta della FC verso il baseline di riposo (non basta solo < maxSleepHr).
-          final isEveningLeisure = (localHour >= 21 && localHour < 23);
-          final eveningMaxHr = isEveningLeisure ? math.min(maxSleepHr, profileRhr + 8.0) : maxSleepHr;
-          isQuiet = avgEnmo <= effectiveEnmoQuietThresh && avgHr <= eveningMaxHr;
+        if (localHour >= 21 || localHour < 7) {
+          // Fascia notturna (21:00 - 07:00):
+          final double allowedHr = (localHour >= 21 && localHour < 23)
+              ? (profileRhr + 6.5) // Sul divano tra le 21 e le 22:35 la FC è > RHR + 6.5: non è sonno!
+              : strictSleepHrCeiling;
+          isQuiet = avgEnmo <= effectiveEnmoQuietThresh && avgHr <= allowedHr;
         } else {
-          // Di giorno (09:00 - 21:00): una persona rilassata sul divano ha FC 60-75 bpm.
-          // Un pisolino diurno reale richiede quiete motoria profonda (enmo <= 0.008) e caduta della FC a livelli basali (<= profileRhr + 2.0).
-          isQuiet = avgEnmo <= 0.008 && avgHr <= (profileRhr + 2.0);
+          // Dopo le 07:00 del mattino (07:00 - 21:00): per restare addormentato serve FC basale stretta e zero moto
+          isQuiet = avgEnmo <= 0.008 && avgHr <= (profileRhr + 4.5);
         }
         epochStatus.add(isQuiet);
       }
@@ -177,7 +172,7 @@ class PosteriorSleepDetector {
 
     const int minConsecutiveQuietEpochs = 30; // ~15-20 min di sonno quieto per confermare inizio
     const int maxWakeGapEpochs = 40;          // 20 min tolleranza buchi/microrisvegli
-    const int sustainedWakeEpochs = 30;       // 15 min attività motoria per confermare risveglio
+    const int sustainedWakeEpochs = 12;       // 6 min attività motoria per confermare risveglio
 
     int i = 0;
     while (i < totalEpochs) {
@@ -212,9 +207,75 @@ class PosteriorSleepDetector {
       int lastQuietIdx = i;
       int activeWakeStreak = 0;
       int gapStreak = 0;
+      int morningHighHrStreak = 0;
       int cursor = i + 1;
 
       while (cursor < totalEpochs) {
+        final bucket = epochBuckets[cursor];
+        double sumHr = 0.0;
+        int hrCount = 0;
+        double maxEnmo = 0.0;
+        for (final r in bucket) {
+          final enmo = (r['accel_enmo'] ?? r['motion_var'] ?? r['enmo'] as num?)?.toDouble();
+          if (enmo != null && enmo > maxEnmo) {
+            maxEnmo = enmo;
+          }
+          final hr = (r['bpm'] ?? r['hr'] as num?)?.toDouble();
+          if (hr != null && hr > 0) {
+            sumHr += hr;
+            hrCount++;
+          }
+        }
+        final double avgHr = hrCount > 0 ? sumHr / hrCount : profileRhr;
+        final epochTime = firstTs.add(Duration(seconds: cursor * 30));
+        final localHour = epochTime.toLocal().hour;
+
+        if (avgHr >= profileRhr + 18.0) {
+          morningHighHrStreak++;
+        } else {
+          morningHighHrStreak = 0;
+        }
+
+        int recentWakeCount = 0;
+        final int checkStart = math.max(0, cursor - 11);
+        for (int k = checkStart; k <= cursor; k++) {
+          if (epochStatus[k] == false) {
+            recentWakeCount++;
+          }
+        }
+
+        if (localHour >= 6) {
+          final bool isFrankWake = (morningHighHrStreak >= 3) ||
+              (avgHr >= 85.0) ||
+              (cursor >= candidateStartIdx + 11 && recentWakeCount >= 8);
+          if (isFrankWake) {
+            // Risveglio franco mattutino: interrompi immediatamente e fissa lastQuietIdx
+            // all'ultima epoca quieta prima dell'innalzamento cardiaco mattutino (~07:00)
+            int quietBeforeRise = lastQuietIdx;
+            while (quietBeforeRise > candidateStartIdx) {
+              final b = epochBuckets[quietBeforeRise];
+              double bSum = 0.0;
+              int bCount = 0;
+              for (final r in b) {
+                final h = (r['bpm'] ?? r['hr'] as num?)?.toDouble();
+                if (h != null && h > 0) {
+                  bSum += h;
+                  bCount++;
+                }
+              }
+              final bHr = bCount > 0 ? bSum / bCount : profileRhr;
+              if (bHr <= profileRhr + 6.0 && epochStatus[quietBeforeRise] == true) {
+                break;
+              }
+              quietBeforeRise--;
+            }
+            if (quietBeforeRise >= candidateStartIdx) {
+              lastQuietIdx = quietBeforeRise;
+            }
+            break;
+          }
+        }
+
         final st = epochStatus[cursor];
         if (st == true) {
           lastQuietIdx = cursor;
@@ -222,7 +283,8 @@ class PosteriorSleepDetector {
           gapStreak = 0;
         } else if (st == false) {
           activeWakeStreak++;
-          if (activeWakeStreak >= sustainedWakeEpochs) {
+          final int wakeThreshold = (localHour >= 6) ? sustainedWakeEpochs : 30;
+          if (activeWakeStreak >= wakeThreshold) {
             // Risveglio confermato: fine sonno all'ultima epoca quieta
             break;
           }
@@ -359,8 +421,8 @@ class PosteriorSleepDetector {
         }).toList();
 
         detectedWindows.add(DetectedSleepWindow(
-          startTime: startTs,
-          endTime: endTs,
+          startTime: startTs.toLocal(),
+          endTime: endTs.toLocal(),
           isNap: isNap,
           wakeDateIso: wakeDateIso,
           coveragePct: coveragePct,

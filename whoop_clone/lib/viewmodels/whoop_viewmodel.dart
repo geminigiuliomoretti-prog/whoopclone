@@ -828,9 +828,9 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       if (!DatabaseHelper.isTestMode) {
         try {
           final prefs = await SharedPreferences.getInstance();
-          final reprocessedV4 = prefs.getBool('recalc_sleep_v4_scientific') ?? false;
-          if (!reprocessedV4) {
-            await prefs.setBool('recalc_sleep_v4_scientific', true);
+          final reprocessedV5 = prefs.getBool('recalc_sleep_v5_fix_school_cutoff') ?? false;
+          if (!reprocessedV5) {
+            await prefs.setBool('recalc_sleep_v5_fix_school_cutoff', true);
             await reprocessHistoricalSleepsV4();
           }
         } catch (_) {}
@@ -906,9 +906,9 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
         await reprocessHistoricalSleepsFromRawTelemetry();
       }
 
-      final reprocessedV4 = prefs.getBool('recalc_sleep_v4_scientific') ?? false;
-      if (!reprocessedV4 && !DatabaseHelper.isTestMode) {
-        await prefs.setBool('recalc_sleep_v4_scientific', true);
+      final reprocessedV5 = prefs.getBool('recalc_sleep_v5_fix_school_cutoff') ?? false;
+      if (!reprocessedV5 && !DatabaseHelper.isTestMode) {
+        await prefs.setBool('recalc_sleep_v5_fix_school_cutoff', true);
         await reprocessHistoricalSleepsV4();
       }
     } catch (e) {

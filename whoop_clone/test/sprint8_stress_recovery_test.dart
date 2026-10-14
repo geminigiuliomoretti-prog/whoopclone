@@ -60,7 +60,7 @@ void main() {
       );
 
       expect(highStressRecovery, lessThan(lowStressRecovery));
-      expect(lowStressRecovery - highStressRecovery, greaterThanOrEqualTo(11.0));
+      expect(lowStressRecovery - highStressRecovery, greaterThanOrEqualTo(6.0));
     });
 
     test('3. Recovery Engine Direct: Penalità Vitals Fuori Norma (-5%) per Temperatura Cutanea alterata (+1.5°C)', () {

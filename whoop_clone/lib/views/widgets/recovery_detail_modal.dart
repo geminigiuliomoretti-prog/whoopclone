@@ -300,7 +300,7 @@ class _RecoveryDetailModalState extends State<RecoveryDetailModal> {
 
               // Punteggio principale (tipografia calma e raffinata)
               Text(
-                hasRecovery ? '${widget.recoveryPct.toInt()}%' : '--',
+                hasRecovery ? '${widget.recoveryPct.round()}%' : '--',
                 style: const TextStyle(
                   color: NatureColors.primaryText,
                   fontSize: 46,
