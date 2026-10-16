@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../data/services/haptic_alarm_service.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 
 /// Modal Sveglia Aptica Strategica WHOOP 5.0 (Design Ufficiale Premium)
@@ -354,19 +355,19 @@ class _SmartAlarmModalState extends State<SmartAlarmModal> {
               child: OutlinedButton.icon(
                 onPressed: () async {
                   final viewModel = Provider.of<WhoopViewModel>(context, listen: false);
-                  final success = await viewModel.scheduleHapticAlarm(
-                    DateTime.now().add(const Duration(seconds: 1)),
-                    vibrationPattern: _hapticIntensity + 1,
+                  final status = await viewModel.hapticAlarmService.testVibrationPulse(
+                    overrideIntensity: HapticIntensity.fromIndex(_hapticIntensity),
                   );
+                  final isStrapOk = status.isStrapSuccess;
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
-                          success
+                          isStrapOk
                               ? '⚡ Segnale di prova inviato! Il bracciale WHOOP sta vibrando...'
-                              : '⚠️ Bracciale non connesso in BLE. Connettilo nella schermata Dispositivo.',
+                              : '⚠️ Bracciale non connesso in BLE (vibrazione solo su smartphone).',
                         ),
-                        backgroundColor: success ? WhoopTheme.strainBlue : Colors.orange,
+                        backgroundColor: isStrapOk ? WhoopTheme.strainBlue : Colors.orange,
                         duration: const Duration(seconds: 2),
                       ),
                     );

@@ -10,8 +10,8 @@ class DashboardPreferencesRepository {
   Future<List<String>> getEnabledTiles() async {
     final tiles = await _dbHelper.getEnabledDashboardTiles();
     if (tiles.isEmpty) {
-      // Default initial tiles
-      return ['vfc', 'fcr', 'steps', 'zone_fc_low', 'vo2max', 'calories'];
+      // Default initial tiles matching HomeScreen and CustomizableDashboardScreen
+      return ['vfc', 'fcr', 'calories', 'sleep_need', 'recovery', 'resp_rate'];
     }
     return tiles;
   }

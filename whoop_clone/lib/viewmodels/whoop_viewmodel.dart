@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../data/models/ciclo_fisiologico.dart';
@@ -85,7 +86,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   );
 
   // Active Dashboard Tiles Keys
-  List<String> _enabledTileKeys = ['vfc', 'fcr', 'steps', 'zone_fc_low', 'vo2max', 'calories'];
+  List<String> _enabledTileKeys = ['vfc', 'fcr', 'calories', 'sleep_need', 'recovery', 'resp_rate'];
 
   // Live BLE State & Biometrics
   int _liveBpm = 0;
@@ -139,7 +140,27 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     }
     _autoWorkoutDetector = AutoWorkoutDetector(restHr: _userProfile.hrRestBaseline.toDouble());
     _hapticAlarmScheduler = HapticAlarmScheduler(bleManager: _bleManager);
-    _hapticAlarmService = HapticAlarmService(bleManager: _bleManager);
+    _hapticAlarmService = HapticAlarmService(
+      bleManager: _bleManager,
+      wakeupStateProvider: () {
+        double sleepMin = 0.0;
+        if (_autoSleepDetector.activeSleepStart != null) {
+          sleepMin = DateTime.now().difference(_autoSleepDetector.activeSleepStart!).inMinutes.toDouble();
+        } else if (_sonnoList.isNotEmpty) {
+          sleepMin = _sonnoList.first.durataTotMin.toDouble();
+        }
+        String? currentStage;
+        if (_currentHypnogramSegments.isNotEmpty) {
+          currentStage = (_currentHypnogramSegments.last['stage'] as String?)?.toLowerCase();
+        }
+        return {
+          'currentSleepDurationMin': sleepMin,
+          'sleepNeedMin': currentSleepNeedMinutes.toDouble(),
+          'currentSleepStage': currentStage,
+          'currentMotionEnmo': _last96BytePacket?.motionVariance,
+        };
+      },
+    );
     _backgroundDaemon = BackgroundSyncDaemon(bleManager: _bleManager, repository: _repository);
     _overnightSleepEngine = OvernightSleepEngine();
     _posteriorSleepDetector = PosteriorSleepDetector(
@@ -428,6 +449,14 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       intensity: hapticIntensity,
     );
 
+    _hapticAlarmService.syncStateFromViewModel(
+      isEnabled: isEnabled,
+      targetTime: alarmTime,
+      selectedMode: selectedMode,
+      targetGoalIdx: targetGoalIdx,
+      hapticIntensity: hapticIntensity,
+    );
+
     if (isEnabled) {
       final now = DateTime.now();
       var alarmDateTime = DateTime(now.year, now.month, now.day, alarmTime.hour, alarmTime.minute);
@@ -549,11 +578,16 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       if (t.bpm != null && t.bpm! > 0) {
         _liveBpm = t.bpm!;
         final now = t.timestamp;
-        _autoWorkoutDetector.processBpmSample(_liveBpm, now);
+        _autoWorkoutDetector.processBpmSample(
+          _liveBpm,
+          now,
+          enmo: t.accelEnmo ?? t.motionVar,
+          isSleeping: _autoSleepDetector.state == AutoSleepState.sleepInProgress,
+        );
         _autoSleepDetector.processBpmSample(
           _liveBpm,
           now,
-          enmo: t.motionVar,
+          enmo: t.accelEnmo ?? t.motionVar,
           rmssd: (t.rmssdMs != null && t.rmssdMs! > 0) ? t.rmssdMs : null,
         );
       }
@@ -591,7 +625,7 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
             final nowMs = t.timestamp.millisecondsSinceEpoch;
             if (_lastStressSampleSaveMs == 0 || nowMs - _lastStressSampleSaveMs >= 60000) {
               _lastStressSampleSaveMs = nowMs;
-              final dateIso = t.timestamp.toIso8601String().substring(0, 10);
+              final dateIso = t.timestamp.toLocal().toIso8601String().substring(0, 10);
               DatabaseHelper().insertMisurazioneStress(
                 dateIso,
                 _liveStressIndex,
@@ -619,6 +653,8 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       final String statusText;
       switch (state) {
         case BleState.connected:
+        case BleState.streaming:
+        case BleState.syncingHistory:
           statusText = 'Connesso • Monitoraggio attivo in background';
           break;
         case BleState.connecting:
@@ -640,7 +676,9 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
         text: statusText,
       );
 
-      if (state == BleState.connected) {
+      if (state == BleState.connected ||
+          state == BleState.streaming ||
+          state == BleState.syncingHistory) {
         triggerOvernightSyncIfNeeded();
       }
       notifyListeners();
@@ -795,10 +833,165 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       _alarmModeIdx = alarmData['selected_mode'] as int;
       _alarmGoalIdx = alarmData['target_goal_idx'] as int;
       _alarmHapticIntensity = alarmData['haptic_intensity'] as int;
+      _hapticAlarmService.syncStateFromViewModel(
+        isEnabled: _isAlarmEnabled,
+        targetTime: _alarmTime,
+        selectedMode: _alarmModeIdx,
+        targetGoalIdx: _alarmGoalIdx,
+        hapticIntensity: _alarmHapticIntensity,
+      );
 
       // Carica dati grafici aggregati da SQLite per la data selezionata (CHT-01..04, STG-07)
       final dayStart = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, 0, 0, 0);
       final dayEnd = dayStart.add(const Duration(days: 1));
+
+      // Estrai i campioni di telemetria_grezza della giornata (dayStart .. dayEnd)
+      final dayTelemetry = await DatabaseHelper().getTelemetriaInTimeRange(dayStart, dayEnd);
+      final sleepWindows = _sonnoList
+          .map((s) => (s.inizioSonno.toLocal(), s.inizioRisveglio.toLocal()))
+          .toList();
+
+      final awakeRecords = dayTelemetry.where((r) {
+        DateTime? ts;
+        final utcMs = r['timestamp_utc_ms'] as int?;
+        if (utcMs != null && utcMs > 0) {
+          ts = DateTime.fromMillisecondsSinceEpoch(utcMs, isUtc: true).toLocal();
+        } else if (r['timestamp'] != null) {
+          ts = DateTime.tryParse(r['timestamp'].toString())?.toLocal();
+        }
+        if (ts == null) return false;
+        for (final w in sleepWindows) {
+          if (!ts.isBefore(w.$1) && !ts.isAfter(w.$2)) return false;
+        }
+        return true;
+      }).toList();
+
+      // Auto-Workout Detection Retroattiva
+      if (awakeRecords.length >= 120) {
+        final detectedWorkouts = AutoWorkoutDetector.detectWorkoutsFromTelemetryRecords(
+          awakeRecords,
+          hrRest: userBaselineRhr,
+          hrMax: userMaxHr,
+          age: _userProfile.eta,
+          sleepWindows: sleepWindows,
+        );
+
+        bool workoutsAdded = false;
+        for (final dw in detectedWorkouts) {
+          final dwStart = dw.oraInizioAllenamento.toLocal();
+          final dwEnd = dw.oraFineAllenamento.toLocal();
+          final bool overlaps = _allenamentiList.any((existing) {
+            final exStart = existing.oraInizioAllenamento.toLocal();
+            final exEnd = existing.oraFineAllenamento.toLocal();
+            return !dwStart.isAfter(exEnd.add(const Duration(minutes: 60))) &&
+                !dwEnd.isBefore(exStart.subtract(const Duration(minutes: 60)));
+          });
+
+          if (!overlaps) {
+            await _repository.insertAllenamento(dw);
+            workoutsAdded = true;
+          }
+        }
+
+        if (workoutsAdded) {
+          final updatedAllWorkouts = await _repository.getAllenamenti();
+          _allenamentiList = updatedAllWorkouts.where((a) => a.dataIso == dateKey).toList();
+        }
+      }
+
+      // Calcolo Day Strain Continuo Reale su campioni diurni (se non è uno storico WHOOP_IMPORT consolidato)
+      if (awakeRecords.isNotEmpty && _ultimoCiclo?.provenance != 'WHOOP_IMPORT') {
+        final awakeBpms = <int>[];
+        final awakeEnmos = <double>[];
+        DateTime? firstTs;
+        DateTime? lastTs;
+
+        for (final r in awakeRecords) {
+          final int? b = (r['bpm'] ?? r['hr']) as int?;
+          if (b != null && b > 35 && b <= 220) {
+            awakeBpms.add(b);
+            awakeEnmos.add(((r['accel_enmo'] ?? r['motion_var'] ?? r['enmo']) as num?)?.toDouble() ?? 0.0);
+            DateTime? ts;
+            final utcMs = r['timestamp_utc_ms'] as int?;
+            if (utcMs != null && utcMs > 0) {
+              ts = DateTime.fromMillisecondsSinceEpoch(utcMs, isUtc: true).toLocal();
+            } else if (r['timestamp'] != null) {
+              ts = DateTime.tryParse(r['timestamp'].toString())?.toLocal();
+            }
+            if (ts != null) {
+              firstTs ??= ts;
+              lastTs = ts;
+            }
+          }
+        }
+
+        if (awakeBpms.isNotEmpty) {
+          final double totalSpanSec = (firstTs != null && lastTs != null && lastTs.isAfter(firstTs))
+              ? lastTs.difference(firstTs).inSeconds.toDouble()
+              : awakeBpms.length.toDouble();
+          final double sampleIntervalSec = awakeBpms.length > 1
+              ? (totalSpanSec / (awakeBpms.length - 1)).clamp(0.5, 60.0)
+              : 1.0;
+
+          final double passiveAwakeStrain = WhoopAnalyticsEngine.calculateStrain(
+            heartRateStream: awakeBpms,
+            hrMax: userMaxHr,
+            hrRest: userBaselineRhr,
+            enmoStream: awakeEnmos,
+            sampleIntervalSeconds: sampleIntervalSec,
+            age: _userProfile.eta,
+          );
+
+          final double combinedDayStrain = WhoopAnalyticsEngine.calculateCombinedDayStrain(
+            passiveAwakeStrain: passiveAwakeStrain,
+            workouts: _allenamentiList,
+            workoutsAlreadyInTelemetry: true,
+          );
+
+          final int fcMaxReal = awakeBpms.reduce(math.max);
+          final double fcMediaDouble = awakeBpms.reduce((a, b) => a + b) / awakeBpms.length;
+          final int fcMediaReal = fcMediaDouble.round();
+          final int activeMin = math.max(1, ((awakeBpms.length * sampleIntervalSec) / 60.0).round());
+          int workoutCalSum = 0;
+          for (final w in _allenamentiList) {
+            workoutCalSum += w.calorie ?? 0;
+          }
+          final int bmrAndActiveCal = math.max(
+            workoutCalSum,
+            1400 + AutoWorkoutDetector.calculateKeytelCalories(durationMin: activeMin, avgHr: fcMediaDouble),
+          );
+
+          final double todayNapsMin = _sonnoList
+              .where((s) => s.riposoBreve || s.durataTotMin < 180)
+              .fold<double>(0.0, (sum, s) => sum + s.durataTotMin);
+          final int sleepDebtRounded = accumulatedSleepDebtMinutes.round();
+          final int sleepNeedCalc = WhoopAnalyticsEngine.calculateSleepNeedMinutes(
+            baselineNeedMin: _userProfile.sleepBaselineMin.toDouble(),
+            dayStrain: combinedDayStrain,
+            sleepDebtMin: accumulatedSleepDebtMinutes,
+            napMinutes: todayNapsMin,
+          );
+
+          final updatedCiclo = (_ultimoCiclo ?? CicloFisiologico(dataIso: dateKey)).copyWith(
+            dataIso: dateKey,
+            strainGiornaliero: math.max(combinedDayStrain, _ultimoCiclo?.strainGiornaliero ?? 0.0),
+            fcMaxBpm: math.max(fcMaxReal, _ultimoCiclo?.fcMaxBpm ?? 0),
+            fcMediaBpm: fcMediaReal,
+            calorieTot: math.max(bmrAndActiveCal, _ultimoCiclo?.calorieTot ?? 0),
+            sleepNeedMin: sleepNeedCalc,
+            sonnoArretratoMin: sleepDebtRounded,
+          );
+
+          await _repository.insertCicloFisiologico(updatedCiclo);
+          _ultimoCiclo = updatedCiclo;
+          final idx = _cicliList.indexWhere((c) => c.dataIso == dateKey);
+          if (idx >= 0) {
+            _cicliList[idx] = updatedCiclo;
+          } else {
+            _cicliList.insert(0, updatedCiclo);
+          }
+        }
+      }
 
       // Se è presente una sessione di sonno, estendi i confini del grafico per includere l'intero sonno (es. 23:15 ieri sera)
       final matchingSonno = _sonnoList.isNotEmpty ? _sonnoList.first : null;
@@ -1083,10 +1276,14 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     // Need = baseline + sleepDebt + strainImpact - naps
     final strain = _ultimoCiclo?.sforzoGiornaliero ?? 0.0;
     final baseNeed = _userProfile.sleepBaselineMin.toDouble();
+    final todayNapsMin = _sonnoList
+        .where((s) => s.riposoBreve)
+        .fold<double>(0.0, (sum, s) => sum + s.durataTotMin);
     return WhoopAnalyticsEngine.calculateSleepNeedMinutes(
       baselineNeedMin: baseNeed,
       dayStrain: strain,
       sleepDebtMin: accumulatedSleepDebtMinutes,
+      napMinutes: todayNapsMin,
     ).toDouble();
   }
 
@@ -1139,30 +1336,29 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       for (final s in _allSonnoList) s.dataIso: s,
     };
 
-    final records = _allVociDiarioList
-        .where((v) => v.chiaveDomanda == habitQuestion)
-        .map((v) {
-          final matchingCiclo = cicliMap[v.dataIso];
-          final matchingSonno = sonnoMap[v.dataIso];
+    final records = <JournalHabitRecord>[];
+    for (final v in _allVociDiarioList) {
+      if (v.chiaveDomanda != habitQuestion) continue;
+      final matchingCiclo = cicliMap[v.dataIso];
+      final matchingSonno = sonnoMap[v.dataIso];
 
-          final recoveryPct = matchingCiclo?.punteggioRecuperoPct ??
-              _ultimoCiclo?.punteggioRecuperoPct ??
-              0.0;
+      final recoveryPct = matchingCiclo?.punteggioRecuperoPct;
+      final sleepPct = matchingSonno?.sleepPerformancePct ??
+          matchingSonno?.actualVsNeededPct ??
+          matchingCiclo?.andamentoSonnoPct;
 
-          final sleepPct = matchingSonno?.sleepPerformancePct ??
-              matchingSonno?.actualVsNeededPct ??
-              matchingCiclo?.andamentoSonnoPct ??
-              0.0;
+      if (recoveryPct == null && sleepPct == null) continue;
 
-          return JournalHabitRecord(
-            habitQuestion: v.chiaveDomanda,
-            answeredYes: v.rispostaBool,
-            date: v.oraInizioCiclo,
-            nextDayRecoveryPct: recoveryPct,
-            nextDaySleepPct: sleepPct,
-          );
-        })
-        .toList();
+      records.add(
+        JournalHabitRecord(
+          habitQuestion: v.chiaveDomanda,
+          answeredYes: v.rispostaBool,
+          date: v.oraInizioCiclo,
+          nextDayRecoveryPct: recoveryPct ?? 0.0,
+          nextDaySleepPct: sleepPct ?? 0.0,
+        ),
+      );
+    }
 
     return _biometricEngine.calculateJournalHabitImpact(
       habitQuestion: habitQuestion,

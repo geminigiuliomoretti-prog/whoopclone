@@ -1,7 +1,11 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/whoop_theme.dart';
+import '../../data/database/database_helper.dart';
 import '../../data/models/allenamento.dart';
+import '../../data/services/noop_workout_detector.dart';
+import '../../domain/analytics/whoop_analytics_engine.dart';
 import '../../viewmodels/whoop_viewmodel.dart';
 
 /// Modal Bottom Sheet per la registrazione manuale e retroattiva di Sonno ed Allenamenti
@@ -239,9 +243,74 @@ class _ManualActivityModalState extends State<ManualActivityModal> {
           );
         }
       } else {
-        // Salva Allenamento Passato
-        final maxHr = (_estimatedAvgHr * 1.18).round().clamp(100, 210);
-        final calories = (durationMin * (_estimatedAvgHr / 15.0)).round();
+        // Salva Allenamento Passato: interroga prima la telemetria BLE reale nel range
+        final dbPoints = await DatabaseHelper().getTelemetriaInTimeRange(startDateTime, endDateTime);
+        final validBpms = <int>[];
+        final validEnmos = <double>[];
+
+        for (final pt in dbPoints) {
+          final int? b = (pt['bpm'] ?? pt['hr']) as int?;
+          if (b != null && b > 35 && b <= 220) {
+            validBpms.add(b);
+            final double e = ((pt['accel_enmo'] ?? pt['motion_var']) as num?)?.toDouble() ?? 0.0;
+            validEnmos.add(e);
+          }
+        }
+
+        final bool hasRealWorkoutTelemetry = validBpms.isNotEmpty;
+        late final int avgHr;
+        late final int maxHr;
+        late final double calculatedStrain;
+        late final int calories;
+        late final double z1Pct;
+        late final double z2Pct;
+        late final double z3Pct;
+        late final double z4Pct;
+        late final double z5Pct;
+
+        if (hasRealWorkoutTelemetry) {
+          final avgHrDouble = validBpms.reduce((a, b) => a + b) / validBpms.length;
+          avgHr = avgHrDouble.round();
+          maxHr = validBpms.reduce(math.max);
+          final totalSec = endDateTime.difference(startDateTime).inSeconds;
+          final dtSec = validBpms.length > 1
+              ? (totalSec / validBpms.length).clamp(0.5, 60.0)
+              : 1.0;
+
+          calculatedStrain = WhoopAnalyticsEngine.calculateStrain(
+            heartRateStream: validBpms,
+            hrMax: viewModel.userMaxHr,
+            hrRest: viewModel.userBaselineRhr,
+            enmoStream: validEnmos,
+            sampleIntervalSeconds: dtSec,
+            age: viewModel.userProfile.eta,
+          );
+          calories = AutoWorkoutDetector.calculateKeytelCalories(
+            durationMin: durationMin,
+            avgHr: avgHrDouble,
+          );
+          final zones = AutoWorkoutDetector.calculateHrZonePercentages(
+            bpmSamples: validBpms,
+            hrRest: viewModel.userBaselineRhr.toDouble(),
+            hrMax: viewModel.userMaxHr.toDouble(),
+          );
+          z1Pct = zones.z1;
+          z2Pct = zones.z2;
+          z3Pct = zones.z3;
+          z4Pct = zones.z4;
+          z5Pct = zones.z5;
+        } else {
+          // Solo se la fascia era spenta (dbPoints.isEmpty), usa la stima manuale basata sullo slider
+          avgHr = _estimatedAvgHr;
+          maxHr = (_estimatedAvgHr * 1.18).round().clamp(100, 210);
+          calculatedStrain = _workoutIntensity;
+          calories = (durationMin * (_estimatedAvgHr / 15.0)).round();
+          z1Pct = 15.0;
+          z2Pct = 35.0;
+          z3Pct = 30.0;
+          z4Pct = 15.0;
+          z5Pct = 5.0;
+        }
 
         final allenamento = Allenamento(
           dataIso: dateIso,
@@ -249,15 +318,15 @@ class _ManualActivityModalState extends State<ManualActivityModal> {
           oraInizio: startDateTime.toIso8601String(),
           oraFine: endDateTime.toIso8601String(),
           durataMin: durationMin,
-          hrMedia: _estimatedAvgHr,
+          hrMedia: avgHr,
           hrMax: maxHr,
-          strainAttivita: _workoutIntensity,
+          strainAttivita: calculatedStrain,
           calorie: calories,
-          zoneZ1Pct: 15.0,
-          zoneZ2Pct: 35.0,
-          zoneZ3Pct: 30.0,
-          zoneZ4Pct: 15.0,
-          zoneZ5Pct: 5.0,
+          zoneZ1Pct: z1Pct,
+          zoneZ2Pct: z2Pct,
+          zoneZ3Pct: z3Pct,
+          zoneZ4Pct: z4Pct,
+          zoneZ5Pct: z5Pct,
         );
 
         await viewModel.addWorkout(allenamento);
@@ -268,7 +337,9 @@ class _ManualActivityModalState extends State<ManualActivityModal> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                '$_selectedActivityType registrata! Sforzo: ${_workoutIntensity.toStringAsFixed(1)}',
+                hasRealWorkoutTelemetry
+                    ? '$_selectedActivityType elaborata da telemetria BLE! Sforzo: ${calculatedStrain.toStringAsFixed(1)}'
+                    : '$_selectedActivityType registrata! Sforzo: ${calculatedStrain.toStringAsFixed(1)}',
               ),
               backgroundColor: WhoopTheme.strainBlue,
             ),

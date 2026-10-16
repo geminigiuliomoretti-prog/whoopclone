@@ -117,30 +117,22 @@ class WhoopAnalyticsEngine {
     return max(0.0, hrMax - hrRest);
   }
 
-  /// Moltiplicatore di Zona Cardiaca w_z (Zone 0 a Zone 5) basato su %HRR
-  static double getZoneMultiplier(double hr, double hrMax, double hrRest) {
-    final hrr = calculateHrr(hrMax: hrMax, hrRest: hrRest);
-    if (hrr <= 0) return 0.0;
-
-    final z0Soglia = hrRest + 0.50 * hrr;
-    final z1Soglia = hrRest + 0.60 * hrr;
-    final z2Soglia = hrRest + 0.70 * hrr;
-    final z3Soglia = hrRest + 0.80 * hrr;
-    final z4Soglia = hrRest + 0.90 * hrr;
-
-    if (hr < z0Soglia) {
-      return 0.0;
-    } else if (hr < z1Soglia) {
-      return 1.0;
-    } else if (hr < z2Soglia) {
-      return 2.0;
-    } else if (hr < z3Soglia) {
-      return 3.0;
-    } else if (hr < z4Soglia) {
-      return 4.0;
-    } else {
-      return 5.0;
+  /// Peso istantaneo continuo per secondo basato su %HRR (Karvonen + TRIMP esponenziale WHOOP)
+  static double getContinuousCardioWeight(double hr, double hrMax, double hrRest) {
+    final double hrrSpan = max(20.0, hrMax - hrRest);
+    final double hrrPct = ((hr - hrRest) / hrrSpan).clamp(0.0, 1.0);
+    if (hrrPct < 0.20) return 0.0;
+    if (hrrPct < 0.50) {
+      // Attivazione metabolica leggera/diurna (camminata, attività quotidiane: 20% - 50% HRR)
+      return 0.45 * pow((hrrPct - 0.20) / 0.30, 1.45);
     }
+    // Zone allenanti Z1-Z5 (50% - 100% HRR): crescita esponenziale TRIMP
+    return 0.45 + (hrrPct * 0.72 * exp(1.92 * hrrPct));
+  }
+
+  /// Moltiplicatore di Zona Cardiaca discreto (retrocompatibilità Z0-Z5)
+  static double getZoneMultiplier(double hr, double hrMax, double hrRest) {
+    return getContinuousCardioWeight(hr, hrMax, hrRest);
   }
 
   /// Carico Muscolare: L_Musc = 0.05 * ln(1.0 + volMuscolare)
@@ -174,32 +166,74 @@ class WhoopAnalyticsEngine {
     return rawLoad;
   }
 
-  /// Calcola lo Strain da un flusso di battiti a 1 Hz
+  /// Calcola lo Strain da un flusso di battiti a 1 Hz o a intervallo variabile con Passive MSK opzionale
   static double calculateStrain({
     required List<int> heartRateStream,
     required int hrMax,
     required int hrRest,
+    List<double>? enmoStream,
+    double sampleIntervalSeconds = 1.0,
     double muscularLoad = 0.0,
     int age = 30,
   }) {
     if (heartRateStream.isEmpty) return 0.0;
 
-    final effectiveHrMax = hrMax > 0 ? hrMax.toDouble() : calculateGellishHrMax(age);
-    final effectiveHrRest = hrRest.toDouble();
+    final double effectiveHrMax = hrMax > 0 ? hrMax.toDouble() : calculateGellishHrMax(age);
+    final double effectiveHrRest = hrRest.toDouble();
+    final double dtMin = sampleIntervalSeconds.clamp(0.5, 60.0) / 60.0;
 
     double rawCardioLoad = 0.0;
-    for (final hr in heartRateStream) {
-      // Filtraggio Artefatti da Movimento: scarta picchi spuri > 220 bpm o HR <= RHR
-      if (hr <= 0 || hr > 220 || hr <= effectiveHrRest) continue;
+    double rawMskLoad = muscularLoad;
 
-      final wz = getZoneMultiplier(hr.toDouble(), effectiveHrMax, effectiveHrRest);
-      // Ogni secondo corrisponde a (1 / 60) minuti di carico della zona
-      rawCardioLoad += wz * (1.0 / 60.0);
+    for (int i = 0; i < heartRateStream.length; i++) {
+      final int hr = heartRateStream[i];
+      if (hr <= 35 || hr > 220) continue;
+
+      final double wz = getContinuousCardioWeight(hr.toDouble(), effectiveHrMax, effectiveHrRest);
+      rawCardioLoad += wz * dtMin;
+
+      if (enmoStream != null && i < enmoStream.length) {
+        final double enmo = enmoStream[i];
+        // Passive MSK: movimento intenso al polso/corpo durante sforzo (es. pesi, corsa, tennis)
+        if (enmo > 0.12 && hr > effectiveHrRest + 18) {
+          rawMskLoad += ((enmo - 0.12) * 1.65).clamp(0.0, 2.5) * dtMin;
+        }
+      }
     }
 
-    final totalRawLoad = rawCardioLoad + muscularLoad;
-    return convertRawLoadToStrain(totalRawLoad);
+    return convertRawLoadToStrain(rawCardioLoad + rawMskLoad);
   }
+
+  /// Combina in modo non-additivo (sommando i rawLoad prima del logaritmo) il carico
+  /// cardiovascolare continuo dell'intera giornata di veglia con gli eventuali allenamenti
+  static double calculateCombinedDayStrain({
+    required double passiveAwakeStrain,
+    required List<Allenamento> workouts,
+    required bool workoutsAlreadyInTelemetry,
+  }) {
+    double totalRaw = convertStrainToRawLoad(passiveAwakeStrain);
+    for (final w in workouts) {
+      final double wStrain = w.strainAttivita ?? 0.0;
+      if (wStrain <= 0) continue;
+      final double wRaw = convertStrainToRawLoad(wStrain);
+      // Se l'allenamento è stato inserito manualmente senza telemetria BLE o è Strength Trainer (carico muscolare),
+      // somma il suo carico; se era già nella telemetria BLE, aggiungi solo il bonus muscolare (25%) per evitare doppio conteggio
+      totalRaw += workoutsAlreadyInTelemetry ? (wRaw * 0.25) : wRaw;
+    }
+    return convertRawLoadToStrain(totalRaw);
+  }
+
+  /// Alias per calculateCombinedDayStrain
+  static double calculateTotalDayStrain({
+    required double passiveAwakeStrain,
+    required List<Allenamento> workouts,
+    required bool workoutsAlreadyInTelemetry,
+  }) =>
+      calculateCombinedDayStrain(
+        passiveAwakeStrain: passiveAwakeStrain,
+        workouts: workouts,
+        workoutsAlreadyInTelemetry: workoutsAlreadyInTelemetry,
+      );
 
   /// Calcola lo Sforzo Giornaliero (Day Strain) non-additivo aggregando gli allenamenti del giorno
   static double calculateDayStrain(List<Allenamento> workouts) {
@@ -293,26 +327,26 @@ class WhoopAnalyticsEngine {
     return rec.toDouble();
   }
 
-  /// Calcola il Fabbisogno di Sonno in minuti
+  /// Calcola il Fabbisogno di Sonno in minuti secondo la curva convessa WHOOP
   static int calculateSleepNeed({
     required int baselineMinutes,
     required int sleepDebtMinutes,
     required double dayStrain,
     required int napMinutes,
   }) {
-    final int strainImpact = (2.5 * pow(dayStrain, 1.2)).round();
+    final int strainImpact = dayStrain > 0 ? (0.85 * pow(dayStrain, 1.42)).round().clamp(0, 75) : 0;
     final int sleepNeed = baselineMinutes + sleepDebtMinutes + strainImpact - napMinutes;
     return max(0, sleepNeed);
   }
 
   /// Calcola il Debito di Sonno accumulato (in minuti) con decadimento progressivo su finestra rolling
-  /// Modello fisiologico:
-  /// - Deficit (sonno effettivo < fabbisogno): incrementa il debito con decadimento (80% carryover)
+  /// Modello fisiologico WHOOP Sleep Planner:
+  /// - Deficit (sonno effettivo < fabbisogno): incrementa il debito con decadimento (75% carryover)
   /// - Surplus (sonno effettivo > fabbisogno): ripaga parzialmente (50%) il debito pregresso
-  /// - Clamped tra 0 e 300 minuti (5 ore max di debito accumulabile)
+  /// - Clamped tra 0 e 150.0 minuti (2h 30m max trasferibile sulla singola notte)
   static double calculateAccumulatedSleepDebt({
     required List<({double sleepNeedMin, double actualSleepMin})> historicalSleeps,
-    double decayFactor = 0.80,
+    double decayFactor = 0.75,
   }) {
     if (historicalSleeps.isEmpty) return 0.0;
     double debt = 0.0;
@@ -325,7 +359,7 @@ class WhoopAnalyticsEngine {
       }
       if (debt < 0.0) debt = 0.0;
     }
-    return double.parse(debt.clamp(0.0, 300.0).toStringAsFixed(1));
+    return double.parse(debt.clamp(0.0, 150.0).toStringAsFixed(1));
   }
 
   static int calculateSleepNeedMinutes({

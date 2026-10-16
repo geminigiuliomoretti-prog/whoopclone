@@ -2169,21 +2169,80 @@ class OvernightSleepEngine {
     try {
       final db = await _dbHelper.database;
       await db.transaction((txn) async {
-        // 1. Upsert Ciclo Fisiologico preservando strain o campi pre-esistenti
+        // 1. Upsert Ciclo Fisiologico e Sonno preservando strain o campi pre-esistenti
         final existing = await txn.query(
           DatabaseHelper.tableCicliFisiologici,
           where: 'data_iso = ?',
           whereArgs: [dateIso],
         );
         final existingMap = existing.isNotEmpty ? existing.first : <String, dynamic>{};
+
+        final existingSonnoRows = await txn.query(
+          DatabaseHelper.tableSonno,
+          where: 'data_iso = ?',
+          whereArgs: [dateIso],
+        );
+        final existingSonno = existingSonnoRows.isNotEmpty ? existingSonnoRows.first : null;
+
+        // Calcolo deterministico di sleepDebtMin e sleepNeedMin se non già presenti
+        int? sleepDebt = (existingSonno?['sleep_debt_min'] as num?)?.toInt() ??
+            (existingMap['sonno_arretrato_min'] as num?)?.toInt();
+        int? sleepNeed = (existingSonno?['sleep_need_min'] as num?)?.toInt() ??
+            (existingMap['sleep_need_min'] as num?)?.toInt();
+
+        if (sleepNeed == null || sleepNeed <= 0 || sleepDebt == null) {
+          int baselineSleepMin = 480;
+          try {
+            final userRows = await txn.query(DatabaseHelper.tableUtenteProfilo, limit: 1);
+            if (userRows.isNotEmpty) {
+              baselineSleepMin = (userRows.first['sleep_baseline_min'] as num?)?.toInt() ?? 480;
+            }
+          } catch (_) {}
+
+          if (sleepDebt == null) {
+            try {
+              final priorSleepRows = await txn.query(
+                DatabaseHelper.tableSonno,
+                where: 'data_iso < ? AND durata_tot_min >= 180',
+                whereArgs: [dateIso],
+                orderBy: 'data_iso DESC',
+                limit: 7,
+              );
+              if (priorSleepRows.isNotEmpty) {
+                final pairs = priorSleepRows.reversed.map((row) {
+                  final needVal = (row['sleep_need_min'] as num?)?.toDouble() ?? baselineSleepMin.toDouble();
+                  final durVal = (row['durata_tot_min'] as num?)?.toDouble() ?? 0.0;
+                  return (sleepNeedMin: needVal, actualSleepMin: durVal);
+                }).toList();
+                sleepDebt = WhoopAnalyticsEngine.calculateAccumulatedSleepDebt(
+                  historicalSleeps: pairs,
+                ).round();
+              } else {
+                sleepDebt = 0;
+              }
+            } catch (_) {
+              sleepDebt = 0;
+            }
+          }
+
+          if (sleepNeed == null || sleepNeed <= 0) {
+            final double currentStrain = (existingMap['strain_giornaliero'] as num?)?.toDouble() ?? 0.0;
+            sleepNeed = WhoopAnalyticsEngine.calculateSleepNeedMinutes(
+              baselineNeedMin: baselineSleepMin.toDouble(),
+              dayStrain: currentStrain,
+              sleepDebtMin: sleepDebt.toDouble(),
+            );
+          }
+        }
+
         await txn.insert(
           DatabaseHelper.tableCicliFisiologici,
           {
             'data_iso': dateIso,
             'strain_giornaliero': existingMap['strain_giornaliero'],
             'recovery_score': recoveryScore ?? existingMap['recovery_score'],
-            'sleep_need_min': existingMap['sleep_need_min'],
-            'sonno_arretrato_min': existingMap['sonno_arretrato_min'],
+            'sleep_need_min': sleepNeed,
+            'sonno_arretrato_min': sleepDebt,
             'hrv_notte': hrvRmssd ?? existingMap['hrv_notte'],
             'rhr_notte': rhrBpm ?? existingMap['rhr_notte'],
             'frequenza_respiratoria_rpm': respRate ?? existingMap['frequenza_respiratoria_rpm'],
@@ -2241,13 +2300,6 @@ class OvernightSleepEngine {
         }
 
         // 3. Upsert Sonno e pulizia vecchi segmenti ipnogramma per questa data
-        final existingSonnoRows = await txn.query(
-          DatabaseHelper.tableSonno,
-          where: 'data_iso = ?',
-          whereArgs: [dateIso],
-        );
-        final existingSonno = existingSonnoRows.isNotEmpty ? existingSonnoRows.first : null;
-
         // PROTEZIONE STORICO: Non sovrascrivere mai dati autentici WHOOP_IMPORT o sessioni valide se non forzato
         if (existingSonno != null && !forceOverwrite) {
           final existingProv = existingSonno['provenance'] as String?;
@@ -2300,9 +2352,6 @@ class OvernightSleepEngine {
           } catch (_) {}
         }
 
-        final int? sleepNeed = existingSonno != null ? (existingSonno['sleep_need_min'] as num?)?.toInt() : null;
-        final int? sleepDebt = existingSonno != null ? (existingSonno['sleep_debt_min'] as num?)?.toInt() : null;
-
         // Efficienza del sonno: tempo effettivamente dormito / tempo totale a letto * 100.
         // Include SOL (latenza addormentamento), TST e tutta la veglia notturna (WASO + veglia finale).
         final double totalInBed = (totalSleepMin + math.max(wasoMin, (totalSleepMin * 0.09).round())).toDouble();
@@ -2310,9 +2359,8 @@ class OvernightSleepEngine {
             ? null
             : double.parse(((totalSleepMin / totalInBed) * 100.0).clamp(0.0, 100.0).toStringAsFixed(1));
 
-        // Non forzare mai fallback a 480.0! Usa il valore passato o calcola rispetto al fabbisogno se disponibile, altrimenti null
         final double? perfPct = sleepPerformancePct ??
-            ((sleepNeed != null && sleepNeed > 0 && totalSleepMin > 0)
+            ((sleepNeed > 0 && totalSleepMin > 0)
                 ? WhoopAnalyticsEngine.calculateSleepPerformancePct(
                     actualDurationMin: totalSleepMin.toDouble(),
                     sleepNeedMin: sleepNeed.toDouble(),

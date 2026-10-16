@@ -47,10 +47,12 @@ class HapticAlarmService extends ChangeNotifier {
   DateTime? _lastRingTime;
   DateTime? _snoozeUntil;
   Timer? _monitoringTimer;
+  final Map<String, dynamic> Function()? wakeupStateProvider;
 
   HapticAlarmService({
     BleConnectionManager? bleManager,
     DatabaseHelper? dbHelper,
+    this.wakeupStateProvider,
   })  : _bleManager = bleManager ?? BleConnectionManager(),
         _dbHelper = dbHelper ?? DatabaseHelper() {
     _startMonitoringLoop();
@@ -294,14 +296,41 @@ class HapticAlarmService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Sincronizza lo stato interno in memoria dalle impostazioni caricate dal ViewModel
+  void syncStateFromViewModel({
+    required bool isEnabled,
+    required TimeOfDay targetTime,
+    required int selectedMode,
+    required int targetGoalIdx,
+    required int hapticIntensity,
+  }) {
+    _isEnabled = isEnabled;
+    _targetTime = targetTime;
+    _wakeupMode = selectedMode == 0
+        ? WakeupMode.fixedTime
+        : selectedMode == 1
+            ? WakeupMode.sleepTarget
+            : WakeupMode.optimalWakeWindow;
+    _sleepTargetPct = targetGoalIdx == 0
+        ? 100.0
+        : targetGoalIdx == 1
+            ? 85.0
+            : 70.0;
+    _intensity = HapticIntensity.fromIndex(hapticIntensity - 1);
+    notifyListeners();
+  }
+
   void _startMonitoringLoop() {
     if (DatabaseHelper.isTestMode) return;
     _monitoringTimer?.cancel();
     _monitoringTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
       if (_isEnabled) {
+        final state = wakeupStateProvider?.call();
         evaluateWakeupConditions(
-          currentSleepDurationMin: 0.0,
-          sleepNeedMin: 480.0,
+          currentSleepDurationMin: (state?['currentSleepDurationMin'] as num?)?.toDouble() ?? 0.0,
+          sleepNeedMin: (state?['sleepNeedMin'] as num?)?.toDouble() ?? 480.0,
+          currentSleepStage: state?['currentSleepStage'] as String?,
+          currentMotionEnmo: (state?['currentMotionEnmo'] as num?)?.toDouble(),
         );
       }
     });

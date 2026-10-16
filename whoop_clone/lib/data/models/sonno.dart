@@ -60,7 +60,14 @@ class Sonno {
   double? get regolaritaSonnoPct => regolaritaSonnoPctVal;
   double? get sonnoRichiestoMin => sleepNeedMin?.toDouble();
   double? get sonnoArretratoMin => sleepDebtMin?.toDouble();
-  bool get riposoBreve => false;
+  bool get riposoBreve {
+    if (provenance == 'WHOOP_NAP') return true;
+    if (durataTotMin > 0 && durataTotMin < 180) {
+      final startLocal = inizioSonno.toLocal();
+      if (startLocal.hour >= 9 && startLocal.hour <= 20) return true;
+    }
+    return false;
+  }
 
   int get tempoALettoMin {
     final start = DateTime.tryParse(oraInizio);

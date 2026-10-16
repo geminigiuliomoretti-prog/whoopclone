@@ -25,12 +25,12 @@ class HapticAlarmScheduler {
     _scheduledAlarmTime = alarmTime;
     _lastPattern = vibrationPattern;
 
-    if (bleManager.state == BleState.connected) {
+    if (bleManager.isConnected) {
       final payload = HapticClockEncoder.encodeAlarmTime(
         alarmTime: alarmTime,
         vibrationPattern: vibrationPattern,
       );
-      await bleManager.sendHapticVibrationCommand(pattern: vibrationPattern);
+      await bleManager.writeAlarmCommand(payload);
       debugPrint('HapticAlarmScheduler: Inviato pacchetto sveglia haptic (${payload.length} bytes)');
     }
 
@@ -204,7 +204,7 @@ class BackgroundSyncDaemon {
     });
 
     _syncTimer = Timer.periodic(const Duration(minutes: 5), (timer) async {
-      if (bleManager.state == BleState.connected && _nocturnalBpmSamples.isNotEmpty) {
+      if (bleManager.isConnected && _nocturnalBpmSamples.isNotEmpty) {
         // Calcolo del vero rMSSD: priorità ai campioni rMSSD raccolti,
         // altrimenti calcolato autenticamente dall'intero buffer di intervalli RR
         double? currentHrv;
@@ -219,7 +219,7 @@ class BackgroundSyncDaemon {
           final avgRhr = (_nocturnalBpmSamples.reduce((a, b) => a + b) / _nocturnalBpmSamples.length);
           final avgHrv = currentHrv.clamp(10.0, 200.0);
 
-          final todayIso = DateTime.now().toIso8601String().substring(0, 10);
+          final todayIso = DateTime.now().toLocal().toIso8601String().substring(0, 10);
           try {
             final dbHelper = DatabaseHelper();
             final userProfile = await dbHelper.getUserProfile();
