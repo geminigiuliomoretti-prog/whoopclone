@@ -749,6 +749,11 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     await _bleManager.startScanOnly();
   }
 
+  Future<void> forgetAndResetBle() async {
+    await _bleManager.forgetDevice();
+    await _bleManager.startScanOnly();
+  }
+
   Future<void> disconnectBle({bool forgetDevice = false}) async {
     await _bleManager.disconnectDevice(forget: forgetDevice);
     _liveBpm = 0;

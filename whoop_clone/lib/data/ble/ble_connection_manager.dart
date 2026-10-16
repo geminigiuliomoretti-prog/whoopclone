@@ -134,8 +134,6 @@ class BleConnectionManager {
   bool _isConnecting = false;
   // BLE-02: Guard atomica per impedire binding paralleli
   bool _bindInProgress = false;
-  // BLE-03: Set dei dispositivi per cui è già stato richiesto/verificato il bonding
-  final Set<String> _bondedDevices = <String>{};
 
   // BLE-04: Coda di scrittura asincrona non bloccante
   final List<Uint8List> _txQueue = [];
@@ -269,7 +267,6 @@ class BleConnectionManager {
     _cancelAllSubscriptions();
     _txQueue.clear();
     _disconnectionHistory.clear();
-    _bondedDevices.clear();
     _isConnecting = false;
     _bindInProgress = false;
     _isTxProcessing = false;
@@ -350,53 +347,65 @@ class BleConnectionManager {
     _isConnecting = false;
     _bindInProgress = false;
 
-    if (!isStreaming) {
-      try {
-        await _connectedDevice?.disconnect();
-      } catch (_) {}
-    }
-
     final hasPermissions = await requestBlePermissions();
     if (!hasPermissions) return;
 
-    _updateState(BleState.scanning, 'Scansione dispositivi BLE nelle vicinanze...');
+    try {
+      await FlutterBluePlus.stopScan();
+    } catch (_) {}
+
+    _updateState(BleState.scanning, 'Ricerca dispositivi Bluetooth in corso...');
 
     try {
       await FlutterBluePlus.startScan(
         timeout: timeout,
         androidUsesFineLocation: true,
+        continuousUpdates: true,
       );
     } catch (e) {
       _updateState(BleState.error, 'Errore avvio scansione BLE: $e');
     }
   }
 
-  /// Restituisce tutti i dispositivi già noti o connessi a livello OS Android (bonded + system devices)
+  /// Restituisce tutti i dispositivi già noti o connessi a livello OS Android (bonded + system devices con GUID specifici)
   Future<List<BluetoothDevice>> getAvailableAndBondedDevices() async {
-    final Map<String, BluetoothDevice> deviceMap = {};
+    final Map<String, BluetoothDevice> unique = {};
     try {
       final bonded = await FlutterBluePlus.bondedDevices;
       for (final d in bonded) {
-        deviceMap[d.remoteId.str] = d;
+        unique[d.remoteId.str] = d;
       }
     } catch (e) {
-      debugPrint('BleConnectionManager: Errore lettura bonded devices: $e');
+      debugPrint('BleConnectionManager: Errore lettura bondedDevices: $e');
     }
 
     try {
-      final system = await FlutterBluePlus.systemDevices([]);
-      for (final d in system) {
-        deviceMap[d.remoteId.str] = d;
+      final sys = await FlutterBluePlus.systemDevices([
+        Guid('180d'),
+        Guid('fd4b0001-8d6d-82b8-614a-1c8cb0f8dcc6'),
+        Guid('61080001-8d6d-82b8-614a-1c8cb0f8dcc6'),
+      ]);
+      for (final d in sys) {
+        unique[d.remoteId.str] = d;
       }
     } catch (e) {
-      debugPrint('BleConnectionManager: Errore lettura system devices: $e');
+      debugPrint('BleConnectionManager: Errore lettura systemDevices: $e');
     }
 
-    return deviceMap.values.toList();
+    final list = unique.values.toList();
+    // Ordina mettendo in cima i dispositivi WHOOP / WP5 / WP4
+    list.sort((a, b) {
+      final nameA = a.platformName.toUpperCase();
+      final nameB = b.platformName.toUpperCase();
+      final isWhoopA = nameA.contains('WHOOP') || nameA.contains('WP') ? 0 : 1;
+      final isWhoopB = nameB.contains('WHOOP') || nameB.contains('WP') ? 0 : 1;
+      return isWhoopA.compareTo(isWhoopB);
+    });
+    return list;
   }
 
   /// Connette ad uno specifico dispositivo selezionato
-  /// BLE-01: Single-flight lock per auto-riconnessione; per selezione manuale cancella timer e resetta lo stato
+  /// BLE-01: Single-flight lock per auto-riconnessione; per selezione manuale cancella timer, resetta lo stato e disconnette il precedente
   Future<void> connectToSpecificDevice(BluetoothDevice device, {bool isAutoReconnect = false}) async {
     if (isAutoReconnect && isConnecting) {
       debugPrint('BleConnectionManager: connectToSpecificDevice ignorato - connessione già in corso (BLE-01)');
@@ -415,6 +424,12 @@ class BleConnectionManager {
       _scanSubscription = null;
       await FlutterBluePlus.stopScan();
     } catch (_) {}
+
+    if (_connectedDevice != null && _connectedDevice!.remoteId.str != device.remoteId.str) {
+      try {
+        await _connectedDevice?.disconnect();
+      } catch (_) {}
+    }
 
     await _savePairedDeviceId(device.remoteId.str, device.platformName);
     await _connectToDevice(device, isAutoReconnect: isAutoReconnect);
@@ -574,12 +589,8 @@ class BleConnectionManager {
       final device = BluetoothDevice.fromId(savedId);
       _connectedDevice = device;
 
-      List<BluetoothDevice> systemDevices = [];
-      try {
-        systemDevices = await FlutterBluePlus.systemDevices([]);
-      } catch (_) {}
-
-      bool isAlreadyConnectedToOs = systemDevices.any((d) => d.remoteId.str == savedId);
+      final availableAndBonded = await getAvailableAndBondedDevices();
+      bool isAlreadyConnectedToOs = availableAndBonded.any((d) => d.remoteId.str == savedId);
 
       // BLE-02: Configura l'UNICO listener di stato da cui partirà _bindToDevice
       _setupConnectionStateListener(device);
@@ -599,11 +610,25 @@ class BleConnectionManager {
         } catch (_) {}
         return true;
       } else {
-        // BLE-05: Connessione con autoConnect configurato e timeout pulito di 15s
-        await device.connect(
-          autoConnect: isAutoReconnect,
-          timeout: const Duration(seconds: 15),
-        );
+        // BLE-05: Connessione con autoConnect configurato e timeout pulito di 15s con retry
+        try {
+          await device.connect(
+            autoConnect: isAutoReconnect,
+            timeout: const Duration(seconds: 15),
+          );
+        } catch (connectError) {
+          final errStr = connectError.toString().toLowerCase();
+          if (errStr.contains('133') || errStr.contains('gatt')) {
+            debugPrint('BleConnectionManager: Tentativo connect fallito con $connectError, attesa 600ms e retry...');
+            await Future.delayed(const Duration(milliseconds: 600));
+            await device.connect(
+              autoConnect: false,
+              timeout: const Duration(seconds: 15),
+            );
+          } else {
+            rethrow;
+          }
+        }
         // BLE-02: _bindToDevice partirà dal connectionState listener
         return true;
       }
@@ -621,15 +646,14 @@ class BleConnectionManager {
   /// 3. Connessione e Pairing con il Sensore
   /// BLE-01: Single-flight lock idempotente
   /// BLE-02: NON invoca _bindToDevice direttamente qui (unico percorso dal listener)
-  /// BLE-03: Bonding eseguito solo una volta e solo se non già bonded
-  /// BLE-05: autoConnect: false per prima connessione
+  /// BLE-05: autoConnect: false per prima connessione, nessun createBond preventivo per evitare GATT 133
   Future<void> _connectToDevice(BluetoothDevice device, {bool isAutoReconnect = false}) async {
     if (isAutoReconnect && isConnecting) {
       debugPrint('BleConnectionManager: _connectToDevice ignorato - connessione già in corso (BLE-01)');
       return;
     }
     _isConnecting = true;
-    _updateState(BleState.connecting, 'Connessione a ${device.platformName}...');
+    _updateState(BleState.connecting, 'Connessione a ${device.platformName.isNotEmpty ? device.platformName : device.remoteId.str}...');
     _connectedDevice = device;
 
     try {
@@ -638,14 +662,25 @@ class BleConnectionManager {
       // BLE-02: Configura l'UNICO listener di stato
       _setupConnectionStateListener(device);
 
-      // BLE-03: Bonding ordinato
-      await _ensureBonded(device);
-
-      // BLE-05: Connessione con timeout 15s
-      await device.connect(
-        autoConnect: isAutoReconnect,
-        timeout: const Duration(seconds: 15),
-      );
+      // BLE-05: Connessione con timeout 15s e retry su errore GATT 133
+      try {
+        await device.connect(
+          autoConnect: isAutoReconnect,
+          timeout: const Duration(seconds: 15),
+        );
+      } catch (connectError) {
+        final errStr = connectError.toString().toLowerCase();
+        if (errStr.contains('133') || errStr.contains('gatt')) {
+          debugPrint('BleConnectionManager: Tentativo connect fallito con $connectError, attesa 600ms e retry immediato...');
+          await Future.delayed(const Duration(milliseconds: 600));
+          await device.connect(
+            autoConnect: false,
+            timeout: const Duration(seconds: 15),
+          );
+        } else {
+          rethrow;
+        }
+      }
 
       // BLE-02: Non invochiamo _bindToDevice qui!
       // Verrà scatenato UNICAMENTE da _setupConnectionStateListener quando state == connected
@@ -682,40 +717,6 @@ class BleConnectionManager {
     });
   }
 
-  /// BLE-03: Verifica ed esecuzione ordinata del bonding (solo Android, una volta per sessione)
-  Future<void> _ensureBonded(BluetoothDevice device) async {
-    if (kIsWeb) return;
-    if (defaultTargetPlatform != TargetPlatform.android) return;
-
-    final deviceId = device.remoteId.str;
-    if (_bondedDevices.contains(deviceId)) {
-      debugPrint('BleConnectionManager: Dispositivo $deviceId già verificato come bonded.');
-      return;
-    }
-
-    try {
-      BluetoothBondState currentBond = device.prevBondState ?? BluetoothBondState.none;
-      if (currentBond != BluetoothBondState.bonded) {
-        try {
-          currentBond = await device.bondState.first.timeout(const Duration(seconds: 2));
-        } catch (_) {}
-      }
-
-      if (currentBond == BluetoothBondState.bonded) {
-        _bondedDevices.add(deviceId);
-        debugPrint('BleConnectionManager: Dispositivo $deviceId già accoppiato/bonded.');
-        return;
-      }
-
-      _updateState(BleState.bonding, 'Creazione Bonding / Pairing BLE...');
-      debugPrint('BleConnectionManager: Invocazione createBond per $deviceId...');
-      await device.createBond().timeout(const Duration(seconds: 10));
-      _bondedDevices.add(deviceId);
-      debugPrint('BleConnectionManager: createBond completato per $deviceId.');
-    } catch (e) {
-      debugPrint('BleConnectionManager: Avviso createBond: $e');
-    }
-  }
 
   /// BLE-02: Binding e sottoscrizione GATT (Unico Percorso di Bind protetto da guard atomica)
   Future<void> _bindToDevice(BluetoothDevice device) async {
