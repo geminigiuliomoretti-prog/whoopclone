@@ -594,11 +594,9 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
 
       if (t.rmssdMs != null && t.rmssdMs! > 0 && t.rmssdMs! < 300) {
         _liveHrvRmssd = t.rmssdMs!;
-      }
-
-      if (t.rrMs != null && t.rrMs! >= 300 && t.rrMs! <= 2000) {
+      } else if (t.rrMs != null && t.rrMs! >= 300 && t.rrMs! <= 2000) {
         _rrBuffer.add(t.rrMs!);
-        if (_liveHrvRmssd <= 0 && _rrBuffer.rmssdMs > 0) {
+        if (_rrBuffer.rmssdMs > 0) {
           _liveHrvRmssd = _rrBuffer.rmssdMs;
         }
       }
@@ -719,8 +717,12 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Stream<List<ScanResult>> get scanResultsStream => _bleManager.scanResultsStream;
+  Stream<List<ScanResult>> get bleScanResultsStream => _bleManager.scanResultsStream;
   BluetoothDevice? get connectedDevice => _bleManager.connectedDevice;
   String? get statusMessage => _bleManager.statusMessage;
+  bool get isWhoop5 => _bleManager.isWhoop5;
+
+  Future<List<BluetoothDevice>> getBondedAndSystemDevices() => _bleManager.getAvailableAndBondedDevices();
 
   Future<void> startBleScan() async {
     await _bleManager.startScanAndConnect();
@@ -730,8 +732,21 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     await _bleManager.startScanOnly();
   }
 
+  Future<void> startManualDeviceScan() async {
+    await _bleManager.startScanOnly();
+  }
+
   Future<void> connectToDevice(BluetoothDevice device) async {
     await _bleManager.connectToSpecificDevice(device);
+  }
+
+  Future<void> selectAndConnectDevice(BluetoothDevice device) async {
+    await _bleManager.connectToSpecificDevice(device, isAutoReconnect: false);
+  }
+
+  Future<void> resetSavedDeviceAndScan() async {
+    await _bleManager.forgetDevice();
+    await _bleManager.startScanOnly();
   }
 
   Future<void> disconnectBle({bool forgetDevice = false}) async {

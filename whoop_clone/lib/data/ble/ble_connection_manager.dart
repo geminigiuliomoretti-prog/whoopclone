@@ -147,6 +147,7 @@ class BleConnectionManager {
 
   bool _isProprietaryChannelActive = false;
   bool _fallbackModeActive = false;
+  bool _isWhoop5 = false;
   BluetoothCharacteristic? _cmdToStrapChar;
 
   final StreamController<HrDataPacket> _hrStreamController =
@@ -199,6 +200,7 @@ class BleConnectionManager {
   int? get batteryLevelPct => _batteryLevelPct;
   bool get isProprietaryChannelActive => _isProprietaryChannelActive;
   bool get fallbackModeActive => _fallbackModeActive;
+  bool get isWhoop5 => _isWhoop5;
   List<DisconnectionEvent> get disconnectionHistory => List.unmodifiable(_disconnectionHistory);
   int get backoffAttempt => _backoffAttempt;
   int get autoReconnectAttempts => _autoReconnectAttempts;
@@ -339,11 +341,19 @@ class BleConnectionManager {
   }
 
   /// Avvia la scansione BLE attiva
-  /// BLE-03: Non avvia la scansione se un tentativo di connessione è già in corso
+  /// Sblocca la scansione manuale interrompendo eventuali loop di riconnessione o tentativi appesi
   Future<void> startScanOnly({Duration timeout = const Duration(seconds: 15)}) async {
-    if (isConnecting) {
-      debugPrint('BleConnectionManager: startScanOnly ignorato - connessione in corso (BLE-03)');
-      return;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _stateTransitionTimer?.cancel();
+    _stateTransitionTimer = null;
+    _isConnecting = false;
+    _bindInProgress = false;
+
+    if (!isStreaming) {
+      try {
+        await _connectedDevice?.disconnect();
+      } catch (_) {}
     }
 
     final hasPermissions = await requestBlePermissions();
@@ -361,14 +371,44 @@ class BleConnectionManager {
     }
   }
 
+  /// Restituisce tutti i dispositivi già noti o connessi a livello OS Android (bonded + system devices)
+  Future<List<BluetoothDevice>> getAvailableAndBondedDevices() async {
+    final Map<String, BluetoothDevice> deviceMap = {};
+    try {
+      final bonded = await FlutterBluePlus.bondedDevices;
+      for (final d in bonded) {
+        deviceMap[d.remoteId.str] = d;
+      }
+    } catch (e) {
+      debugPrint('BleConnectionManager: Errore lettura bonded devices: $e');
+    }
+
+    try {
+      final system = await FlutterBluePlus.systemDevices([]);
+      for (final d in system) {
+        deviceMap[d.remoteId.str] = d;
+      }
+    } catch (e) {
+      debugPrint('BleConnectionManager: Errore lettura system devices: $e');
+    }
+
+    return deviceMap.values.toList();
+  }
+
   /// Connette ad uno specifico dispositivo selezionato
-  /// BLE-01: Single-flight lock
-  /// BLE-03: Ferma immediatamente la scansione prima di iniziare connect()
+  /// BLE-01: Single-flight lock per auto-riconnessione; per selezione manuale cancella timer e resetta lo stato
   Future<void> connectToSpecificDevice(BluetoothDevice device, {bool isAutoReconnect = false}) async {
-    if (isConnecting) {
+    if (isAutoReconnect && isConnecting) {
       debugPrint('BleConnectionManager: connectToSpecificDevice ignorato - connessione già in corso (BLE-01)');
       return;
     }
+
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _stateTransitionTimer?.cancel();
+    _stateTransitionTimer = null;
+    _isConnecting = false;
+    _bindInProgress = false;
 
     try {
       _scanSubscription?.cancel();
@@ -376,6 +416,7 @@ class BleConnectionManager {
       await FlutterBluePlus.stopScan();
     } catch (_) {}
 
+    await _savePairedDeviceId(device.remoteId.str, device.platformName);
     await _connectToDevice(device, isAutoReconnect: isAutoReconnect);
   }
 
@@ -583,7 +624,7 @@ class BleConnectionManager {
   /// BLE-03: Bonding eseguito solo una volta e solo se non già bonded
   /// BLE-05: autoConnect: false per prima connessione
   Future<void> _connectToDevice(BluetoothDevice device, {bool isAutoReconnect = false}) async {
-    if (isConnecting) {
+    if (isAutoReconnect && isConnecting) {
       debugPrint('BleConnectionManager: _connectToDevice ignorato - connessione già in corso (BLE-01)');
       return;
     }
@@ -753,6 +794,13 @@ class BleConnectionManager {
       // Canale Proprietario WHOOP (Service 61080001 o FD4B0001)
       if (uuidStr.contains('6108') || uuidStr.contains('fd4b')) {
         whoopProprietaryService = service;
+        if (uuidStr.contains('fd4b') ||
+            device.platformName.toUpperCase().contains('5.0') ||
+            device.platformName.toUpperCase().contains('WP5') ||
+            device.platformName.toUpperCase().contains('MAVERICK') ||
+            device.platformName.toUpperCase().contains('MG')) {
+          _isWhoop5 = true;
+        }
       }
     }
 
@@ -862,9 +910,16 @@ class BleConnectionManager {
                 // Solo durante sync storico (syncingHistory) e SOLO SE il commit DB è avvenuto con successo:
                 if (_state == BleState.syncingHistory && result.accepted && result.telemetry?.id != null) {
                   final ackFrame = Uint8List.fromList(
-                    StoreAndForwardHandler.buildOpcode23HistoricalDataResult(p96.seqNumber),
+                    StoreAndForwardHandler.buildOpcode23HistoricalDataResult(p96.seqNumber, isWhoop5: _isWhoop5),
                   );
                   enqueueCommand(ackFrame);
+                  _stateTransitionTimer?.cancel();
+                  _stateTransitionTimer = Timer(const Duration(seconds: 4), () {
+                    if (_state == BleState.syncingHistory) {
+                      _updateState(BleState.connected, 'WHOOP Connesso');
+                      _updateState(BleState.streaming, 'WHOOP Connesso - Streaming attivo');
+                    }
+                  });
                 }
               });
             }
@@ -1001,10 +1056,12 @@ class BleConnectionManager {
   /// Esegue la sequenza di risveglio e sblocco hardware del sensore WHOOP
   Future<void> _executeHardwareUnlockSequence(BluetoothDevice device) async {
     try {
-      _updateState(BleState.initializing, 'Inizializzazione hardware...');
-      final isMaverick = device.platformName.toUpperCase().contains('5.0') ||
+      _updateState(BleState.initializing, 'Inizializzazione hardware...', const Duration(seconds: 45));
+      final isMaverick = _isWhoop5 ||
+          device.platformName.toUpperCase().contains('5.0') ||
           device.platformName.toUpperCase().contains('WP5') ||
-          (_cmdToStrapChar?.uuid.toString().toLowerCase().contains('fd4b0002') ?? false);
+          (_cmdToStrapChar?.uuid.toString().toLowerCase().contains('fd4b') ?? false);
+      _isWhoop5 = isMaverick;
 
       debugPrint('BleConnectionManager: Avvio sequenza di sblocco hardware profondo (isMaverick=$isMaverick)...');
 
@@ -1012,6 +1069,7 @@ class BleConnectionManager {
       _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
       final helloFrame = HapticClockEncoder.buildGetHelloCommand(
         seq: _hapticPacketCounter,
+        isWhoop5: _isWhoop5,
         isMaverick: isMaverick,
       );
       await writeAlarmCommand(helloFrame);
@@ -1027,12 +1085,13 @@ class BleConnectionManager {
         await Future.delayed(const Duration(milliseconds: 100));
       }
 
-      // 2. SET_CLOCK con l'orario UTC corrente del telefono (Opcode 10)
+      // 2. SET_CLOCK con l'orario UTC corrente del telefono (Opcode 10 su 4.0, 146 su 5.0)
       _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
       final nowEpochSec = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
       final clockFrame = HapticClockEncoder.buildSetClockCommand(
         epochSec: nowEpochSec,
         seq: _hapticPacketCounter,
+        isWhoop5: _isWhoop5,
       );
       await writeAlarmCommand(clockFrame);
       await Future.delayed(const Duration(milliseconds: 100));
@@ -1042,6 +1101,7 @@ class BleConnectionManager {
       final unlockHrFrame = HapticClockEncoder.buildToggleGenericHrProfileCommand(
         seq: _hapticPacketCounter,
         enable: true,
+        isWhoop5: _isWhoop5,
       );
       await writeAlarmCommand(unlockHrFrame);
       await Future.delayed(const Duration(milliseconds: 100));
@@ -1051,6 +1111,7 @@ class BleConnectionManager {
       final startRtFrame = HapticClockEncoder.buildToggleRealtimeHrCommand(
         seq: _hapticPacketCounter,
         enable: true,
+        isWhoop5: _isWhoop5,
       );
       await writeAlarmCommand(startRtFrame);
 
@@ -1060,6 +1121,7 @@ class BleConnectionManager {
         _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
         final extSensorsFrame = HapticClockEncoder.buildEnableExtendedSensorsCommand(
           seq: _hapticPacketCounter,
+          isWhoop5: true,
         );
         await writeAlarmCommand(extSensorsFrame);
       }
@@ -1069,8 +1131,15 @@ class BleConnectionManager {
       await sendStoreAndForwardSyncHandshake();
 
       debugPrint('BleConnectionManager: Sblocco hardware profondo completato con successo!');
-      _updateState(BleState.connected, 'WHOOP Connesso');
-      _updateState(BleState.streaming, 'WHOOP Connesso - Streaming attivo');
+      // Mantieni lo stato syncingHistory per permettere la ricezione e l'ACK dei pacchetti flash;
+      // se dopo 4 secondi non arrivano pacchetti storici, transiziona graziosamente a streaming.
+      _stateTransitionTimer?.cancel();
+      _stateTransitionTimer = Timer(const Duration(seconds: 4), () {
+        if (_state == BleState.syncingHistory) {
+          _updateState(BleState.connected, 'WHOOP Connesso');
+          _updateState(BleState.streaming, 'WHOOP Connesso - Streaming attivo');
+        }
+      });
     } catch (e) {
       debugPrint('BleConnectionManager: Errore durante sequenza di sblocco hardware: $e');
       _updateState(BleState.failed, 'Errore durante sequenza di sblocco hardware: $e');
@@ -1080,8 +1149,8 @@ class BleConnectionManager {
   /// Invia l'Handshake di Sincronizzazione Opcode 0x16 (Trigger Data Retrieval) a CMD_TO_STRAP
   Future<void> sendStoreAndForwardSyncHandshake() async {
     if (!isConnected) return;
-    _updateState(BleState.syncingHistory, 'Sincronizzazione dati offline flash...');
-    final handshakeFrame = Uint8List.fromList(StoreAndForwardHandler.buildOpcode22SendHistoricalData());
+    _updateState(BleState.syncingHistory, 'Sincronizzazione dati offline flash...', const Duration(seconds: 45));
+    final handshakeFrame = Uint8List.fromList(StoreAndForwardHandler.buildOpcode22SendHistoricalData(isWhoop5: _isWhoop5));
     await writeAlarmCommand(handshakeFrame);
     debugPrint('BleConnectionManager: Inviato Handshake Opcode 0x16 (Trigger Data Retrieval)');
   }
@@ -1360,16 +1429,17 @@ class BleConnectionManager {
 
     // 2. Invio dei frame di comando haptic reali WHOOP
     if (isConnected && _connectedDevice != null) {
-      // Opcode 68: RUN_ALARM (Trigger immediato buzzer allarme Harvard WHOOP 4.0)
-      final runAlarm = HapticClockEncoder.buildRunAlarmCommand(seq: _hapticPacketCounter);
+      // Opcode 68: RUN_ALARM (Trigger immediato buzzer allarme Harvard WHOOP 4.0 / Maverick WHOOP 5.0)
+      final runAlarm = HapticClockEncoder.buildRunAlarmCommand(seq: _hapticPacketCounter, isWhoop5: _isWhoop5);
       await writeAlarmCommand(runAlarm);
       await Future.delayed(const Duration(milliseconds: 40));
 
-      // Opcode 79: RUN_HAPTICS_PATTERN (Pattern haptic motor WHOOP 4.0)
+      // Opcode 79: RUN_HAPTICS_PATTERN (Pattern haptic motor WHOOP 4.0 / 5.0)
       final runHaptics = HapticClockEncoder.buildRunHapticsPatternCommand(
         seq: (_hapticPacketCounter + 1) & 0xFF,
         patternId: 2,
         duration: 4,
+        isWhoop5: _isWhoop5,
       );
       await writeAlarmCommand(runHaptics);
       await Future.delayed(const Duration(milliseconds: 40));
@@ -1419,14 +1489,15 @@ class BleConnectionManager {
       _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
 
       // Opcode 68 (RUN_ALARM immediato)
-      final runAlarm = HapticClockEncoder.buildRunAlarmCommand(seq: _hapticPacketCounter);
+      final runAlarm = HapticClockEncoder.buildRunAlarmCommand(seq: _hapticPacketCounter, isWhoop5: _isWhoop5);
       final okAlarm = await writeAlarmCommand(runAlarm);
       await Future.delayed(const Duration(milliseconds: 50));
 
-      // Opcode 79 (RUN_HAPTICS_PATTERN WHOOP 4.0)
+      // Opcode 79 (RUN_HAPTICS_PATTERN WHOOP 4.0 / 5.0)
       final runHaptics = HapticClockEncoder.buildRunHapticsPatternCommand(
         seq: (_hapticPacketCounter + 1) & 0xFF,
         patternId: pattern > 0 ? pattern : 2,
+        isWhoop5: _isWhoop5,
       );
       final okHaptics = await writeAlarmCommand(runHaptics);
       await Future.delayed(const Duration(milliseconds: 50));
@@ -1460,7 +1531,7 @@ class BleConnectionManager {
   Future<bool> sendCancelAlarmCommand() async {
     if (isConnected && _connectedDevice != null) {
       _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
-      final disableCmd = HapticClockEncoder.buildDisableAlarmCommand(seq: _hapticPacketCounter);
+      final disableCmd = HapticClockEncoder.buildDisableAlarmCommand(seq: _hapticPacketCounter, isWhoop5: _isWhoop5);
       await writeAlarmCommand(disableCmd);
       await Future.delayed(const Duration(milliseconds: 40));
 

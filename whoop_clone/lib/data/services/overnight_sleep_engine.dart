@@ -83,22 +83,47 @@ BleFrameValidationResult? validateAndParseBleFrame(List<int> rawBytes) {
 /// Gestore del Protocollo Store-and-Forward Mattutino (Opcode 22 & 23)
 class StoreAndForwardHandler {
   /// Genera il comando Opcode 22 (SEND_HISTORICAL_DATA) per scaricare i blocchi v18/v26
-  static List<int> buildOpcode22SendHistoricalData({int seq = 0}) {
+  static List<int> buildOpcode22SendHistoricalData({int seq = 0, bool isWhoop5 = false}) {
+    if (isWhoop5) {
+      // WHOOP 5.0 SEND_HISTORICAL_DATA (22): body [0x00]
+      return HapticClockEncoder.buildFramedCommand(
+        type: 0x23,
+        seq: seq,
+        cmd: 0x16,
+        payload: const [0x00],
+        isWhoop5: true,
+      );
+    }
     return HapticClockEncoder.buildFramedCommand(
       type: 0x01,
       seq: seq,
       cmd: 0x16,
       payload: const [0x00, 0x00, 0x00, 0x01, 0x00],
+      isWhoop5: false,
     );
   }
 
   /// Genera il pacchetto ACK Opcode 23 (HISTORICAL_DATA_RESULT) per avanzare il cursore Flash
-  static List<int> buildOpcode23HistoricalDataResult(int lastSeqAck, {int seq = 0}) {
+  /// Sul WHOOP 5.0: richiede [0x01] + token verbatim da 8 byte dell'end block
+  static List<int> buildOpcode23HistoricalDataResult(int lastSeqAck, {int seq = 0, List<int>? endBlock, bool isWhoop5 = false}) {
+    if (isWhoop5) {
+      final token = (endBlock != null && endBlock.length >= 8)
+          ? endBlock.sublist(0, 8)
+          : [lastSeqAck & 0xFF, (lastSeqAck >> 8) & 0xFF, 0, 0, 0, 0, 0, 0];
+      return HapticClockEncoder.buildFramedCommand(
+        type: 0x23,
+        seq: seq,
+        cmd: 0x17,
+        payload: [0x01, ...token],
+        isWhoop5: true,
+      );
+    }
     return HapticClockEncoder.buildFramedCommand(
       type: 0x01,
       seq: seq,
       cmd: 0x17,
       payload: [lastSeqAck & 0xFF, (lastSeqAck >> 8) & 0xFF, 0x01],
+      isWhoop5: false,
     );
   }
 
@@ -1214,8 +1239,38 @@ class OvernightSleepEngine {
         final double currentHr = hrCount > 0 ? (hrSum / hrCount) : (lastHr ?? 0.0);
         if (hrCount > 0) lastHr = currentHr;
 
-        final double currentRmssd = rmssdCount > 0 ? (rmssdSum / rmssdCount).clamp(10.0, 250.0) : (lastRmssd ?? 0.0);
-        if (rmssdCount > 0) lastRmssd = currentRmssd;
+        double currentRmssd = rmssdCount > 0 ? (rmssdSum / rmssdCount).clamp(10.0, 250.0) : (lastRmssd ?? 0.0);
+        // Se non era già presente rmssd_ms nel DB ma abbiamo ppList (intervalli RR/PP), calcola RMSSD reale:
+        if (rmssdCount == 0 && ppList.length >= 2) {
+          double sumDiffSq = 0.0;
+          int dCount = 0;
+          for (int i = 0; i < ppList.length - 1; i++) {
+            final diffMs = ((ppList[i + 1] - ppList[i]) * 1000.0).abs();
+            if (diffMs <= 200.0) {
+              sumDiffSq += diffMs * diffMs;
+              dCount++;
+            }
+          }
+          if (dCount >= 1) {
+            currentRmssd = math.sqrt(sumDiffSq / dCount).clamp(10.0, 250.0);
+          }
+        }
+        if (currentRmssd > 0) lastRmssd = currentRmssd;
+
+        // Calcola la variabilità intra-epoca dell'HR o degli intervalli PP come rmssdVarInWindow
+        double intraEpochVar = 0.0;
+        if (bin.length >= 3) {
+          final hrValues = bin
+              .map((r) => (r['hr'] ?? r['bpm'] as num?)?.toDouble() ?? 0.0)
+              .where((h) => h > 30)
+              .toList();
+          if (hrValues.length >= 3) {
+            final meanH = hrValues.reduce((a, b) => a + b) / hrValues.length;
+            final varianceH = hrValues.map((h) => (h - meanH) * (h - meanH)).reduce((a, b) => a + b) / hrValues.length;
+            intraEpochVar = (math.sqrt(varianceH) / math.max(1.0, meanH)).clamp(0.0, 1.0);
+          }
+        }
+        final double finalRmssdVar = rmssdVarSum > 0 ? (rmssdVarSum / count) : intraEpochVar;
 
         list.add(Epoch30s(
           index: k,
@@ -1225,7 +1280,7 @@ class OvernightSleepEngine {
           rmssd: currentRmssd,
           respPower: respPowerSum / count,
           respRate: respRateSum / count,
-          rmssdVarInWindow: rmssdVarSum / count,
+          rmssdVarInWindow: finalRmssdVar,
           hrFluctuations: (hrFlucSum / count).round(),
           ppIntervals: ppList,
           sampleCount: count,
@@ -1417,19 +1472,26 @@ class OvernightSleepEngine {
       }
 
       // 2. SONNO PROFONDO SWS / N3:
-      // In _classifyHypnogram, imposta SWS quando enmo <= 0.009 && (zHrLocal <= (progress <= 0.55 ? -0.05 : -0.25) || ep.hr <= rhrBaseline + 2.5) && hri <= 1.65 && progress <= 0.85.
+      // Brevetto WHOOP US9750415B2 & EP3766410B1:
+      // SWS identificato da forte potenza respiratoria RSA (respPower >= 0.62), stabilità autonomica (basso HRI),
+      // quiescenza motoria (ENMO <= 0.009g) e minimo relativo intra-notte (zHrLocal).
+      final bool isSwsCardio = ep.respPower > 0.0
+          ? (ep.respPower >= 0.62)
+          : (zHrLocal <= (progress <= 0.50 ? -0.15 : -0.30) || (ep.hr <= p25 && zHrLocal <= 0.0));
+
       final bool isDeep = enmo <= 0.009 &&
-          (zHrLocal <= (progress <= 0.55 ? -0.05 : -0.25) || ep.hr <= rhrBaseline + 2.5) &&
+          isSwsCardio &&
           hri <= 1.65 &&
           progress <= 0.85;
 
       // 3. SONNO REM:
-      // Imposta REM quando enmo <= 0.009 && progress >= 0.08 && zHrLocal > -0.35 && zHrLocal <= 1.25 && (hri >= 1.25 || ep.rmssdVarInWindow >= 0.16 || deltaHrAcute >= 1.8).
-      final bool isRem = enmo <= 0.009 &&
-          progress >= 0.08 &&
-          zHrLocal > -0.35 &&
+      // Atonia motoria periferica con instabilità autonomica/elettrofisiologica (HRI, variabilità intra-epoca, micro-fluttuazioni),
+      // con frequenza cardiaca a livello intermedio/leggermente elevato, concentrata nei cicli avanzati.
+      final bool isRem = enmo <= 0.008 &&
+          progress >= 0.15 &&
+          zHrLocal > -0.25 &&
           zHrLocal <= 1.25 &&
-          (hri >= 1.25 || ep.rmssdVarInWindow >= 0.16 || deltaHrAcute >= 1.8);
+          (hri >= 1.15 || ep.rmssdVarInWindow >= 0.15 || deltaHrAcute >= 1.8);
 
       if (isDeep) {
         rawStages[k] = SleepStage.deepSws;

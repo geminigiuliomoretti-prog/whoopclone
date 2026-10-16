@@ -138,6 +138,11 @@ class TelemetryIngestionService {
   int? _lastSequenceNumber;
   static const int _maxSeq16Bit = 65536;
 
+  // Rolling RR buffer per calcolare RMSSD continuo anche su stream BLE a 1 Hz (0x2A37)
+  // dove ogni singolo pacchetto contiene solo 0 o 1 intervallo R-R.
+  final List<double> _rollingRrBuffer = [];
+  static const int _maxRollingRrCount = 30;
+
   // Contatori diagnostici obbligatori
   int _packetsReceived = 0;
   int _packetsSaved = 0;
@@ -176,6 +181,7 @@ class TelemetryIngestionService {
     _packetsInvalid = 0;
     _packetsMissing = 0;
     _recentPacketHashes.clear();
+    _rollingRrBuffer.clear();
     _lastSequenceNumber = null;
   }
 
@@ -200,9 +206,41 @@ class TelemetryIngestionService {
     // ─────────────────────────────────────────────────────────────
     bool crcValid = true;
     final bool isFramed = rawBytes[0] == 0xAA;
+    final bool isWhoop5 = rawBytes.length >= 8 && rawBytes[0] == 0xAA && rawBytes[1] == 0x01;
     final bool is96ByteSensor = rawBytes.length >= 96;
 
-    if (isFramed) {
+    if (isWhoop5) {
+      // Formato WHOOP 5.0 Format-1:
+      // Byte 0..5: [0xAA, 0x01, declLenLo, declLenHi, 0x00, 0x01]
+      // Byte 6..7: CRC16-Modbus over bytes 0..5 (little-endian)
+      final expectedHeaderCrc16 = Crc16Modbus.calculate(rawBytes.sublist(0, 6));
+      final actualHeaderCrc16 = rawBytes[6] | (rawBytes[7] << 8);
+      if (expectedHeaderCrc16 != actualHeaderCrc16) {
+        _packetsInvalid++;
+        BleDiagnosticService.instance.recordCrcError(discardedBytesCount: rawBytes.length);
+        StructuredLogger.instance.warn(LogTag.ingest, 'WHOOP 5.0 Header CRC16 mismatch');
+        return IngestionResult.dropped(reason: 'HEADER_CRC16_MISMATCH', isValidCrc: false);
+      }
+      final int declLen = rawBytes[2] | (rawBytes[3] << 8);
+      final int expectedTotalLen = 8 + declLen;
+      if (declLen >= 4 && rawBytes.length >= expectedTotalLen) {
+        final int innerLen = declLen - 4;
+        final innerBytes = rawBytes.sublist(8, 8 + innerLen);
+        final tailCrcOffset = 8 + innerLen;
+        final actualTailCrc = (rawBytes[tailCrcOffset] |
+                (rawBytes[tailCrcOffset + 1] << 8) |
+                (rawBytes[tailCrcOffset + 2] << 16) |
+                (rawBytes[tailCrcOffset + 3] << 24)) &
+            0xFFFFFFFF;
+        final expectedTailCrc = WhoopCrc32.compute(innerBytes);
+        if (actualTailCrc != expectedTailCrc) {
+          _packetsInvalid++;
+          BleDiagnosticService.instance.recordCrcError(discardedBytesCount: rawBytes.length);
+          StructuredLogger.instance.warn(LogTag.ingest, 'WHOOP 5.0 Payload CRC32 mismatch');
+          return IngestionResult.dropped(reason: 'PAYLOAD_CRC32_MISMATCH', isValidCrc: false);
+        }
+      }
+    } else if (isFramed) {
       if (rawBytes.length < 4) {
         _packetsInvalid++;
         return IngestionResult.dropped(reason: 'TRUNCATED_HEADER', isValidCrc: false);
@@ -270,7 +308,9 @@ class TelemetryIngestionService {
     int? detectedGap;
 
     if (rawBytes.length >= 4) {
-      if (isFramed && rawBytes.length >= 6) {
+      if (isWhoop5 && rawBytes.length >= 10) {
+        seqNum = rawBytes[9];
+      } else if (isFramed && rawBytes.length >= 6) {
         // Frame Whoop: byte 4 è type, byte 5 è seq uint8 (oppure uint16 al byte 2 se 96byte)
         if (rawBytes.length >= 96) {
           final bd = ByteData.sublistView(Uint8List.fromList(rawBytes));
@@ -321,7 +361,19 @@ class TelemetryIngestionService {
       deviceTs = packet96.timestamp;
       bpm = packet96.heartRateBpm > 0 ? packet96.heartRateBpm : null;
       rmssdMs = packet96.hrvRmssdMs > 0 ? packet96.hrvRmssdMs : null;
-      rrMs = null; // PRO-01 FIX: 96-byte packet does not provide discrete R-R intervals
+      if (packet96.rrIntervalsMs.isNotEmpty) {
+        final validRr = packet96.rrIntervalsMs.where((r) => r >= 300.0 && r <= 2000.0).toList();
+        if (validRr.isNotEmpty) {
+          rrMs = validRr.last;
+          rrIntervalsJson = jsonEncode(packet96.rrIntervalsMs);
+          for (final rr in validRr) {
+            _rollingRrBuffer.add(rr);
+            if (_rollingRrBuffer.length > _maxRollingRrCount) {
+              _rollingRrBuffer.removeAt(0);
+            }
+          }
+        }
+      }
       accelEnmo = packet96.enmo;
       motionVar = packet96.motionVariance;
       skinTempRaw = packet96.skinTempRaw;
@@ -350,18 +402,10 @@ class TelemetryIngestionService {
           final validRr = hrPacket.rrIntervalsMs.where((r) => r >= 300.0 && r <= 2000.0).toList();
           if (validRr.isNotEmpty) {
             rrMs = validRr.last;
-            if (validRr.length >= 2) {
-              double sumDiffSq = 0.0;
-              int count = 0;
-              for (int i = 0; i < validRr.length - 1; i++) {
-                final diff = (validRr[i + 1] - validRr[i]).abs();
-                if (diff <= 200.0) { // Ectopic rejection filter
-                  sumDiffSq += diff * diff;
-                  count++;
-                }
-              }
-              if (count > 0) {
-                rmssdMs = math.sqrt(sumDiffSq / count);
+            for (final rr in validRr) {
+              _rollingRrBuffer.add(rr);
+              if (_rollingRrBuffer.length > _maxRollingRrCount) {
+                _rollingRrBuffer.removeAt(0);
               }
             }
           }
@@ -370,6 +414,22 @@ class TelemetryIngestionService {
           final fallbackBpm = rawBytes[rawBytes.length > 4 ? 4 : 1];
           if (fallbackBpm >= 30 && fallbackBpm <= 250) bpm = fallbackBpm;
         }
+      }
+    }
+
+    // Calcolo RMSSD continuo da rolling RR buffer se non fornito direttamente dal frame proprietario
+    if ((rmssdMs == null || rmssdMs <= 0.0) && _rollingRrBuffer.length >= 2) {
+      double sumDiffSq = 0.0;
+      int count = 0;
+      for (int i = 0; i < _rollingRrBuffer.length - 1; i++) {
+        final diff = (_rollingRrBuffer[i + 1] - _rollingRrBuffer[i]).abs();
+        if (diff <= 200.0) { // Ectopic rejection filter
+          sumDiffSq += diff * diff;
+          count++;
+        }
+      }
+      if (count >= 1) {
+        rmssdMs = math.sqrt(sumDiffSq / count);
       }
     }
 

@@ -279,7 +279,7 @@ class AutoWorkoutDetector {
       if (windowSize >= tSustainSec) {
         final recentWindow = _ringBuffer.sublist(_ringBuffer.length - windowSize);
         final elevatedHrCount = recentWindow.where((f) => f.hr >= hrTrigger).length;
-        final activeMotionCount = recentWindow.where((f) => f.enmo >= 0.025).length;
+        final activeMotionCount = recentWindow.where((f) => f.enmo >= enmoMotionThresh).length;
 
         final hrRatio = elevatedHrCount / windowSize;
         final motionRatio = activeMotionCount / windowSize;

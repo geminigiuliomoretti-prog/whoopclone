@@ -355,16 +355,23 @@ class PosteriorSleepDetector {
           final targetIdx = m + offset;
           if (targetIdx >= totalEpochs) break;
           final bucket = epochBuckets[targetIdx];
-          double epEnmo = 0.0;
+          double? epEnmo;
           double epHr = profileRhr;
           if (bucket.isNotEmpty) {
-            final eVals = bucket.map<double>((r) => (r['accel_enmo'] ?? r['motion_var'] ?? r['enmo'] as num?)?.toDouble() ?? 0.0);
-            if (eVals.isNotEmpty) epEnmo = eVals.reduce((a, b) => a > b ? a : b);
+            final eVals = bucket
+                .map<num?>((r) => (r['accel_enmo'] ?? r['motion_var'] ?? r['enmo'] as num?))
+                .where((e) => e != null)
+                .cast<num>()
+                .toList();
+            if (eVals.isNotEmpty) {
+              epEnmo = eVals.map((e) => e.toDouble()).reduce((a, b) => a > b ? a : b);
+            }
             final hVals = bucket.map<double>((r) => (r['bpm'] ?? r['hr'] as num?)?.toDouble() ?? 0.0).where((h) => h > 0);
             if (hVals.isNotEmpty) epHr = hVals.reduce((a, b) => a + b) / hVals.length;
           }
 
-          if (epEnmo <= 0.010) quietEnmoCount++;
+          final bool isEpQuiet = (epEnmo != null) ? (epEnmo <= 0.010) : (epHr <= sleepHrThreshold);
+          if (isEpQuiet) quietEnmoCount++;
           if (epHr > sleepHrThreshold || (hrAtInBed > 0 && epHr > (hrAtInBed - 3.0))) {
             allDropHr = false;
           }
@@ -379,7 +386,7 @@ class PosteriorSleepDetector {
       for (int w = tInBedIdx; w < actualOnsetIdx; w++) {
         epochStatus[w] = false;
       }
-      candidateStartIdx = tInBedIdx;
+      candidateStartIdx = actualOnsetIdx;
 
       final startTs = firstTs.add(Duration(seconds: candidateStartIdx * 30));
       final endTs = firstTs.add(Duration(seconds: (lastQuietIdx + 1) * 30));

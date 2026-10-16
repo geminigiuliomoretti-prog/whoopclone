@@ -154,16 +154,57 @@ class Crc16Modbus {
 /// Encoder per comandi, vibrazione aptica e sveglia per WHOOP 4.0 / 5.0
 class HapticClockEncoder {
   /// Costruisce un frame di comando binario formattato per WHOOP 4.0 / 5.0:
-  /// Header: [0xAA, len_lo, len_hi, crc8([len_lo, len_hi])]
-  /// Body:   [type (0x23), seq, cmd, ...payload]
-  /// Tail:   [crc32_lo, crc32_b1, crc32_b2, crc32_hi]
+  /// - WHOOP 4.0: Header a 4 byte [0xAA, len_lo, len_hi, CRC8(len)] + body [type, seq, cmd, payload] + CRC32 IEEE 802.3
+  /// - WHOOP 5.0: Header a 8 byte [0xAA, 0x01, declLen_lo, declLen_hi, 0x00, 0x01, CRC16_lo, CRC16_hi] +
+  ///              body zero-padded a multipli di 4 byte [type, seq, cmd, payload, ...pad] + CRC32 IEEE 802.3
   static Uint8List buildFramedCommand({
     required int cmd,
     List<int> payload = const [],
     int seq = 1,
     int type = 0x23,
+    bool isWhoop5 = false,
   }) {
-    // Lunghezza del body = 1 (type) + 1 (seq) + 1 (cmd) + payload.length + 4 (crc32)
+    if (isWhoop5) {
+      // Formato 1 WHOOP 5.0 (Maverick / Goose / fd4b)
+      final List<int> innerBytes = [
+        type & 0xFF,
+        seq & 0xFF,
+        cmd & 0xFF,
+        ...payload,
+      ];
+      // Allineamento a multipli di 4 byte (zero-padding obbligatorio per Format-1)
+      while (innerBytes.length % 4 != 0) {
+        innerBytes.add(0x00);
+      }
+
+      // declLen include i 4 byte del CRC32 trailer
+      final int declaredPayloadLen = innerBytes.length + 4;
+      final List<int> header = [
+        0xAA,
+        0x01,
+        declaredPayloadLen & 0xFF,
+        (declaredPayloadLen >> 8) & 0xFF,
+        0x00,
+        0x01,
+      ];
+      final int headerCrc = Crc16Modbus.calculate(header);
+      header.add(headerCrc & 0xFF);
+      header.add((headerCrc >> 8) & 0xFF);
+
+      final int crc32 = WhoopCrc32.compute(innerBytes);
+      final Uint8List frame = Uint8List(8 + innerBytes.length + 4);
+      frame.setRange(0, 8, header);
+      frame.setRange(8, 8 + innerBytes.length, innerBytes);
+      final int crcOffset = 8 + innerBytes.length;
+      frame[crcOffset] = crc32 & 0xFF;
+      frame[crcOffset + 1] = (crc32 >> 8) & 0xFF;
+      frame[crcOffset + 2] = (crc32 >> 16) & 0xFF;
+      frame[crcOffset + 3] = (crc32 >> 24) & 0xFF;
+
+      return frame;
+    }
+
+    // Formato Harvard WHOOP 4.0 (6108)
     final int bodyLength = 3 + payload.length + 4;
     final Uint8List frame = Uint8List(4 + bodyLength);
 
@@ -287,47 +328,80 @@ class HapticClockEncoder {
   }
 
   /// Opcode 68 (0x44): RUN_ALARM -> Attiva immediatamente il buzzer dell'allarme sulla strap
-  static Uint8List buildRunAlarmCommand({int seq = 1}) {
-    return buildFramedCommand(cmd: 68, payload: const [0x01], seq: seq);
+  static Uint8List buildRunAlarmCommand({int seq = 1, bool isWhoop5 = false}) {
+    if (isWhoop5) {
+      // Formato WHOOP 5.0 / Maverick: Revisione 2 [0x02, alarm_id]
+      return buildFramedCommand(cmd: 68, payload: const [0x02, 0x01], seq: seq, isWhoop5: true);
+    }
+    return buildFramedCommand(cmd: 68, payload: const [0x01], seq: seq, isWhoop5: false);
   }
 
   /// Opcode 79 (0x4F): RUN_HAPTICS_PATTERN -> Esegue un pattern haptic predefinito sul motore WHOOP 4.0
-  static Uint8List buildRunHapticsPatternCommand({int seq = 1, int patternId = 2, int duration = 3}) {
-    return buildFramedCommand(cmd: 79, payload: [patternId, duration, 0x00, 0x00, 0x00], seq: seq);
+  static Uint8List buildRunHapticsPatternCommand({int seq = 1, int patternId = 2, int duration = 3, bool isWhoop5 = false}) {
+    if (isWhoop5) {
+      return buildRunHapticPatternMaverickCommand(seq: seq, loops: duration);
+    }
+    return buildFramedCommand(cmd: 79, payload: [patternId, duration, 0x00, 0x00, 0x00], seq: seq, isWhoop5: false);
   }
 
   /// Opcode 19 (0x13): RUN_HAPTIC_PATTERN_MAVERICK -> Esegue pattern haptic su WHOOP 5.0 / MG / Maverick
+  /// Body: [rev 0x01, waveform (8 bytes), loop control u16le (0x00, 0x00), overall loop (loops - 1)]
   static Uint8List buildRunHapticPatternMaverickCommand({int seq = 1, int loops = 3}) {
-    final loopCount = (loops - 1).clamp(0, 10);
+    final loopCount = (loops - 1).clamp(0, 7);
     return buildFramedCommand(
       cmd: 19,
       payload: [0x01, 47, 152, 0, 0, 0, 0, 0, 0, 0, 0, loopCount],
       seq: seq,
+      isWhoop5: true,
     );
   }
 
   /// Opcode 69 (0x45): DISABLE_ALARM -> Disabilita l'allarme attivo sul cinturino
-  static Uint8List buildDisableAlarmCommand({int seq = 1}) {
-    return buildFramedCommand(cmd: 69, payload: const [0x01], seq: seq);
+  static Uint8List buildDisableAlarmCommand({int seq = 1, bool isWhoop5 = false}) {
+    if (isWhoop5) {
+      // Formato WHOOP 5.0: Revisione 2 [0x02, 0xFF]
+      return buildFramedCommand(cmd: 69, payload: const [0x02, 0xFF], seq: seq, isWhoop5: true);
+    }
+    return buildFramedCommand(cmd: 69, payload: const [0x01], seq: seq, isWhoop5: false);
   }
 
   /// Opcode 35 / 145: GET_HELLO -> Handshake iniziale WHOOP 4.0 (35) / 5.0 (145)
-  static Uint8List buildGetHelloCommand({int seq = 1, bool isMaverick = false}) {
-    return buildFramedCommand(cmd: isMaverick ? 145 : 35, payload: const [], seq: seq);
+  static Uint8List buildGetHelloCommand({int seq = 1, bool isWhoop5 = false, bool isMaverick = false}) {
+    final bool whoop5 = isWhoop5 || isMaverick;
+    if (whoop5) {
+      // WHOOP 5.0 GET_HELLO (145): Revisione 1 [0x01]
+      return buildFramedCommand(cmd: 145, payload: const [0x01], seq: seq, isWhoop5: true);
+    }
+    return buildFramedCommand(cmd: 35, payload: const [], seq: seq, isWhoop5: false);
   }
 
   /// Opcode 1 (0x01): CLIENT_HELLO -> Handshake iniziale WHOOP 5.0 Maverick (type: 0x23, cmd: 0x01, payload: [0x01, 0x00])
   static Uint8List buildClientHelloCommand({int seq = 1}) {
-    return buildFramedCommand(type: 0x23, cmd: 0x01, payload: const [0x01, 0x00], seq: seq);
+    return buildFramedCommand(type: 0x23, cmd: 0x01, payload: const [0x01, 0x00], seq: seq, isWhoop5: true);
   }
 
   /// Opcode 19 (0x13): ENABLE_EXTENDED_OPTICAL_THERMAL -> Abilita sensori termici e ottici Red-IR (type: 0x23, cmd: 0x13, payload: [0x01, 0x01, 0x01])
-  static Uint8List buildEnableExtendedSensorsCommand({int seq = 1}) {
-    return buildFramedCommand(type: 0x23, cmd: 0x13, payload: const [0x01, 0x01, 0x01], seq: seq);
+  static Uint8List buildEnableExtendedSensorsCommand({int seq = 1, bool isWhoop5 = true}) {
+    return buildFramedCommand(type: 0x23, cmd: 0x13, payload: const [0x01, 0x01, 0x01], seq: seq, isWhoop5: isWhoop5);
   }
 
-  /// Opcode 10 (0x0A): SET_CLOCK -> Sincronizza l'orologio interno del cinturino
-  static Uint8List buildSetClockCommand({required int epochSec, int seq = 1}) {
+  /// Opcode 10 (0x0A) su 4.0 / 146 (0x92) su 5.0: SET_CLOCK -> Sincronizza l'orologio interno del cinturino
+  static Uint8List buildSetClockCommand({required int epochSec, int seq = 1, bool isWhoop5 = false}) {
+    if (isWhoop5) {
+      // WHOOP 5.0 SET_CLOCK (146): revisione 1, u32le secondi, u16le ticks in 1/32768 s
+      final now = DateTime.now().toUtc();
+      final ticks = ((now.millisecond * 32768) ~/ 1000).clamp(0, 32767);
+      final payload = [
+        0x01,
+        epochSec & 0xFF,
+        (epochSec >> 8) & 0xFF,
+        (epochSec >> 16) & 0xFF,
+        (epochSec >> 24) & 0xFF,
+        ticks & 0xFF,
+        (ticks >> 8) & 0xFF,
+      ];
+      return buildFramedCommand(cmd: 146, payload: payload, seq: seq, isWhoop5: true);
+    }
     final payload = [
       epochSec & 0xFF,
       (epochSec >> 8) & 0xFF,
@@ -335,17 +409,48 @@ class HapticClockEncoder {
       (epochSec >> 24) & 0xFF,
       0x00, 0x00, 0x00, 0x00,
     ];
-    return buildFramedCommand(cmd: 10, payload: payload, seq: seq);
+    return buildFramedCommand(cmd: 10, payload: payload, seq: seq, isWhoop5: false);
   }
 
   /// Opcode 14 (0x0E): TOGGLE_GENERIC_HR_PROFILE -> Sblocca e abilita il profilo standard BLE Heart Rate (0x180D)
-  static Uint8List buildToggleGenericHrProfileCommand({int seq = 1, bool enable = true}) {
-    return buildFramedCommand(cmd: 14, payload: [enable ? 0x01 : 0x00], seq: seq);
+  static Uint8List buildToggleGenericHrProfileCommand({int seq = 1, bool enable = true, bool isWhoop5 = false}) {
+    return buildFramedCommand(cmd: 14, payload: [enable ? 0x01 : 0x00], seq: seq, isWhoop5: isWhoop5);
   }
 
   /// Opcode 3 (0x03): TOGGLE_REALTIME_HR -> Abilita lo streaming dei pacchetti real-time 1 Hz
-  static Uint8List buildToggleRealtimeHrCommand({int seq = 1, bool enable = true}) {
-    return buildFramedCommand(cmd: 3, payload: [enable ? 0x01 : 0x00], seq: seq);
+  static Uint8List buildToggleRealtimeHrCommand({int seq = 1, bool enable = true, bool isWhoop5 = false}) {
+    return buildFramedCommand(cmd: 3, payload: [enable ? 0x01 : 0x00], seq: seq, isWhoop5: isWhoop5);
+  }
+
+  /// Opcode 66 (0x42): SET_ALARM_TIME -> Imposta la sveglia hardware sul cinturino (con supporto WHOOP 5.0 rev 4)
+  static Uint8List buildSetAlarmTimeCommand({
+    required DateTime alarmTime,
+    int alarmId = 1,
+    int seq = 1,
+    bool isWhoop5 = false,
+  }) {
+    final epochSec = alarmTime.toUtc().millisecondsSinceEpoch ~/ 1000;
+    if (isWhoop5) {
+      // WHOOP 5.0 Revisione 4: 20-byte body con forma d'onda e loops
+      final ms = alarmTime.toUtc().millisecond;
+      final subseconds = ((ms * 32768) ~/ 1000).clamp(0, 32767);
+      final payload = [
+        0x04,
+        alarmId & 0xFF,
+        epochSec & 0xFF,
+        (epochSec >> 8) & 0xFF,
+        (epochSec >> 16) & 0xFF,
+        (epochSec >> 24) & 0xFF,
+        subseconds & 0xFF,
+        (subseconds >> 8) & 0xFF,
+        47, 152, 0, 0, 0, 0, 0, 0, // Canonical WHOOP waveform effects
+        0x00, 0x00, // loop control
+        0x07, // overall loop
+        30, // duration
+      ];
+      return buildFramedCommand(cmd: 66, payload: payload, seq: seq, isWhoop5: true);
+    }
+    return encodeAlarmTime(alarmTime: alarmTime, packetCounter: seq);
   }
 
   /// Genera il pacchetto di comando diretto motore haptic (Opcode 0x07)
