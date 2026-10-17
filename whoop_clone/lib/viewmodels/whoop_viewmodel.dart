@@ -139,7 +139,6 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       _importExportService = NoopImportExportService(repository: SqliteWhoopRepository());
     }
     _autoWorkoutDetector = AutoWorkoutDetector(restHr: _userProfile.hrRestBaseline.toDouble());
-    _hapticAlarmScheduler = HapticAlarmScheduler(bleManager: _bleManager);
     _hapticAlarmService = HapticAlarmService(
       bleManager: _bleManager,
       wakeupStateProvider: () {
@@ -161,6 +160,13 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
         };
       },
     );
+    _hapticAlarmScheduler = HapticAlarmScheduler(
+      bleManager: _bleManager,
+      onAlarmTrigger: ({String reason = 'Sveglia Oraria'}) async {
+        await _hapticAlarmService.triggerAlarm(reason: reason);
+      },
+    );
+    _hapticAlarmService.addListener(notifyListeners);
     _backgroundDaemon = BackgroundSyncDaemon(bleManager: _bleManager, repository: _repository);
     _overnightSleepEngine = OvernightSleepEngine();
     _posteriorSleepDetector = PosteriorSleepDetector(
@@ -466,10 +472,16 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
       await scheduleHapticAlarm(alarmDateTime, vibrationPattern: hapticIntensity);
     } else {
       _hapticAlarmScheduler.cancelAlarm();
+      await _hapticAlarmService.dismissAlarm();
     }
 
     notifyListeners();
   }
+
+  bool get isAlarmRinging => _hapticAlarmService.isRinging;
+  Future<void> dismissAlarm() => _hapticAlarmService.dismissAlarm();
+  void snoozeAlarm({int snoozeMinutes = 9}) => _hapticAlarmService.snoozeAlarm(snoozeMinutes: snoozeMinutes);
+  void triggerDoubleTapForTesting() => _bleManager.triggerDoubleTapEvent();
 
   Future<bool> sendTestVibrationPulseNow() async {
     return await _bleManager.sendTestVibrationPulseNow();
@@ -1430,6 +1442,8 @@ class WhoopViewModel extends ChangeNotifier with WidgetsBindingObserver {
     _autoWorkoutDetector.dispose();
     _autoSleepDetector.dispose();
     _hapticAlarmScheduler.dispose();
+    _hapticAlarmService.removeListener(notifyListeners);
+    _hapticAlarmService.dispose();
     _backgroundDaemon.stopDaemon();
     _bleManager.dispose();
     super.dispose();

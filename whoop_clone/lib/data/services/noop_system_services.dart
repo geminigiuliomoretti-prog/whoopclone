@@ -14,8 +14,9 @@ class HapticAlarmScheduler {
   DateTime? _scheduledAlarmTime;
   int _lastPattern = 1;
   bool _isVibrating = false;
+  Future<void> Function({String reason})? onAlarmTrigger;
 
-  HapticAlarmScheduler({required this.bleManager});
+  HapticAlarmScheduler({required this.bleManager, this.onAlarmTrigger});
 
   /// Programma una sveglia a vibrazione sul cinturino WHOOP
   Future<bool> scheduleHapticAlarm({
@@ -53,13 +54,22 @@ class HapticAlarmScheduler {
       if (_scheduledAlarmTime != null) {
         final now = DateTime.now();
         if (now.isAfter(_scheduledAlarmTime!) || now.isAtSameMomentAs(_scheduledAlarmTime!)) {
+          if (onAlarmTrigger != null) {
+            _alarmCheckTimer?.cancel();
+            await onAlarmTrigger!(reason: 'Orario Sveglia');
+            return;
+          }
           _isVibrating = true;
           debugPrint('HapticAlarmScheduler: SVEGLIA SCATTATA! Invio sequenza vibrazione haptic sul cinturino WHOOP...');
+          final startTime = DateTime.now();
           try {
-            for (int i = 0; i < 5; i++) {
-              if (_scheduledAlarmTime == null) break;
-              await bleManager.sendHapticVibrationCommand(pattern: _lastPattern);
-              await Future.delayed(const Duration(milliseconds: 1000));
+            while (_scheduledAlarmTime != null && _isVibrating) {
+              if (DateTime.now().difference(startTime).inSeconds >= 60) {
+                debugPrint('HapticAlarmScheduler: Timeout di 1 minuto raggiunto.');
+                break;
+              }
+              await bleManager.sendStrapAlarmVibration(pattern: _lastPattern);
+              await Future.delayed(const Duration(seconds: 3));
             }
           } finally {
             cancelAlarm();

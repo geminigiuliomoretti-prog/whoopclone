@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../ble/ble_connection_manager.dart';
 import '../ble/noop_protocol_decoder.dart';
 import '../database/database_helper.dart';
@@ -31,9 +30,6 @@ enum HapticIntensity {
 
 /// Servizio di Gestione della Sveglia Aptica Intelligente e Controllo BLE (NOOP Haptic Engine)
 class HapticAlarmService extends ChangeNotifier {
-  static const MethodChannel _foregroundChannel =
-      MethodChannel('com.example.whoop_clone/foreground_service');
-
   final BleConnectionManager _bleManager;
   final DatabaseHelper _dbHelper;
 
@@ -160,10 +156,10 @@ class HapticAlarmService extends ChangeNotifier {
     return await _bleManager.writeAlarmCommand(payload);
   }
 
-  /// Esegue un impulso di test immediato di vibrazione aptica
+  /// Esegue un impulso di test immediato di vibrazione aptica sul cinturino WHOOP
   Future<HapticResultStatus> testVibrationPulse({HapticIntensity? overrideIntensity}) async {
     final pattern = (overrideIntensity ?? _intensity).patternCode;
-    return await _bleManager.sendHapticVibrationCommand(pattern: pattern);
+    return await _bleManager.sendHapticVibrationCommand(pattern: pattern, vibratePhone: false);
   }
 
   /// Valuta le condizioni di risveglio in tempo reale
@@ -234,53 +230,70 @@ class HapticAlarmService extends ChangeNotifier {
     }
   }
 
-  Timer? _phoneVibrationLoop;
+  Timer? _strapVibrationLoop;
+  Timer? _alarmDurationTimer;
+  StreamSubscription<void>? _doubleTapSubscription;
 
-  /// Innesca l'allarme aptico attivo
+  /// Innesca l'allarme aptico attivo sulla strap WHOOP
   Future<void> triggerAlarm({String reason = 'Sveglia Attivata'}) async {
+    if (_isRinging) return;
     _isRinging = true;
     _lastRingTime = DateTime.now();
-    debugPrint('[HapticAlarmService] 🔔 ALLARME APTICO ATTIVATO: $reason');
+    debugPrint('[HapticAlarmService] 🔔 ALLARME APTICO CINTURINO WHOOP ATTIVATO: $reason');
 
-    // 1. Invia pacchetto di vibrazione immediata allo strap
-    await testVibrationPulse();
+    // 1. Innesca la vibrazione fisica continua del cinturino WHOOP (nessuna vibrazione sul telefono!)
+    await _startStrapVibrationRinging();
 
-    // 2. Innesca vibrazione fisica dello smartphone in loop
-    _startPhoneVibrationRinging();
+    // 2. Timeout di 1 minuto (60 secondi): finisce e smette di vibrare anche senza tocco
+    _alarmDurationTimer?.cancel();
+    _alarmDurationTimer = Timer(const Duration(seconds: 60), () async {
+      if (_isRinging) {
+        debugPrint('[HapticAlarmService] ⏱️ Timeout di 1 minuto raggiunto: arresto automatico vibrazione sveglia.');
+        await dismissAlarm();
+      }
+    });
+
+    // 3. Sottoscrizione al rilevamento del doppio tocco sul cinturino per spegnere la vibrazione
+    _doubleTapSubscription?.cancel();
+    _doubleTapSubscription = _bleManager.doubleTapStream.listen((_) async {
+      if (_isRinging) {
+        debugPrint('[HapticAlarmService] 👆👆 DOPPIO TOCCO RILEVATO SUL CINTURINO WHOOP! Spegnimento sveglia.');
+        await dismissAlarm();
+      }
+    });
 
     notifyListeners();
   }
 
-  void _startPhoneVibrationRinging() {
-    _phoneVibrationLoop?.cancel();
-    HapticFeedback.vibrate();
-    _triggerNativeVibration(500);
-    _phoneVibrationLoop = Timer.periodic(const Duration(milliseconds: 800), (timer) {
+  Future<void> _startStrapVibrationRinging() async {
+    _strapVibrationLoop?.cancel();
+    // Primo impulso immediato
+    await _bleManager.sendStrapAlarmVibration(pattern: _intensity.patternCode);
+
+    // Ripeti l'impulso sul motore ogni 3 secondi finché _isRinging è attivo
+    _strapVibrationLoop = Timer.periodic(const Duration(seconds: 3), (timer) async {
       if (!_isRinging) {
         timer.cancel();
       } else {
-        HapticFeedback.vibrate();
-        _triggerNativeVibration(400);
+        await _bleManager.sendStrapAlarmVibration(pattern: _intensity.patternCode);
       }
     });
   }
 
-  void _triggerNativeVibration(int durationMs) {
-    _foregroundChannel.invokeMethod('triggerVibration', {'durationMs': durationMs}).catchError((_) {
-      // Ignorato se piattaforma non Android o in ambiente di test
-      return null;
-    });
-  }
-
-  void _stopPhoneVibration() {
-    _phoneVibrationLoop?.cancel();
-    _phoneVibrationLoop = null;
+  void _stopStrapVibrationRinging() {
+    _strapVibrationLoop?.cancel();
+    _strapVibrationLoop = null;
+    _alarmDurationTimer?.cancel();
+    _alarmDurationTimer = null;
+    _doubleTapSubscription?.cancel();
+    _doubleTapSubscription = null;
   }
 
   /// Snooze della sveglia per 9 minuti
   void snoozeAlarm({int snoozeMinutes = 9}) {
     _isRinging = false;
-    _stopPhoneVibration();
+    _stopStrapVibrationRinging();
+    _bleManager.sendCancelAlarmCommand();
     _snoozeUntil = DateTime.now().add(Duration(minutes: snoozeMinutes));
     debugPrint('[HapticAlarmService] ⏸ Sveglia in Snooze fino a: $_snoozeUntil');
     notifyListeners();
@@ -289,8 +302,9 @@ class HapticAlarmService extends ChangeNotifier {
   /// Spegne definitivamente la sveglia per il ciclo corrente
   Future<void> dismissAlarm() async {
     _isRinging = false;
-    _stopPhoneVibration();
+    _stopStrapVibrationRinging();
     _snoozeUntil = null;
+    await _bleManager.sendCancelAlarmCommand();
     await _cancelBleAlarmOnStrap();
     debugPrint('[HapticAlarmService] ⏹ Sveglia Disattivata / Dismissed');
     notifyListeners();
@@ -338,7 +352,7 @@ class HapticAlarmService extends ChangeNotifier {
 
   @override
   void dispose() {
-    _stopPhoneVibration();
+    _stopStrapVibrationRinging();
     _monitoringTimer?.cancel();
     super.dispose();
   }

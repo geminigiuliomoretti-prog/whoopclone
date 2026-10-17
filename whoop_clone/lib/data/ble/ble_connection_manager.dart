@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'hr_data_packet.dart';
 import 'whoop_96byte_packet.dart';
 import 'noop_protocol_decoder.dart';
+import 'strap_double_tap_detector.dart';
 import '../services/overnight_sleep_engine.dart';
 import '../services/telemetry_ingestion_service.dart';
 import '../database/database_helper.dart';
@@ -159,6 +160,11 @@ class BleConnectionManager {
       StreamController<int>.broadcast();
   final StreamController<List<int>> _ackNotificationStreamController =
       StreamController<List<int>>.broadcast();
+  final StrapDoubleTapDetector _doubleTapDetector = StrapDoubleTapDetector();
+  final StreamController<void> _doubleTapStreamController =
+      StreamController<void>.broadcast();
+  final StreamController<Uint8List> _strapEventsStreamController =
+      StreamController<Uint8List>.broadcast();
 
   StreamSubscription<List<ScanResult>>? _scanSubscription;
   StreamSubscription<BluetoothConnectionState>? _connectionSubscription;
@@ -208,7 +214,16 @@ class BleConnectionManager {
   Stream<BleState> get stateStream => _stateStreamController.stream;
   Stream<int> get batteryStream => _batteryStreamController.stream;
   Stream<List<int>> get ackNotificationStream => _ackNotificationStreamController.stream;
+  Stream<void> get doubleTapStream => _doubleTapStreamController.stream;
+  Stream<Uint8List> get strapEventsStream => _strapEventsStreamController.stream;
   Stream<List<ScanResult>> get scanResultsStream => FlutterBluePlus.scanResults;
+
+  /// Trigger per simulare o notificare un doppio tocco sul cinturino WHOOP
+  void triggerDoubleTapEvent() {
+    if (!_doubleTapStreamController.isClosed) {
+      _doubleTapStreamController.add(null);
+    }
+  }
 
   void _updateState(BleState newState, [String? message, Duration? transitionTimeout]) {
     _stateTransitionTimer?.cancel();
@@ -863,6 +878,7 @@ class BleConnectionManager {
               RawCaptureService.instance.recordNotification(charUuidStr, u8);
               BleDiagnosticService.instance.recordPacketReceived(charUuid: charUuidStr, bytes: u8);
               debugPrint('BleConnectionManager: Evento strap ricevuto (0004): $eventBytes');
+              _handleStrapEvent(u8);
             }
           });
           debugPrint('BleConnectionManager: [1/5] Sottoscritto canale 0004 (Events)');
@@ -894,6 +910,10 @@ class BleConnectionManager {
               final p96 = Whoop96BytePacket.fromBytes(bytesU8);
               if (!_96ByteStreamController.isClosed) {
                 _96ByteStreamController.add(p96);
+              }
+              if (_doubleTapDetector.processPacket(p96)) {
+                debugPrint('BleConnectionManager: Doppio tocco rilevato tramite accelerometro!');
+                triggerDoubleTapEvent();
               }
               _isProprietaryChannelActive = true;
               _fallbackModeActive = false;
@@ -1051,6 +1071,16 @@ class BleConnectionManager {
       }
       _updateState(BleState.connected, 'WHOOP Connesso (Fallback HR)');
       _updateState(BleState.streaming, 'WHOOP Connesso - Streaming HR');
+    }
+  }
+
+  void _handleStrapEvent(Uint8List u8) {
+    if (!_strapEventsStreamController.isClosed) {
+      _strapEventsStreamController.add(u8);
+    }
+    if (_doubleTapDetector.processStrapEvent(u8)) {
+      debugPrint('BleConnectionManager: Evento hardware strap rilevato su 0004 -> Trigger doppio tocco');
+      triggerDoubleTapEvent();
     }
   }
 
@@ -1419,65 +1449,75 @@ class BleConnectionManager {
     }
   }
 
-  /// Invia il pacchetto di prova vibrazione immediata con tutti i protocolli WHOOP
-  Future<bool> sendTestVibrationPulseNow() async {
+  /// Invia la vibrazione haptic hardware direttamente al cinturino WHOOP (nessuna vibrazione sul telefono)
+  Future<bool> sendStrapAlarmVibration({int pattern = 1}) async {
+    if (!isConnected || _connectedDevice == null) return false;
+
     _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
 
-    // 1. Invocazione haptic immediata su smartphone
     try {
-      HapticFeedback.heavyImpact();
-    } catch (_) {}
+      // 1. Opcode 68: RUN_ALARM (Trigger buzzer/motore allarme su WHOOP 4.0 e 5.0)
+      final runAlarm = HapticClockEncoder.buildRunAlarmCommand(
+        seq: _hapticPacketCounter,
+        isWhoop5: _isWhoop5,
+      );
+      final okAlarm = await writeAlarmCommand(runAlarm);
+      await Future.delayed(const Duration(milliseconds: 35));
 
-    // 2. Invio dei frame di comando haptic reali WHOOP
-    if (isConnected && _connectedDevice != null) {
-      // Opcode 68: RUN_ALARM (Trigger immediato buzzer allarme Harvard WHOOP 4.0 / Maverick WHOOP 5.0)
-      final runAlarm = HapticClockEncoder.buildRunAlarmCommand(seq: _hapticPacketCounter, isWhoop5: _isWhoop5);
-      await writeAlarmCommand(runAlarm);
-      await Future.delayed(const Duration(milliseconds: 40));
-
-      // Opcode 79: RUN_HAPTICS_PATTERN (Pattern haptic motor WHOOP 4.0 / 5.0)
+      // 2. Opcode 79: RUN_HAPTICS_PATTERN / Opcode 19: RUN_HAPTIC_PATTERN_MAVERICK
       final runHaptics = HapticClockEncoder.buildRunHapticsPatternCommand(
         seq: (_hapticPacketCounter + 1) & 0xFF,
-        patternId: 2,
+        patternId: pattern > 0 ? pattern : 2,
         duration: 4,
         isWhoop5: _isWhoop5,
       );
-      await writeAlarmCommand(runHaptics);
-      await Future.delayed(const Duration(milliseconds: 40));
+      final okHaptics = await writeAlarmCommand(runHaptics);
+      await Future.delayed(const Duration(milliseconds: 35));
 
-      // Opcode 19: RUN_HAPTIC_PATTERN_MAVERICK (Buzzer WHOOP 5.0 / MG / Maverick)
-      final runMaverick = HapticClockEncoder.buildRunHapticPatternMaverickCommand(
-        seq: (_hapticPacketCounter + 2) & 0xFF,
-        loops: 3,
-      );
-      await writeAlarmCommand(runMaverick);
-      await Future.delayed(const Duration(milliseconds: 40));
+      // 3. Opcode 19 Maverick specifico per WHOOP 5.0
+      bool okMaverick = false;
+      if (_isWhoop5) {
+        final runMaverick = HapticClockEncoder.buildRunHapticPatternMaverickCommand(
+          seq: (_hapticPacketCounter + 2) & 0xFF,
+          loops: 3,
+        );
+        okMaverick = await writeAlarmCommand(runMaverick);
+        await Future.delayed(const Duration(milliseconds: 35));
+      }
 
-      // Opcode 66: SET_ALARM_TIME (Frame 20-byte retrocompatibile)
-      final payload20 = HapticClockEncoder.encodeTestVibrationPayload(
-        pattern: 1,
-        packetCounter: (_hapticPacketCounter + 3) & 0xFF,
-      );
-      await writeAlarmCommand(payload20);
+      // 4. Opcode 0x07: Invio diretto controller haptic
+      final payloadDirect = HapticClockEncoder.encodeHapticMotorDirect(pattern: pattern);
+      final okDirect = await writeAlarmCommand(payloadDirect);
 
       _hapticPacketCounter = (_hapticPacketCounter + 4) & 0xFF;
-      return true;
+      return okAlarm || okHaptics || okMaverick || okDirect;
+    } catch (e) {
+      debugPrint('BleConnectionManager: Errore invio vibrazione cinturino: $e');
+      return false;
     }
-    return false;
   }
 
-  /// Invia la sequenza di vibrazione haptic veritiera alla strap WHOOP BLE e allo smartphone
-  Future<HapticResultStatus> sendHapticVibrationCommand({int pattern = 1}) async {
+  /// Invia il pacchetto di prova vibrazione immediata con tutti i protocolli WHOOP (solo cinturino)
+  Future<bool> sendTestVibrationPulseNow() async {
+    return await sendStrapAlarmVibration(pattern: 2);
+  }
+
+  /// Invia la sequenza di vibrazione haptic veritiera alla strap WHOOP BLE (e opzionalmente allo smartphone se richiesto)
+  Future<HapticResultStatus> sendHapticVibrationCommand({
+    int pattern = 1,
+    bool vibratePhone = false,
+  }) async {
     bool phoneVibrated = false;
-    // 1. Vibrazione fisica sul motore dello smartphone
-    try {
-      HapticFeedback.heavyImpact();
-      await Future.delayed(const Duration(milliseconds: 80));
-      HapticFeedback.vibrate();
-      await Future.delayed(const Duration(milliseconds: 80));
-      HapticFeedback.heavyImpact();
-      phoneVibrated = true;
-    } catch (_) {}
+    if (vibratePhone) {
+      try {
+        HapticFeedback.heavyImpact();
+        await Future.delayed(const Duration(milliseconds: 80));
+        HapticFeedback.vibrate();
+        await Future.delayed(const Duration(milliseconds: 80));
+        HapticFeedback.heavyImpact();
+        phoneVibrated = true;
+      } catch (_) {}
+    }
 
     if (!isConnected || _connectedDevice == null) {
       return phoneVibrated
@@ -1485,39 +1525,9 @@ class BleConnectionManager {
           : HapticResultStatus.notConnected;
     }
 
-    // 2. Invocazione multi-protocollo al cinturino WHOOP BLE
     try {
-      _hapticPacketCounter = (_hapticPacketCounter + 1) & 0xFF;
-
-      // Opcode 68 (RUN_ALARM immediato)
-      final runAlarm = HapticClockEncoder.buildRunAlarmCommand(seq: _hapticPacketCounter, isWhoop5: _isWhoop5);
-      final okAlarm = await writeAlarmCommand(runAlarm);
-      await Future.delayed(const Duration(milliseconds: 50));
-
-      // Opcode 79 (RUN_HAPTICS_PATTERN WHOOP 4.0 / 5.0)
-      final runHaptics = HapticClockEncoder.buildRunHapticsPatternCommand(
-        seq: (_hapticPacketCounter + 1) & 0xFF,
-        patternId: pattern > 0 ? pattern : 2,
-        isWhoop5: _isWhoop5,
-      );
-      final okHaptics = await writeAlarmCommand(runHaptics);
-      await Future.delayed(const Duration(milliseconds: 50));
-
-      // Opcode 19 (RUN_HAPTIC_PATTERN_MAVERICK per WHOOP 5.0)
-      final runMaverick = HapticClockEncoder.buildRunHapticPatternMaverickCommand(
-        seq: (_hapticPacketCounter + 2) & 0xFF,
-        loops: 3,
-      );
-      final okMaverick = await writeAlarmCommand(runMaverick);
-      await Future.delayed(const Duration(milliseconds: 50));
-
-      // Direct haptic motor
-      final payloadDirect = HapticClockEncoder.encodeHapticMotorDirect(pattern: pattern);
-      final okDirect = await writeAlarmCommand(payloadDirect);
-
-      _hapticPacketCounter = (_hapticPacketCounter + 4) & 0xFF;
-
-      if (okAlarm || okHaptics || okMaverick || okDirect) {
+      final isStrapOk = await sendStrapAlarmVibration(pattern: pattern);
+      if (isStrapOk) {
         return HapticResultStatus.strapCommandSent;
       } else {
         return HapticResultStatus.strapFailed;
@@ -1589,6 +1599,8 @@ class BleConnectionManager {
     if (!_stateStreamController.isClosed) _stateStreamController.close();
     if (!_batteryStreamController.isClosed) _batteryStreamController.close();
     if (!_ackNotificationStreamController.isClosed) _ackNotificationStreamController.close();
+    if (!_doubleTapStreamController.isClosed) _doubleTapStreamController.close();
+    if (!_strapEventsStreamController.isClosed) _strapEventsStreamController.close();
     if (!_debugLogsController.isClosed) _debugLogsController.close();
   }
 

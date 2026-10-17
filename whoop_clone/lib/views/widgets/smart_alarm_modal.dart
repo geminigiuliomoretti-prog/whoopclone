@@ -365,7 +365,7 @@ class _SmartAlarmModalState extends State<SmartAlarmModal> {
                         content: Text(
                           isStrapOk
                               ? '⚡ Segnale di prova inviato! Il bracciale WHOOP sta vibrando...'
-                              : '⚠️ Bracciale non connesso in BLE (vibrazione solo su smartphone).',
+                              : '⚠️ Bracciale WHOOP non connesso in BLE. Connetti il dispositivo.',
                         ),
                         backgroundColor: isStrapOk ? WhoopTheme.strainBlue : Colors.orange,
                         duration: const Duration(seconds: 2),

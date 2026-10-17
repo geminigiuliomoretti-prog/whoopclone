@@ -1,6 +1,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../core/theme/nature_theme.dart';
+import '../viewmodels/whoop_viewmodel.dart';
 import 'home_screen.dart';
 import 'screens/health_screen.dart';
 import 'screens/more_menu_screen.dart';
@@ -32,10 +34,25 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       backgroundColor: NatureColors.background,
       extendBody: true, // Permette alla barra floating di sovrapporsi con sfocatura
 
-      // IndexedStack preserva lo stato di tutte le schermate
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
+      // Stack con IndexedStack e banner sveglia attiva se il bracciale sta vibrando
+      body: Consumer<WhoopViewModel>(
+        builder: (context, vm, _) {
+          return Stack(
+            children: [
+              IndexedStack(
+                index: _currentIndex,
+                children: _screens,
+              ),
+              if (vm.isAlarmRinging)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 10,
+                  left: 16,
+                  right: 16,
+                  child: _buildAlarmBanner(context, vm),
+                ),
+            ],
+          );
+        },
       ),
 
       // Floating Frosted Glass Capsule Navigation Bar
@@ -193,6 +210,86 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                   letterSpacing: 0.2,
                 ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAlarmBanner(BuildContext context, WhoopViewModel vm) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: NatureColors.teal, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: NatureColors.teal.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.vibration_rounded, color: NatureColors.teal, size: 24),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'SVEGLIA IN CORSO (WHOOP)',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Il bracciale sta vibrando. Tocca 2 volte il cinturino per spegnerlo.',
+                      style: TextStyle(
+                        color: NatureColors.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => vm.snoozeAlarm(),
+                child: const Text('SNOOZE (9m)', style: TextStyle(color: NatureColors.amber, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () => vm.dismissAlarm(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: NatureColors.teal,
+                  foregroundColor: NatureColors.background,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                child: const Text('SPEGNI', style: TextStyle(fontWeight: FontWeight.w900)),
               ),
             ],
           ),
